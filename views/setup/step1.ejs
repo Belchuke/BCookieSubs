@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Setup — BCookieSubs</title>
+    <%-  include('../theme-vars.ejs') %>
+  <link rel="icon" type="image/png" href="/images/icon.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="auth-page">
+  <div class="auth-card" style="max-width:440px">
+    <div style="padding-left: 3rem; padding-right: 3rem;">
+      <div class="setup-steps">
+        <span class="step active">1</span>
+        <span class="step-line"></span>
+        <span class="step">2</span>
+        <span class="step-line"></span>
+        <span class="step">3</span>
+      </div>
+    </div>
+
+    <div class="auth-logo">🔐</div>
+    <h1 class="auth-title">Create Admin Account</h1>
+    <p class="auth-subtitle">This is the initial setup. Create the administrator account.</p>
+
+    <% if (locals.error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <form method="POST" action="/setup/1">
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" autofocus required>
+      </div>
+      <div class="field">
+        <label for="password">Password <span class="hint">(min 8 chars)</span></label>
+        <input type="password" id="password" name="password" autocomplete="new-password" required>
+      </div>
+      <div class="field">
+        <label for="password2">Confirm Password</label>
+        <input type="password" id="password2" name="password2" autocomplete="new-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">Create Account &amp; Continue →</button>
+    </form>
+  </div>
+</body>
+</html>

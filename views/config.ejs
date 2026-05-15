@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Config — BCookieSubs</title>
+   <%-  include('theme-vars.ejs') %>
+  <link rel="icon" type="image/png" href="/images/icon.png">
+  <link rel="stylesheet" href="/static/css/all.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="mobile-topbar">
+    <button class="hamburger-btn" id="hamburgerBtn" type="button" aria-label="Open menu">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+    <span class="mobile-topbar-title">BCookieSubs</span>
+  </header>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+<div class="app-shell">
+  <%- include('partials/sidebar') %>
+  <main class="main-content">
+    <% if (locals.toast && locals.msg) { %>
+      <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
+    <% } %>
+
+    <div class="page-header"><h1>Configuration</h1></div>
+
+    <div class="config-layout">
+      
+      <div style="display:flex;flex-direction:column;gap:1.5rem">
+
+        
+        <div class="card">
+          <div class="card-header"><h2>General</h2></div>
+          <form method="POST" action="/config">
+            <div class="field">
+              <label for="defaultChunkSize">Default Chunk Size <span class="hint">(lines per batch)</span> <i class="fa-solid fa-circle-info setting-info" data-tip="How many subtitle lines are grouped into one translation chunk by default."></i></label>
+              <input type="number" id="defaultChunkSize" name="defaultChunkSize" value="<%= config.defaultChunkSize %>" min="1" max="200" required>
+            </div>
+            <div class="field">
+              <label for="maxRetriesPerChunk">Max Retries Per Chunk <i class="fa-solid fa-circle-info setting-info" data-tip="How many times the worker retries a failed chunk or judge step before marking it failed."></i></label>
+              <input type="number" id="maxRetriesPerChunk" name="maxRetriesPerChunk" value="<%= config.maxRetriesPerChunk %>" min="0" max="20" required>
+            </div>
+            <div class="field">
+              <label for="sessionTimeoutMinutes">Session Timeout <span class="hint">(minutes)</span> <i class="fa-solid fa-circle-info setting-info" data-tip="How long a user session remains valid before requiring login again."></i></label>
+              <input type="number" id="sessionTimeoutMinutes" name="sessionTimeoutMinutes" value="<%= config.sessionTimeoutMinutes %>" min="5" required>
+            </div>
+            <div class="field field-checkbox">
+              <input type="checkbox" id="finishSingleSubtitleFirst" name="finishSingleSubtitleFirst" value="1" <%= config.finishSingleSubtitleFirst ? 'checked' : '' %>>
+              <label for="finishSingleSubtitleFirst">Finish one subtitle Job before starting the next <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, all chunks for one target language are completed before moving to the next target language."></i></label>
+            </div>
+            <div class="field field-checkbox">
+              <input type="checkbox" id="nameDetectionActive" name="nameDetectionActive" value="1" <%= config.nameDetectionActive ? 'checked' : '' %>>
+              <label for="nameDetectionActive">Enable AI name detection on upload <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, BCookieSubs uses a name formatter model to guess movie/show details from filenames."></i></label>
+            </div>
+            <div class="field field-checkbox">
+              <input type="checkbox" id="showPosters" <%= config.nameDetectionActive ? '' : 'disabled' %> name="showPosters" value="1" <%= config.showPosters ? 'checked' : '' %>>
+              <label for="showPosters">Show media posters <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, posters are shown on dashboard media cards when available. Requires AI name detection to be active."></i></label>
+            </div>
+            <div class="field field-checkbox">
+              <input type="checkbox" id="theMovieDbActive" <%= config.nameDetectionActive ? '' : 'disabled' %> name="theMovieDbActive" value="1" <%= config.theMovieDbActive ? 'checked' : '' %>>
+              <label for="theMovieDbActive">Enable The Movie DB integration <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, BCookieSubs can fetch metadata and posters from TheMovieDB if an API key is configured. Requires AI name detection to be active."></i></label>
+            </div>
+            <div class="field field-checkbox">
+              <input type="checkbox" id="scheduleConfigured" name="scheduleConfigured" value="1" <%= config.scheduleConfigured ? 'checked' : '' %>>
+              <label for="scheduleConfigured">Gate translation by schedule <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, translation only runs during configured schedule windows."></i></label>
+            </div>
+            <div class="field field-checkbox">
+              <input type="checkbox" id="scanLibraryPaths" name="scanLibraryPaths" value="1" <%= config.scanLibraryPaths ? 'checked' : '' %>>
+              <label for="scanLibraryPaths">Enable Library Path Scanning <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, BCookieSubs scans configured media folders for new subtitle and media files."></i></label>
+            </div>
+            <% if (config.scanLibraryPaths && (user.isAdmin || user.canManageRootLibraryPath)) { %>
+            <div class="field">
+              <label for="rootLibraryPath">Root library folder <i class="fa-solid fa-circle-info setting-info" data-tip="Can configure the root folder used to restrict library path browsing. When set, browsing and new library paths are confined to this folder."></i></label>
+              <div style="display:flex;gap:.4rem">
+                <input type="text" id="rootLibraryPath" name="rootLibraryPath" value="<%= config.rootLibraryPath || '' %>"
+                       placeholder="e.g. /mnt/media" style="flex:1">
+                <button type="button" class="btn btn-secondary" style="flex-shrink:0"
+                        onclick="openConfigDirBrowser()">Browse</button>
+              </div>
+              <div id="config-path-browser-anchor"></div>
+            </div>
+            <% } %>
+            <div class="field field-checkbox">
+              <input type="checkbox" id="clearLogs" name="clearLogs" value="1" <%= config.clearLogs ? 'checked' : '' %>
+                    onchange="document.getElementById('clearLogsRow').style.display=this.checked?'':'none'">
+              <label for="clearLogs">Auto-clear old logs <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, old logs are automatically deleted according to the retention period below."></i></label>
+            </div>
+            <div class="field" id="clearLogsRow" style="<%= config.clearLogs ? '' : 'display:none' %>">
+              <label for="clearLogsOlderThanDays">Delete logs older than <span class="hint">(days)</span> <i class="fa-solid fa-circle-info setting-info" data-tip="Logs older than this number of days are deleted when auto-clear is active."></i></label>
+              <input type="number" id="clearLogsOlderThanDays" name="clearLogsOlderThanDays"value="<%= config.clearLogsOlderThanDays %>" min="1" required>
+            </div>
+            <button type="submit" class="btn btn-primary" style="margin-top:.25rem; float: right;">Save Configuration</button>
+          </form>
+        </div>
+
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:1.5rem; height: 100%;">
+
+        <div class="card" style="height:70%;display:flex;flex-direction:column;">
+          <div class="card-header">
+            <h2>Default Target Languages</h2>
+            <small class="text-dim">Pre-selected on upload</small>
+          </div>
+
+          <% if (configLangs.length === 0) { %>
+            <p class="empty-state">No defaults set.</p>
+          <% } else { %>
+            <div style="display:flex;flex-direction:column;gap:.35rem;flex:1">
+              <% configLangs.forEach(function(cl, idx) { %>
+                <% var lang = languages.find(function(l){ return l.id === cl.languageId }) %>
+                <div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border)">
+                  <span class="text-dim" style="width:1.5rem;text-align:right;font-size:.8rem"><%= idx + 1 %>.</span>
+                  <span style="flex:1"><%= lang ? ((lang.flag || '') + ' ' + lang.name) : 'Unknown' %></span>
+
+                  <% if (user.isAdmin || user.canManageLanguages) { %>
+                    <form method="POST" action="/config/translationlangs/move/<%= cl.languageId %>" style="display:inline">
+                      <input type="hidden" name="direction" value="up">
+                      <button type="submit" class="btn btn-icon btn-sm" <%= idx === 0 ? 'disabled' : '' %> title="Move up">↑</button>
+                    </form>
+
+                    <form method="POST" action="/config/translationlangs/move/<%= cl.languageId %>" style="display:inline">
+                      <input type="hidden" name="direction" value="down">
+                      <button type="submit" class="btn btn-icon btn-sm" <%= idx === configLangs.length - 1 ? 'disabled' : '' %> title="Move down">↓</button>
+                    </form>
+
+                    <form method="POST" action="/config/translationlangs/remove/<%= cl.languageId %>" style="display:inline">
+                      <button type="submit" class="btn btn-sm btn-danger">✕</button>
+                    </form>
+                  <% } %>
+                </div>
+              <% }) %>
+            </div>
+          <% } %>
+
+          <% if ((user.isAdmin || user.canManageLanguages) && languages.length > 0) { %>
+            <form
+              method="POST"
+              action="/config/translationlangs/add"
+              style="
+                display:flex;
+                gap:.5rem;
+                align-items:flex-end;
+                margin-top:auto;
+                padding-top:.75rem;
+                <%= configLangs.length === 0 ? 'border-top:1px solid var(--border);' : '' %>
+              "
+            >
+              <div class="field" style="flex:1;margin:0">
+                <label>Add default language</label>
+                <select name="languageId">
+                  <% languages.forEach(function(l) { %>
+                    <option value="<%= l.id %>"><%= l.flag ? l.flag + ' ' : '' %><%= l.name %></option>
+                  <% }) %>
+                </select>
+              </div>
+
+              <button type="submit" class="btn btn-primary">Add</button>
+            </form>
+          <% } %>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Theme</h2>
+          </div>
+
+          
+          <form method="POST" action="/config/theme/select" style="display:flex;gap:.5rem;align-items:flex-end;margin-bottom:1rem">
+            <div class="field" style="flex:1;margin-bottom:0">
+              <label for="themeId">Active theme <i class="fa-solid fa-circle-info setting-info" data-tip="Controls the active color theme used by the interface. Custom themes can be created below."></i></label>
+              <select id="themeId" name="themeId">
+                <% themes.forEach(function(t) { %>
+                  <option value="<%= t.id %>" <%= t.id === theme.id ? 'selected' : '' %>><%= t.name %><%= !t.isPublic ? ' ✏' : '' %></option>
+                <% }) %>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary" style="flex-shrink:0">Apply</button>
+          </form>
+
+          
+          <% var userThemes = themes.filter(function(t){ return !t.isPublic }) %>
+          <% if (userThemes.length > 0) { %>
+            <div style="display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:1rem">
+              <% userThemes.forEach(function(t) { %>
+                <form method="POST" action="/config/theme/delete/<%= t.id %>" onsubmit="return confirm('Delete theme \'<%= t.name %>\'?')">
+                  <button type="submit" class="btn btn-sm btn-danger"><%= t.name %> ✕</button>
+                </form>
+              <% }) %>
+            </div>
+          <% } %>
+
+          
+          <details>
+            <summary style="cursor:pointer;font-size:.85rem;font-weight:600;color:var(--text-dim);margin-bottom:.75rem">+ Create custom theme</summary>
+            <form method="POST" action="/config/theme/create" style="margin-top:.75rem">
+              <div class="field">
+                <label>Theme name</label>
+                <input type="text" name="name" required placeholder="My Theme" value="<%= theme.name %> (copy)">
+              </div>
+              <div class="color-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem 1rem">
+                <% var colorFields = [
+                  ['bg','Background'],['surface','Surface'],['surface2','Surface 2'],['surface3','Surface 3'],['borderColor','Border'],
+                  ['textColor','Text'],['textDim','Text Dim'],['textHint','Text Hint'],
+                  ['accent','Accent'],['accentDim','Accent Dim'],
+                  ['success','Success'],['successDim','Success Dim'],
+                  ['warning','Warning'],['warningDim','Warning Dim'],
+                  ['error','Error'],['errorDim','Error Dim'],['infoDim','Info Dim']
+                ] %>
+                <% colorFields.forEach(function(f) { %>
+                  <div class="field" style="margin-bottom:.35rem">
+                    <label style="display:flex;justify-content:space-between"><%= f[1] %> <span class="text-hint" style="font-size:.75rem;font-weight:400"><%= f[0] %></span></label>
+                    <div style="display:flex;gap:.4rem;align-items:center">
+                      <input type="color" name="<%= f[0] %>" value="<%= theme[f[0]] %>" style="width:2.2rem;height:2rem;padding:.1rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);cursor:pointer;flex-shrink:0">
+                      <input type="text" name="_<%= f[0] %>_hex" value="<%= theme[f[0]] %>" placeholder="#000000" style="flex:1;font-family:var(--font-mono);font-size:.8rem" oninput="syncColor(this,'<%= f[0] %>')">
+                    </div>
+                  </div>
+                <% }) %>
+              </div>
+              <div style="margin-top:.75rem">
+                <button type="submit" class="btn btn-primary">Create & Apply</button>
+              </div>
+            </form>
+          </details>
+        </div>
+
+      </div>
+    </div>
+
+    <% if (canSeeSecrets) { %>
+    <div class="card" style="margin-top: 1.5rem;">
+      <div class="card-header">
+        <h2>Secrets</h2>
+        <small class="text-dim">Manage encrypted application secrets</small>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:1rem;">
+        <% keys.forEach(function(key) { %>
+          <% 
+            var existingSecret = secrets
+              ? secrets.find(function(s) { return s.secretName === key.secretName })
+              : null
+
+            var hasSecret = !!existingSecret
+            var secretValue = hasSecret && existingSecret.value ? existingSecret.value : ''
+          %>
+
+          <div
+            class="secret-row"
+            style="
+              border:1px solid var(--border);
+              border-radius:12px;
+              padding:1rem;
+              display:flex;
+              flex-direction:column;
+              gap:.85rem;
+            "
+          >
+            <div
+              style="
+                display:flex;
+                justify-content:space-between;
+                align-items:flex-start;
+                gap:1rem;
+                flex-wrap:wrap;
+              "
+            >
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:700;font-size:1rem;"><%= key.displayName %></div>
+                <div class="text-dim" style="margin-top:.35rem;">
+                  <%= key.description %>
+                </div>
+              </div>
+
+              <div
+                style="
+                  display:flex;
+                  align-items:center;
+                  gap:.5rem;
+                  flex-wrap:wrap;
+                  min-width:0;
+                  justify-content:flex-end;
+                "
+              >
+                <div style="display:flex;align-items:center;gap:.5rem;min-width:0;">
+                  <input
+                    type="password"
+                    value="<%= hasSecret ? secretValue : '' %>"
+                    readonly
+                    data-secret-input="<%= key.secretName %>"
+                    placeholder="<%= hasSecret ? '' : 'No secret set' %>"
+                    style="
+                      width:min(310px,100%);
+                      padding:.55rem .75rem;
+                      border:1px solid var(--border);
+                      border-radius:8px;
+                      background:var(--panel);
+                      color:var(--text);
+                    "
+                  />
+
+                  <% if (hasSecret) { %>
+                    <button
+                      type="button"
+                      class="btn btn-icon"
+                      title="Show / hide"
+                      data-secret-toggle="<%= key.secretName %>"
+                    >
+                      Show
+                    </button>
+                  <% } %>
+                </div>
+
+                <% if (hasSecret) { %>
+                  <button
+                    type="button"
+                    class="btn btn-icon"
+                    title="Edit"
+                    onclick="toggleSecretForm('<%= key.secretName %>')"
+                  >
+                    Edit
+                  </button>
+
+                  <form
+                    method="POST"
+                    action="/config/secrets/delete/<%= key.secretName %>"
+                    style="display:inline"
+                    onsubmit="return confirm('Delete this secret?')"
+                  >
+                    <button type="submit" class="btn btn-icon btn-danger" title="Delete">
+                      Delete
+                    </button>
+                  </form>
+                <% } else { %>
+                  <button
+                    type="button"
+                    class="btn btn-icon btn-primary"
+                    title="Add"
+                    onclick="toggleSecretForm('<%= key.secretName %>')"
+                  >
+                    Add
+                  </button>
+                <% } %>
+              </div>
+            </div>
+
+            <div
+              id="secret-form-<%= key.secretName %>"
+              style="display:none;padding-top:.25rem;"
+            >
+              <form
+                method="POST"
+                action="/config/secrets/set"
+                style="
+                  display:flex;
+                  flex-direction:column;
+                  gap:.75rem;
+                  border-top:1px solid var(--border);
+                  padding-top:.9rem;
+                "
+              >
+                <input type="hidden" name="secretName" value="<%= key.secretName %>" />
+
+                <div class="field" style="margin:0;">
+                  <label>
+                    <%= hasSecret ? 'New value for ' + key.displayName : 'Value for ' + key.displayName %>
+                  </label>
+                  <input
+                    type="password"
+                    name="secretValue"
+                    autocomplete="off"
+                    placeholder="<%= hasSecret ? 'Enter a new value' : 'Enter secret value' %>"
+                    style="width:100%;"
+                  />
+                </div>
+
+                <div style="display:flex;gap:.5rem;justify-content:flex-end;flex-wrap:wrap;">
+                  <button
+                    type="button"
+                    class="btn"
+                    onclick="toggleSecretForm('<%= key.secretName %>')"
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" class="btn btn-primary">
+                    <%= hasSecret ? 'Save changes' : 'Add secret' %>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+    </div>
+    <% } %>
+  </main>
+</div>
+
+<div id="config-dir-browser-panel" style="display:none;margin-top:.5rem">
+  <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface-2);font-size:.85rem">
+    <div style="display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border-bottom:1px solid var(--border);background:var(--surface-3);flex-wrap:wrap;min-height:2.4rem">
+      <button type="button" id="config-dir-up-btn" class="btn btn-icon btn-sm" style="flex-shrink:0;padding:.2rem .45rem;font-size:.8rem" title="Go up">↑</button>
+      <span id="config-dir-current-path" class="text-dim" style="font-size:.78rem;word-break:break-all;flex:1;min-width:0"></span>
+    </div>
+    <div id="config-dir-list" style="max-height:200px;overflow-y:auto;display:flex;flex-direction:column">
+      <div class="text-dim" style="padding:.5rem .75rem;font-size:.8rem">Loading…</div>
+    </div>
+    <div style="padding:.5rem .75rem;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:.4rem">
+      <button type="button" id="config-dir-select-btn" class="btn btn-sm btn-primary">Select this folder</button>
+      <button type="button" class="btn btn-sm btn-secondary" onclick="closeConfigDirBrowser()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+  var _configBrowserCurrentPath = '/'
+
+  function openConfigDirBrowser() {
+    var anchor = document.getElementById('config-path-browser-anchor')
+    var panel = document.getElementById('config-dir-browser-panel')
+    anchor.appendChild(panel)
+    panel.style.display = ''
+    var inputVal = document.getElementById('rootLibraryPath').value.trim()
+    configBrowseDir(inputVal || '/')
+  }
+
+  function closeConfigDirBrowser() {
+    document.getElementById('config-dir-browser-panel').style.display = 'none'
+  }
+
+  function configBrowseDir(dirPath) {
+    _configBrowserCurrentPath = dirPath
+    document.getElementById('config-dir-current-path').textContent = dirPath
+    document.getElementById('config-dir-list').innerHTML =
+      '<div class="text-dim" style="padding:.5rem .75rem;font-size:.8rem">Loading…</div>'
+
+    fetch('/library-paths/browse?path=' + encodeURIComponent(dirPath))
+      .then(function(r) { return r.json() })
+      .then(function(data) {
+        _configBrowserCurrentPath = data.path
+        document.getElementById('config-dir-current-path').textContent = data.path
+
+        var upBtn = document.getElementById('config-dir-up-btn')
+        upBtn.disabled = !data.parent
+        upBtn.onclick = data.parent ? function() { configBrowseDir(data.parent) } : null
+
+        var list = document.getElementById('config-dir-list')
+        if (data.error) {
+          list.innerHTML = '<div style="padding:.5rem .75rem;color:var(--error);font-size:.82rem">' + data.error + '</div>'
+          return
+        }
+        if (data.dirs.length === 0) {
+          list.innerHTML = '<div class="text-dim" style="padding:.5rem .75rem;font-size:.82rem">No subdirectories</div>'
+          return
+        }
+        list.innerHTML = ''
+        data.dirs.forEach(function(d) {
+          var btn = document.createElement('button')
+          btn.type = 'button'
+          btn.style.cssText = 'display:flex;align-items:center;gap:.5rem;width:100%;padding:.4rem .75rem;background:none;border:none;border-bottom:1px solid var(--border);text-align:left;cursor:pointer;color:var(--text);font-size:.85rem'
+          btn.innerHTML = '<i class="fa-solid fa-folder" style="color:var(--accent);font-size:.9rem;flex-shrink:0"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + d.name + '</span>'
+          btn.addEventListener('click', function() { configBrowseDir(d.fullPath) })
+          list.appendChild(btn)
+        })
+        var last = list.lastElementChild
+        if (last) last.style.borderBottom = 'none'
+      })
+      .catch(function() {
+        document.getElementById('config-dir-list').innerHTML =
+          '<div style="padding:.5rem .75rem;color:var(--error);font-size:.82rem">Error loading directory</div>'
+      })
+  }
+
+  document.getElementById('config-dir-select-btn').addEventListener('click', function() {
+    document.getElementById('rootLibraryPath').value = _configBrowserCurrentPath
+    closeConfigDirBrowser()
+  })
+
+  document.getElementById('config-dir-up-btn').disabled = true
+
+  function syncColor(hexInput, fieldName) {
+    var val = hexInput.value.trim()
+    var colorInput = hexInput.previousElementSibling
+    if (colorInput && /^#[0-9a-fA-F]{6}$/.test(val)) {
+      colorInput.value = val
+      // sync the actual hidden form field
+      var form = hexInput.closest('form')
+      if (form) {
+        var real = form.querySelector('[name="' + fieldName + '"]')
+        if (real) real.value = val
+      }
+    }
+  }
+
+  // Keep hex text in sync when color picker changes
+  document.querySelectorAll('input[type="color"]').forEach(function(picker) {
+    picker.addEventListener('input', function() {
+      var hexInput = picker.nextElementSibling
+      if (hexInput) hexInput.value = picker.value
+      // keep the actual field value updated
+      picker.value = picker.value
+    })
+  })
+
+  // On form submit, copy text hex values into the color fields
+  var themeCreateForm = document.querySelector('form[action="/config/theme/create"]')
+  if (themeCreateForm) {
+    themeCreateForm.addEventListener('submit', function() {
+      themeCreateForm.querySelectorAll('input[type="text"][name^="_"][name$="_hex"]').forEach(function(hexEl) {
+        var fieldName = hexEl.name.replace(/^_/, '').replace(/_hex$/, '')
+        var colorEl = themeCreateForm.querySelector('[name="' + fieldName + '"]')
+        if (colorEl && /^#[0-9a-fA-F]{6}$/.test(hexEl.value.trim())) {
+          colorEl.value = hexEl.value.trim()
+        }
+      })
+    })
+  }
+
+  function toggleSecretForm(secretName) {
+    var el = document.getElementById("secret-form-" + secretName)
+    if (!el) return
+    el.style.display = el.style.display === "none" || !el.style.display ? "block" : "none"
+  }
+
+  document.querySelectorAll("[data-secret-toggle]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var secretName = btn.getAttribute("data-secret-toggle")
+      var input = document.querySelector('[data-secret-input="' + secretName + '"]')
+      if (!input) return
+
+      input.type = input.type === "password" ? "text" : "password"
+    })
+  })
+</script>
+</body>
+</html>

@@ -1,0 +1,889 @@
+import Database from "better-sqlite3"
+import {
+  DBUser,
+  DBLanguage,
+  DBMediaItem,
+  DBSubtitle,
+  DBSubtitleJob,
+  DBSubtitleChunk,
+  DBSubtitleChunkCandidate,
+} from "../types/dbTypes"
+import { DefaultResponse, FinishedSubtitle } from "../types/modelTypes"
+import SrtParser2 from "srt-parser-2"
+import { createLog } from "./logRepository"
+import { userHasPermission } from "./userRepository"
+import { getLanguageById, getLanguages, getConfigTranslationLanguageByLanguageId } from "./languageRepository"
+import { getFileHash, parseLLMResponse } from "./shared"
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  if (size <= 0) return [items.slice()]
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
+
+export const getSubtitleById = (db: Database.Database, id: number): DBSubtitle | null => {
+  return (
+    (db.prepare(`SELECT * FROM subtitle WHERE id = ? AND deletedAt IS NULL`).get(id) as DBSubtitle | undefined) ?? null
+  )
+}
+
+export const getSubtitleByFileHash = (db: Database.Database, fileHash: string): DBSubtitle | null => {
+  return (
+    (db.prepare(`SELECT * FROM subtitle WHERE originalFileHash = ? AND deletedAt IS NULL`).get(fileHash) as
+      | DBSubtitle
+      | undefined) ?? null
+  )
+}
+
+export const getSubtitleJobById = (db: Database.Database, id: number): DBSubtitleJob | null => {
+  return (
+    (db.prepare(`SELECT * FROM subtitleJob WHERE id = ? AND deletedAt IS NULL`).get(id) as DBSubtitleJob | undefined) ??
+    null
+  )
+}
+
+export const getSubtitleJobsBySubtitleId = (db: Database.Database, subtitleId: number): DBSubtitleJob[] => {
+  return db
+    .prepare(`SELECT * FROM subtitleJob WHERE subtitleId = ? AND deletedAt IS NULL ORDER BY orderNumber ASC`)
+    .all(subtitleId) as DBSubtitleJob[]
+}
+
+export const getChunksByJobId = (db: Database.Database, jobId: number): DBSubtitleChunk[] => {
+  return db
+    .prepare(`SELECT * FROM subtitleChunk WHERE subtitleJobId = ? ORDER BY chunkIndex ASC`)
+    .all(jobId) as DBSubtitleChunk[]
+}
+
+export const getCandidatesByChunkId = (db: Database.Database, chunkId: number): DBSubtitleChunkCandidate[] => {
+  return db
+    .prepare(`SELECT * FROM subtitleChunkCandidate WHERE subtitleChunkId = ? ORDER BY createdAt ASC`)
+    .all(chunkId) as DBSubtitleChunkCandidate[]
+}
+
+export const getNextOrderNumberForSubtitle = (db: Database.Database): number => {
+  const result = db.prepare(`SELECT MAX(orderNumber) as maxOrder FROM subtitle WHERE deletedAt IS NULL`).get() as {
+    maxOrder: number | null
+  }
+  return (result.maxOrder ?? 0) + 1
+}
+
+export const createSubtitleTask = (
+  db: Database.Database,
+  user: DBUser,
+  mediaItemId: number | null,
+  sourceLangId: number,
+  targetLangIds: number[],
+  rawContent: string,
+  chunkSetting: number,
+  season: number | null,
+  episode: number | null,
+  srtFileName: string,
+  displayName: string | null = null,
+  source: string | null = null,
+  sourcePath: string | null = null,
+  mediaPath: string | null = null,
+  libraryPathItemId: number | null = null,
+): DefaultResponse => {
+  const permission = userHasPermission(db, user.id, "canAddSubtitles")
+  if (!permission.hasPermission) return { success: false, msg: "User does not have permission to add subtitles" }
+
+  const getLang = getLanguageById(db, sourceLangId)
+  if (!getLang) return { success: false, msg: "Source language not found" }
+
+    const getLangTargetInOrder = targetLangIds
+    .map((id, index) => {
+      const lang = getLanguageById(db, id)
+      if (!lang) return null
+      const configLang = getConfigTranslationLanguageByLanguageId(db, id)
+      return { lang, originalIndex: index, orderNumber: configLang?.orderNumber ?? null }
+    })
+    .filter((item): item is { lang: DBLanguage; originalIndex: number; orderNumber: number | null } => item !== null)
+    .sort((a, b) => {
+      if (a.orderNumber !== null && b.orderNumber === null) return -1
+      if (a.orderNumber === null && b.orderNumber !== null) return 1
+      if (a.orderNumber !== null && b.orderNumber !== null) return a.orderNumber - b.orderNumber
+      return a.originalIndex - b.originalIndex
+    })
+    .map((item) => item.lang)
+
+  const srtParser = new SrtParser2()
+  const parsedSubtitles = srtParser.fromSrt(rawContent)
+
+  if (parsedSubtitles.length === 0) {
+    return { success: false, msg: "Could not parse SRT file — file may be empty or malformed" }
+  }
+
+  const originalFileHash = getFileHash(rawContent)
+  const existingSubtitle = getSubtitleByFileHash(db, originalFileHash)
+
+  if (existingSubtitle) {
+        const existingJobs = getSubtitleJobsBySubtitleId(db, existingSubtitle.id)
+    const existingLangIds = new Set(existingJobs.map((j) => j.targetLangId))
+    const missingLangs = getLangTargetInOrder.filter((l) => !existingLangIds.has(l.id))
+
+    if (missingLangs.length === 0) {
+      return { success: true, msg: "Subtitle already exists with all requested target languages" }
+    }
+
+    const chunks = chunkArray(parsedSubtitles, chunkSetting)
+    const maxOrder = existingJobs.reduce((max, j) => (j.orderNumber > max ? j.orderNumber : max), -1)
+
+    const transaction = db.transaction(() => {
+      missingLangs.forEach((lang, index) => {
+        const jobResult = db
+          .prepare(
+            `INSERT INTO subtitleJob (subtitleId, userId, targetLangId, chunkSetting, chunkSizeTotal, season, episode, orderNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            existingSubtitle.id,
+            user.id,
+            lang.id,
+            chunkSetting,
+            chunks.length,
+            season,
+            episode,
+            maxOrder + 1 + index,
+          )
+
+        const subtitleJobId = jobResult.lastInsertRowid as number
+
+        chunks.forEach((chunk, chunkIndex) => {
+          db.prepare(
+            `INSERT INTO subtitleChunk (subtitleId, subtitleJobId, targetLangId, chunkIndex, srtIdFrom, srtIdTo, chunkTextRaw) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          ).run(
+            existingSubtitle.id,
+            subtitleJobId,
+            lang.id,
+            chunkIndex,
+            parseInt(chunk[0].id),
+            parseInt(chunk[chunk.length - 1].id),
+            chunk.map((c) => c.text).join("\n"),
+          )
+        })
+      })
+    })
+    transaction()
+
+    createLog(db, "info", "subtitle", existingSubtitle.id, "Added missing jobs for re-uploaded subtitle", {
+      addedLangs: missingLangs.map((l) => l.name),
+    })
+    return { success: true, msg: `Added ${missingLangs.length} new language job(s) to existing subtitle` }
+  }
+
+    const nextOrderNumber = getNextOrderNumberForSubtitle(db)
+  const chunks = chunkArray(parsedSubtitles, chunkSetting)
+
+  const transaction = db.transaction(() => {
+    const subtitleResult = db
+      .prepare(
+        `INSERT INTO subtitle (userId, sourceLangId, mediaItemId, libraryPathItem, name, originalFileHash, originalTextSRTName, originalText, orderNumber, source, sourcePath, mediaPath) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        user.id,
+        sourceLangId,
+        mediaItemId,
+        libraryPathItemId,
+        displayName ?? srtFileName,
+        originalFileHash,
+        srtFileName,
+        rawContent,
+        nextOrderNumber,
+        source,
+        sourcePath,
+        mediaPath,
+      )
+
+    const subtitleId = subtitleResult.lastInsertRowid as number
+
+    getLangTargetInOrder.forEach((lang, index) => {
+      const jobResult = db
+        .prepare(
+          `INSERT INTO subtitleJob (subtitleId, userId, targetLangId, chunkSetting, chunkSizeTotal, season, episode, orderNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(subtitleId, user.id, lang.id, chunkSetting, chunks.length, season, episode, index + 1)
+
+      const subtitleJobId = jobResult.lastInsertRowid as number
+
+      chunks.forEach((chunk, chunkIndex) => {
+        db.prepare(
+          `INSERT INTO subtitleChunk (subtitleId, subtitleJobId, targetLangId, chunkIndex, srtIdFrom, srtIdTo, chunkTextRaw) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          subtitleId,
+          subtitleJobId,
+          lang.id,
+          chunkIndex,
+          parseInt(chunk[0].id),
+          parseInt(chunk[chunk.length - 1].id),
+          JSON.stringify(chunk),
+        )
+      })
+    })
+  })
+  transaction()
+
+  createLog(db, "info", "subtitle", null, "Created subtitle task", {
+    name: srtFileName,
+    langs: getLangTargetInOrder.map((l) => l.name),
+  })
+  return { success: true, msg: "Subtitle task created successfully" }
+}
+
+export const cancelSubtitle = (db: Database.Database, user: DBUser, subtitleId: number): DefaultResponse => {
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canStopSubtitles")
+  if (!perm) return { success: false, msg: "User does not have permission to stop subtitles" }
+
+  const subtitle = getSubtitleById(db, subtitleId)
+  if (!subtitle) return { success: false, msg: "Subtitle not found" }
+  if (subtitle.status === "completed") return { success: false, msg: "Cannot cancel a completed subtitle" }
+
+  db.prepare(
+    `UPDATE subtitle SET status = 'cancelled', cancelledAt = datetime('now'), cancelledByUserId = ?, updatedAt = datetime('now') WHERE id = ?`,
+  ).run(user.id, subtitleId)
+
+  db.prepare(
+    `UPDATE subtitleJob SET status = 'cancelled', cancelledAt = datetime('now'), cancelledByUserId = ?, updatedAt = datetime('now') WHERE subtitleId = ? AND status NOT IN ('completed', 'cancelled')`,
+  ).run(user.id, subtitleId)
+
+  db.prepare(
+    `UPDATE subtitleChunk SET status = 'cancelled', updatedAt = datetime('now') WHERE subtitleId = ? AND status NOT IN ('completed', 'cancelled')`,
+  ).run(subtitleId)
+
+  createLog(db, "info", "subtitle", subtitleId, "Cancelled subtitle", { cancelledBy: user.id })
+  return { success: true, msg: null }
+}
+
+export const cancelSubtitleJob = (db: Database.Database, user: DBUser, jobId: number): DefaultResponse => {
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canStopSubtitles")
+  if (!perm) return { success: false, msg: "Permission denied" }
+
+  const job = getSubtitleJobById(db, jobId)
+  if (!job) return { success: false, msg: "Job not found" }
+  if (job.status === "completed") return { success: false, msg: "Cannot cancel a completed job" }
+  if (job.status === "cancelled") return { success: false, msg: "Job already cancelled" }
+
+  db.prepare(
+    `UPDATE subtitleJob SET status = 'cancelled', cancelledAt = datetime('now'), cancelledByUserId = ?, updatedAt = datetime('now') WHERE id = ?`,
+  ).run(user.id, jobId)
+  db.prepare(
+    `UPDATE subtitleChunk SET status = 'cancelled', updatedAt = datetime('now') WHERE subtitleJobId = ? AND status NOT IN ('completed', 'cancelled')`,
+  ).run(jobId)
+
+    const remaining = db
+    .prepare(
+      `SELECT COUNT(*) as cnt FROM subtitleJob WHERE subtitleId = ? AND deletedAt IS NULL AND status NOT IN ('completed', 'cancelled')`,
+    )
+    .get(job.subtitleId) as { cnt: number }
+  if (remaining.cnt === 0) {
+    db.prepare(
+      `UPDATE subtitle SET status = 'cancelled', cancelledAt = datetime('now'), cancelledByUserId = ?, updatedAt = datetime('now') WHERE id = ?`,
+    ).run(user.id, job.subtitleId)
+  }
+
+  createLog(db, "info", "subtitle", job.subtitleId, "Cancelled subtitle job", { jobId, cancelledBy: user.id })
+  return { success: true, msg: null }
+}
+
+export const softDeleteSubtitle = (db: Database.Database, user: DBUser, subtitleId: number): DefaultResponse => {
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canDeleteSubtitles")
+  if (!perm) return { success: false, msg: "User does not have permission to delete subtitles" }
+
+  const subtitle = getSubtitleById(db, subtitleId)
+  if (!subtitle) return { success: false, msg: "Subtitle not found" }
+
+  db.prepare(
+    `UPDATE subtitle SET deletedAt = datetime('now'), deletedByUserId = ?, updatedAt = datetime('now') WHERE id = ?`,
+  ).run(user.id, subtitleId)
+
+  createLog(db, "info", "subtitle", subtitleId, "Deleted subtitle", { deletedBy: user.id })
+  return { success: true, msg: null }
+}
+
+export const moveSubtitleInQueue = (
+  db: Database.Database,
+  user: DBUser,
+  subtitleId: number,
+  direction: "up" | "down",
+): DefaultResponse => {
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canAddSubtitles")
+  if (!perm) return { success: false, msg: "User does not have permission to manage subtitles" }
+
+  const subtitle = getSubtitleById(db, subtitleId)
+  if (!subtitle) return { success: false, msg: "Subtitle not found" }
+
+  const others = db
+    .prepare(
+      `SELECT * FROM subtitle WHERE deletedAt IS NULL AND status NOT IN ('completed','cancelled','failed') ORDER BY orderNumber ASC`,
+    )
+    .all() as DBSubtitle[]
+
+  const idx = others.findIndex((s) => s.id === subtitleId)
+  if (idx === -1) return { success: false, msg: "Subtitle not in movable queue" }
+
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1
+  if (swapIdx < 0 || swapIdx >= others.length) return { success: true, msg: null }
+
+  const a = others[idx]
+  const b = others[swapIdx]
+
+  db.prepare(`UPDATE subtitle SET orderNumber = ?, updatedAt = datetime('now') WHERE id = ?`).run(b.orderNumber, a.id)
+  db.prepare(`UPDATE subtitle SET orderNumber = ?, updatedAt = datetime('now') WHERE id = ?`).run(a.orderNumber, b.id)
+
+  return { success: true, msg: null }
+}
+
+export const moveSeriesInQueue = (
+  db: Database.Database,
+  user: DBUser,
+  mediaItemId: number,
+  direction: "up" | "down",
+): DefaultResponse => {
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canAddSubtitles")
+  if (!perm) return { success: false, msg: "User does not have permission to manage subtitles" }
+
+  const all = db
+    .prepare(
+      `SELECT * FROM subtitle WHERE deletedAt IS NULL AND status NOT IN ('completed','cancelled','failed') ORDER BY orderNumber ASC`,
+    )
+    .all() as DBSubtitle[]
+
+  if (all.length === 0) return { success: true, msg: null }
+
+    const blockMap = new Map<string, { mediaItemId: number | null; subs: DBSubtitle[] }>()
+  const blockOrder: string[] = []
+  for (const s of all) {
+    const key = s.mediaItemId != null ? `m${s.mediaItemId}` : `s${s.id}`
+    if (!blockMap.has(key)) {
+      blockMap.set(key, { mediaItemId: s.mediaItemId, subs: [] })
+      blockOrder.push(key)
+    }
+    blockMap.get(key)!.subs.push(s)
+  }
+
+  const idx = blockOrder.findIndex((k) => blockMap.get(k)!.mediaItemId === mediaItemId)
+  if (idx === -1) return { success: false, msg: "Series not found in active queue" }
+
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1
+  if (swapIdx < 0 || swapIdx >= blockOrder.length)
+    return { success: true, msg: null }
+
+  ;[blockOrder[idx], blockOrder[swapIdx]] = [blockOrder[swapIdx], blockOrder[idx]]
+
+  const update = db.prepare(`UPDATE subtitle SET orderNumber = ?, updatedAt = datetime('now') WHERE id = ?`)
+  let order = 1
+  db.transaction(() => {
+    for (const k of blockOrder) {
+      for (const s of blockMap.get(k)!.subs) {
+        update.run(order++, s.id)
+      }
+    }
+  })()
+
+  return { success: true, msg: null }
+}
+
+export const getDashboardData = (db: Database.Database) => {
+  const subtitles = db
+    .prepare(`SELECT * FROM subtitle WHERE deletedAt IS NULL and hide = 0 ORDER BY orderNumber ASC, createdAt DESC`)
+    .all() as DBSubtitle[]
+
+  const jobs = db
+    .prepare(`SELECT * FROM subtitleJob WHERE deletedAt IS NULL ORDER BY orderNumber ASC`)
+    .all() as DBSubtitleJob[]
+
+  const mediaItems = db.prepare(`SELECT * FROM mediaItem ORDER BY title ASC`).all() as DBMediaItem[]
+
+  const languages = getLanguages(db)
+  const languageMap = Object.fromEntries(languages.map((l) => [l.id, l]))
+
+  const chunkCounts = db
+    .prepare(
+      `SELECT subtitleJobId,
+              COUNT(*) AS total,
+              SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS done,
+              SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+       FROM subtitleChunk GROUP BY subtitleJobId`,
+    )
+    .all() as { subtitleJobId: number; total: number; done: number; failed: number }[]
+  const chunkCountMap = Object.fromEntries(chunkCounts.map((c) => [c.subtitleJobId, c]))
+
+  const enrichedSubtitles = subtitles.map((s) => {
+    const sJobs = jobs.filter((j) => j.subtitleId === s.id && j.status !== "cancelled")
+    const firstJob = sJobs[0]
+    const targets = sJobs.map((j) => {
+      const counts = chunkCountMap[j.id] ?? { total: 0, done: 0, failed: 0 }
+      return {
+        targetLangId: j.targetLangId,
+        total: counts.total,
+        done: counts.done,
+        failed: counts.failed,
+        jobId: j.id,
+        jobStatus: j.status,
+        hasTranslation: !!j.translatedText,
+      }
+    })
+    const mediaItem = mediaItems.find((mi) => mi.id === s.mediaItemId)
+    return {
+      ...s,
+      season: firstJob?.season ?? null,
+      episode: firstJob?.episode ?? null,
+      targets,
+      mediaItemTitle: mediaItem?.title ?? null,
+    }
+  })
+
+  return { subtitles: enrichedSubtitles, jobs, mediaItems, languageMap }
+}
+
+export const getFinishedSubtitles = (db: Database.Database) => {
+  return db
+    .prepare(
+      `SELECT
+        s.id as subtitleId,
+        sj.id as jobId,
+        s.name as subtitleName,
+        l.name as targetLang,
+        srcL.name as sourceLang,
+        sj.season as season,
+        sj.episode as episode,
+        m.posterBase64 as posterBase64,
+        m.year as year,
+        sj.translatedText,
+        sj.finishedAt as finishedAt,
+        (SELECT sc.startedAt FROM subtitleChunk sc WHERE sc.subtitleJobId = sj.id ORDER BY sc.chunkIndex ASC LIMIT 1) as earliestChunkStartedAt
+      FROM subtitleJob sj
+      INNER JOIN subtitle s ON sj.subtitleId = s.id
+      INNER JOIN language l ON sj.targetLangId = l.id
+      INNER JOIN language srcL ON s.sourceLangId = srcL.id
+      INNER JOIN mediaItem m ON s.mediaItemId = m.id
+      WHERE sj.status = 'completed'
+      ORDER BY sj.finishedAt ASC`,
+    )
+    .all() as FinishedSubtitle[]
+}
+
+export const getSubtitlesWithLang = (db: Database.Database) => {
+  return db
+    .prepare(
+      `SELECT s.id,
+              COALESCE(mi.title, s.name) as displayName,
+              s.name as fileName,
+              l.name as sourceLangName,
+              (SELECT MIN(sj2.season) FROM subtitleJob sj2 WHERE sj2.subtitleId = s.id) as season,
+              (SELECT MIN(sj2.episode) FROM subtitleJob sj2 WHERE sj2.subtitleId = s.id) as episode,
+              s.createdAt
+       FROM subtitle s
+       INNER JOIN language l ON s.sourceLangId = l.id
+       LEFT JOIN mediaItem mi ON s.mediaItemId = mi.id
+       WHERE s.deletedAt IS NULL
+         AND EXISTS (
+           SELECT 1 FROM subtitleJob sj
+           INNER JOIN subtitleChunk sc ON sc.subtitleJobId = sj.id
+           WHERE sj.subtitleId = s.id AND sc.status = 'completed'
+         )
+       ORDER BY s.createdAt DESC`,
+    )
+    .all() as {
+    id: number
+    displayName: string
+    fileName: string
+    sourceLangName: string
+    season: number | null
+    episode: number | null
+    createdAt: string
+  }[]
+}
+
+export const reorderSubtitles = (db: Database.Database, user: DBUser, orderedIds: number[]): DefaultResponse => {
+  const { hasPermission } = userHasPermission(db, user.id, "canAddSubtitles")
+  if (!hasPermission) return { success: false, msg: "User does not have permission to manage subtitles" }
+  const stmt = db.prepare(`UPDATE subtitle SET orderNumber = ?, updatedAt = datetime('now') WHERE id = ?`)
+  const run = db.transaction(() => orderedIds.forEach((id, idx) => stmt.run((idx + 1) * 10, id)))
+  run()
+  return { success: true, msg: null }
+}
+
+export const getJobChunkStatsData = (db: Database.Database, jobId: number) => {
+  return db
+    .prepare(
+      `SELECT
+         sc.id,
+         sc.chunkIndex,
+         sc.status,
+         sc.judgeReason,
+         sc.durationMs,
+         sc.retryCount,
+         (SELECT COUNT(*) FROM subtitleChunkCandidate c2 WHERE c2.subtitleChunkId = sc.id AND c2.status = 'completed') as validCandidateCount,
+         (SELECT COUNT(*) FROM subtitleChunkCandidate c3 WHERE c3.subtitleChunkId = sc.id) as totalCandidateCount,
+         m.name as selectedModelName,
+         p.name as selectedPromptName,
+         pv.version as selectedPromptVersion
+       FROM subtitleChunk sc
+       LEFT JOIN subtitleChunkCandidate scc ON sc.selectedCandidateId = scc.id
+       LEFT JOIN model m ON scc.modelId = m.id
+       LEFT JOIN promptVersion pv ON scc.promptVersionId = pv.id
+       LEFT JOIN prompt p ON pv.promptId = p.id
+       WHERE sc.subtitleJobId = ?
+       ORDER BY sc.chunkIndex ASC`,
+    )
+    .all(jobId) as {
+    id: number
+    chunkIndex: number
+    status: string
+    judgeReason: string | null
+    durationMs: number | null
+    retryCount: number
+    validCandidateCount: number
+    totalCandidateCount: number
+    selectedModelName: string | null
+    selectedPromptName: string | null
+    selectedPromptVersion: number | null
+  }[]
+}
+
+export const getModelCandidateStats = (db: Database.Database, modelId: number) => {
+  const overall = db
+    .prepare(
+      `SELECT
+         COUNT(*) as totalCandidates,
+         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successCount,
+         SUM(CASE WHEN status IN ('failed','validation_failed') THEN 1 ELSE 0 END) as failedCount,
+         SUM(CASE WHEN selected = 1 THEN 1 ELSE 0 END) as selectedCount,
+         AVG(CASE WHEN durationMs IS NOT NULL THEN durationMs ELSE NULL END) as avgDurationMs
+       FROM subtitleChunkCandidate
+       WHERE modelId = ?`,
+    )
+    .get(modelId) as {
+    totalCandidates: number
+    successCount: number
+    failedCount: number
+    selectedCount: number
+    avgDurationMs: number | null
+  }
+
+  const byPrompt = db
+    .prepare(
+      `SELECT
+         COALESCE(p.name, 'Unknown') as promptName,
+         COUNT(*) as totalCandidates,
+         SUM(CASE WHEN scc.selected = 1 THEN 1 ELSE 0 END) as selectedCount,
+         AVG(scc.durationMs) as avgDurationMs
+       FROM subtitleChunkCandidate scc
+       LEFT JOIN promptVersion pv ON scc.promptVersionId = pv.id
+       LEFT JOIN prompt p ON pv.promptId = p.id
+       WHERE scc.modelId = ?
+       GROUP BY p.id, p.name
+       ORDER BY selectedCount DESC`,
+    )
+    .all(modelId) as {
+    promptName: string
+    totalCandidates: number
+    selectedCount: number
+    avgDurationMs: number | null
+  }[]
+
+  const byLanguage = db
+    .prepare(
+      `SELECT
+         l.name as languageName,
+         COUNT(*) as totalCandidates,
+         SUM(CASE WHEN scc.selected = 1 THEN 1 ELSE 0 END) as selectedCount,
+         AVG(scc.durationMs) as avgDurationMs
+       FROM subtitleChunkCandidate scc
+       JOIN subtitleChunk sc ON scc.subtitleChunkId = sc.id
+       JOIN language l ON sc.targetLangId = l.id
+       WHERE scc.modelId = ?
+       GROUP BY l.id, l.name
+       ORDER BY selectedCount DESC`,
+    )
+    .all(modelId) as {
+    languageName: string
+    totalCandidates: number
+    selectedCount: number
+    avgDurationMs: number | null
+  }[]
+
+  return { overall, byPrompt, byLanguage }
+}
+
+export const getExportFileName = (
+  title: string,
+  season: number | null,
+  episode: number | null,
+  year: number | null,
+  langCode: string,
+) => {
+  let fileName = `[BCookieSub]${title}`
+  if (season !== null && episode !== null) {
+    fileName += `.S${season.toString().padStart(2, "0")}E${episode.toString().padStart(2, "0")}`
+  }
+  if (year !== null) {
+    fileName += `.(${year})`
+  }
+  if (langCode) {
+    fileName += `.${langCode}`
+  }
+  fileName += `.srt`
+  return fileName
+}
+
+export const hideSubtitle = (db: Database.Database, user: DBUser, subtitleId: number): DefaultResponse => {
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canAddSubtitles")
+  if (!perm) return { success: false, msg: "User does not have permission to manage subtitles" }
+
+  const subtitle = getSubtitleById(db, subtitleId)
+  if (!subtitle) return { success: false, msg: "Subtitle not found" }
+
+  db.prepare(`UPDATE subtitle SET hide = 1, updatedAt = datetime('now') WHERE id = ?`).run(subtitleId)
+
+  createLog(db, "info", "subtitle", subtitleId, "Hidden subtitle from dashboard", { hiddenBy: user.id })
+  return { success: true, msg: null }
+}
+
+export const getNextQueuedChunkForWorker = (
+  db: Database.Database,
+  finishSingleSubtitleFirst: boolean,
+): DBSubtitleChunk | null => {
+  if (finishSingleSubtitleFirst) {
+        const runningSubtitle = db
+      .prepare(`SELECT * FROM subtitle WHERE status = 'running' AND deletedAt IS NULL ORDER BY orderNumber ASC LIMIT 1`)
+      .get() as DBSubtitle | undefined
+
+    if (runningSubtitle) {
+      const chunk = db
+        .prepare(
+          `SELECT sc.* FROM subtitleChunk sc
+           JOIN subtitleJob sj ON sc.subtitleJobId = sj.id
+           WHERE sc.subtitleId = ? AND sc.status = 'queued' AND sj.status NOT IN ('cancelled', 'completed', 'failed')
+           ORDER BY sj.orderNumber ASC, sc.chunkIndex ASC
+           LIMIT 1`,
+        )
+        .get(runningSubtitle.id) as DBSubtitleChunk | undefined
+      if (chunk) return chunk
+    }
+  }
+
+    return (
+    (db
+      .prepare(
+        `SELECT sc.* FROM subtitleChunk sc
+         JOIN subtitleJob sj ON sc.subtitleJobId = sj.id
+         JOIN subtitle s ON sc.subtitleId = s.id
+         WHERE sc.status = 'queued'
+           AND sj.status NOT IN ('cancelled', 'completed', 'failed')
+           AND s.status NOT IN ('cancelled', 'completed', 'failed', 'paused')
+           AND s.deletedAt IS NULL
+         ORDER BY s.orderNumber ASC, sj.orderNumber ASC, sc.chunkIndex ASC
+         LIMIT 1`,
+      )
+      .get() as DBSubtitleChunk | undefined) ?? null
+  )
+}
+
+export const updateChunkStatus = (
+  db: Database.Database,
+  chunkId: number,
+  status: DBSubtitleChunk["status"],
+  errorMessage: string | null = null,
+): void => {
+  db.prepare(`UPDATE subtitleChunk SET status = ?, errorMessage = ?, updatedAt = datetime('now') WHERE id = ?`).run(
+    status,
+    errorMessage,
+    chunkId,
+  )
+}
+
+export const markChunkStarted = (db: Database.Database, chunkId: number): void => {
+  db.prepare(
+    `UPDATE subtitleChunk SET status = 'running', startedAt = datetime('now'), updatedAt = datetime('now') WHERE id = ?`,
+  ).run(chunkId)
+}
+
+export const setSelectedCandidateForChunk = (
+  db: Database.Database,
+  chunkId: number,
+  candidateId: number,
+  judgeModelId: number | null,
+  judgeReason: string | null,
+  durationMs: number,
+): void => {
+  db.prepare(
+    `UPDATE subtitleChunk SET
+       status = 'completed',
+       selectedCandidateId = ?,
+       judgeModelId = ?,
+       judgeReason = ?,
+       durationMs = ?,
+       finishedAt = datetime('now'),
+       updatedAt = datetime('now')
+     WHERE id = ?`,
+  ).run(candidateId, judgeModelId, judgeReason, durationMs, chunkId)
+}
+
+export const createChunkCandidate = (
+  db: Database.Database,
+  subtitleChunkId: number,
+  modelId: number,
+  promptId: number,
+  promptVersionId: number,
+  promptTextSnapshot: string,
+  translatedText: string | null,
+  validationPassed: boolean,
+  status: DBSubtitleChunkCandidate["status"],
+  durationMs: number,
+  errorMessage: string | null,
+): number => {
+  const existing = db
+    .prepare(`SELECT * FROM subtitleChunkCandidate WHERE subtitleChunkId = ? AND modelId = ? AND promptVersionId = ?`)
+    .get(subtitleChunkId, modelId, promptVersionId) as DBSubtitleChunkCandidate | undefined
+
+  if (existing) {
+    db.prepare(
+      `UPDATE subtitleChunkCandidate SET
+         promptTextSnapshot = ?, translatedText = ?,
+         validationPassed = ?, status = ?, retryCount = retryCount + 1,
+         durationMs = ?, errorMessage = ?, updatedAt = datetime('now')
+       WHERE id = ?`,
+    ).run(promptTextSnapshot, translatedText, validationPassed ? 1 : 0, status, durationMs, errorMessage, existing.id)
+    return existing.id
+  }
+
+  const result = db
+    .prepare(
+      `INSERT INTO subtitleChunkCandidate
+         (subtitleChunkId, modelId, promptId, promptVersionId, promptTextSnapshot, translatedText, validationPassed, status, selected, durationMs, errorMessage)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+    )
+    .run(
+      subtitleChunkId,
+      modelId,
+      promptId,
+      promptVersionId,
+      promptTextSnapshot,
+      translatedText,
+      validationPassed ? 1 : 0,
+      status,
+      durationMs,
+      errorMessage,
+    )
+
+  return result.lastInsertRowid as number
+}
+
+export const deleteUnneededCandidates = (db: Database.Database, subtitleChunkId: number): number => {
+  const result = db
+    .prepare(
+      `DELETE FROM subtitleChunkCandidate
+       WHERE subtitleChunkId = ?
+         AND selected = 0
+         AND status NOT IN ('failed', 'validation_failed')`,
+    )
+    .run(subtitleChunkId)
+  return result.changes
+}
+
+export const markCandidateSelected = (db: Database.Database, candidateId: number): void => {
+  db.prepare(
+    `UPDATE subtitleChunkCandidate SET selected = 1, status = 'completed', updatedAt = datetime('now') WHERE id = ?`,
+  ).run(candidateId)
+}
+
+export const updateSubtitleStatus = (db: Database.Database, subtitleId: number, status: DBSubtitle["status"]): void => {
+  const extra =
+    status === "completed"
+      ? `, finishedAt = datetime('now')`
+      : status === "cancelled"
+        ? `, cancelledAt = datetime('now')`
+        : ""
+  db.prepare(`UPDATE subtitle SET status = ?${extra}, updatedAt = datetime('now') WHERE id = ?`).run(status, subtitleId)
+}
+
+export const updateSubtitleJobStatus = (
+  db: Database.Database,
+  jobId: number,
+  status: DBSubtitleJob["status"],
+): void => {
+  const extra = status === "completed" ? `, finishedAt = datetime('now')` : ""
+  db.prepare(`UPDATE subtitleJob SET status = ?${extra}, updatedAt = datetime('now') WHERE id = ?`).run(status, jobId)
+}
+
+export const updateSubtitleJobProgress = (db: Database.Database, jobId: number, chunkCurrent: number): void => {
+  db.prepare(`UPDATE subtitleJob SET chunkCurrent = ?, updatedAt = datetime('now') WHERE id = ?`).run(
+    chunkCurrent,
+    jobId,
+  )
+}
+
+export const incrementChunkRetry = (db: Database.Database, chunkId: number, errorMessage: string | null): void => {
+  db.prepare(`DELETE FROM subtitleChunkCandidate WHERE subtitleChunkId = ?`).run(chunkId)
+  db.prepare(
+    `UPDATE subtitleChunk SET retryCount = retryCount + 1, errorMessage = ?, status = 'queued', selectedCandidateId = NULL, updatedAt = datetime('now') WHERE id = ?`,
+  ).run(errorMessage, chunkId)
+}
+
+export const retryFailedChunk = (db: Database.Database, chunkId: number): void => {
+  db.prepare(`DELETE FROM subtitleChunkCandidate WHERE subtitleChunkId = ?`).run(chunkId)
+  db.prepare(
+    `UPDATE subtitleChunk SET retryCount = 0, errorMessage = NULL, status = 'queued', selectedCandidateId = NULL, finishedAt = NULL, updatedAt = datetime('now') WHERE id = ?`,
+  ).run(chunkId)
+}
+
+export const markChunkFailed = (db: Database.Database, chunkId: number, errorMessage: string): void => {
+  db.prepare(
+    `UPDATE subtitleChunk SET status = 'failed', errorMessage = ?, finishedAt = datetime('now'), updatedAt = datetime('now') WHERE id = ?`,
+  ).run(errorMessage, chunkId)
+}
+
+export const assembleAndFinishSubtitleJob = (
+  db: Database.Database,
+  job: DBSubtitleJob,
+  subtitle: DBSubtitle,
+  outputDir: string | null,
+): void => {
+  const chunks = getChunksByJobId(db, job.id)
+  const srtParser = new SrtParser2()
+  const allLines = srtParser.fromSrt(subtitle.originalText)
+  const lineMap = new Map(allLines.map((l) => [l.id, l]))
+
+  const parts: string[] = []
+  let srtCounter = 1
+
+  for (const chunk of chunks.sort((a, b) => a.chunkIndex - b.chunkIndex)) {
+    if (!chunk.selectedCandidateId) continue
+
+    const candidate = db.prepare(`SELECT * FROM subtitleChunkCandidate WHERE id = ?`).get(chunk.selectedCandidateId) as
+      | DBSubtitleChunkCandidate
+      | undefined
+
+    if (!candidate?.translatedText) continue
+
+    let rows: { id: string; text: string }[] = []
+    try {
+      rows = JSON.parse(candidate.translatedText)
+    } catch {
+            const parsed = parseLLMResponse(candidate.translatedText)
+      if (parsed) rows = parsed.rows
+    }
+
+    for (const row of rows) {
+      const original = lineMap.get(row.id)
+      if (!original) continue
+      parts.push(`${srtCounter}\n${original.startTime} --> ${original.endTime}\n${row.text}\n`)
+      srtCounter++
+    }
+  }
+
+  const translatedText = parts.join("\n")
+  let outputFilePath: string | null = null
+
+  const outputHash = translatedText ? getFileHash(translatedText) : null
+
+  db.prepare(
+    `UPDATE subtitleJob SET status = 'completed', translatedText = ?, outputFilePath = ?, outputHash = ?, finishedAt = datetime('now'), updatedAt = datetime('now') WHERE id = ?`,
+  ).run(translatedText || null, outputFilePath, outputHash, job.id)
+
+  createLog(db, "info", "subtitleJob", job.id, "Subtitle job completed", {
+    targetLangId: job.targetLangId,
+    outputFilePath,
+  })
+}

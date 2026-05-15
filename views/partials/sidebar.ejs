@@ -1,0 +1,101 @@
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-brand">
+      <img class="sidebar-logo" src="/images/icon.png" alt="Logo">
+      <span class="sidebar-label sidebar-title-text">BCookieSubs</span>
+    </div>
+    <button class="sidebar-toggle-btn" id="sidebarToggleBtn" title="Toggle sidebar" type="button">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+  </div>
+
+  <ul class="sidebar-nav">
+    <li class="<%= activeNav === 'dashboard' ? 'active' : '' %>">
+      <a href="/dashboard" title="Dashboard">
+        <i class="fa-solid fa-gauge"></i>
+        <span class="sidebar-label">Dashboard</span>
+      </a>
+    </li>
+    <li class="<%= activeNav === 'translated' ? 'active' : '' %>">
+      <a href="/translated" title="Translated">
+        <i class="fa-solid fa-download"></i>
+        <span class="sidebar-label">Translated</span>
+      </a>
+    </li>
+    <% if (user.isAdmin || user.canViewModels) { %>
+    <li class="<%= activeNav === 'models' ? 'active' : '' %>">
+      <a href="/models" title="Models">
+        <i class="fa-solid fa-robot"></i>
+        <span class="sidebar-label">Models</span>
+      </a>
+    </li>
+    <% } %>
+    <% if (user.isAdmin || user.canViewPrompts) { %>
+    <li class="<%= activeNav === 'prompts' ? 'active' : '' %>">
+      <a href="/prompts" title="Prompts">
+        <i class="fa-solid fa-message"></i>
+        <span class="sidebar-label">Prompts</span>
+      </a>
+    </li>
+    <% } %>
+    <li class="<%= activeNav === 'stats' ? 'active' : '' %>">
+      <a href="/stats" title="Stats">
+        <i class="fa-solid fa-chart-bar"></i>
+        <span class="sidebar-label">Stats</span>
+      </a>
+    </li>
+    <% if (user.isAdmin || user.canManageUsers) { %>
+    <li class="<%= activeNav === 'users' ? 'active' : '' %>">
+      <a href="/users" title="Users">
+        <i class="fa-solid fa-users"></i>
+        <span class="sidebar-label">Users</span>
+      </a>
+    </li>
+    <% } %>
+    <% if (locals.appConfig && locals.appConfig.scanLibraryPaths && (user.isAdmin || user.canManageLibraryPath)) { %>
+    <li class="<%= activeNav === 'library-paths' ? 'active' : '' %>">
+      <a href="/library-paths" title="Library Paths">
+        <i class="fa-solid fa-folder-open"></i>
+        <span class="sidebar-label">Library Paths</span>
+      </a>
+    </li>
+    <% } %>
+    <% if (user.isAdmin || user.canManageConfig) { %>
+    <li class="<%= activeNav === 'config' ? 'active' : '' %>">
+      <a href="/config" title="Settings">
+        <i class="fa-solid fa-gear"></i>
+        <span class="sidebar-label">Settings</span>
+      </a>
+    </li>
+    <% } %>
+    <% if ((user.isAdmin || user.canManageSchedules) && locals.appConfig && locals.appConfig.scheduleConfigured) { %>
+    <li class="<%= activeNav === 'schedules' ? 'active' : '' %>">
+      <a href="/schedules" title="Schedules">
+        <i class="fa-solid fa-calendar-days"></i>
+        <span class="sidebar-label">Schedules</span>
+      </a>
+    </li>
+    <% } %>
+    <% if (user.isAdmin || user.canViewLogs) { %>
+    <li class="<%= activeNav === 'logs' ? 'active' : '' %>">
+      <a href="/logs" title="Logs">
+        <i class="fa-solid fa-list"></i>
+        <span class="sidebar-label">Logs</span>
+      </a>
+    </li>
+    <% } %>
+  </ul>
+
+  <div class="sidebar-footer">
+    <div class="sidebar-user" title="<%= user.username %>">
+      <i class="fa-solid fa-circle-user"></i>
+      <span class="sidebar-label sidebar-username"><%= user.username %></span>
+    </div>
+    <form method="POST" action="/logout">
+      <button type="submit" class="sidebar-logout-btn" title="Sign out">
+        <i class="fa-solid fa-right-from-bracket"></i>
+        <span class="sidebar-label">Sign out</span>
+      </button>
+    </form>
+  </div>
+</nav>

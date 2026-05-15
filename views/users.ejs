@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Users — BCookieSubs</title>
+   <%-  include('theme-vars.ejs') %>
+  <link rel="icon" type="image/png" href="/images/icon.png">
+  <link rel="stylesheet" href="/static/css/all.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="mobile-topbar">
+    <button class="hamburger-btn" id="hamburgerBtn" type="button" aria-label="Open menu">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+    <span class="mobile-topbar-title">BCookieSubs</span>
+  </header>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+<div class="app-shell">
+  <%- include('partials/sidebar') %>
+  <main class="main-content">
+    <% if (locals.toast && locals.msg) { %>
+      <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
+    <% } %>
+
+    <div class="page-header">
+      <h1>Users</h1>
+      <button class="btn btn-primary" onclick="openModal('add-modal')">+ Create User</button>
+    </div>
+
+    <% if (error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <div class="card">
+      <% if (users.length === 0) { %>
+        <p class="empty-state">No users found.</p>
+      <% } else { %>
+      
+      <div class="table-wrap users-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Created</th>
+              <th style="text-align: end; padding-left: 1rem;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% users.forEach(function(u) { %>
+              <tr>
+                <td>
+                  <strong><%= u.username %></strong>
+                  <% if (u.id === user.id) { %>
+                    <span class="badge badge-info" style="margin-left:.5rem">You</span>
+                  <% } %>
+                </td>
+                <td>
+                  <span class="badge <%= u.isAdmin ? 'badge-warning' : 'badge-neutral' %>">
+                    <%= u.isAdmin ? 'Admin' : 'User' %>
+                  </span>
+                </td>
+                <td class="text-dim"><%= u.createdAt.split(' ')[0] %></td>
+                <td class="actions" style="justify-content: end;">
+                  <button class="btn btn-sm btn-secondary user-edit-btn"
+                          data-user="<%- JSON.stringify(u).replace(/"/g, '&quot;') %>">
+                    Edit Permissions
+                  </button>
+                  <button class="btn btn-sm btn-secondary user-pw-btn"
+                          data-id="<%= u.id %>"
+                          data-username="<%= u.username.replace(/'/g, '&#39;') %>">
+                    Change Password
+                  </button>
+                  <% if (u.id !== user.id) { %>
+                    <form method="POST" action="/users/delete/<%= u.id %>" style="display:inline"
+                          onsubmit="return confirm('Delete user <%= u.username.replace(/'/g, '\\\'') %>?')">
+                      <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                    </form>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      
+      <div class="user-cards">
+        <% users.forEach(function(u) { %>
+          <div class="user-card">
+            <div class="user-card-header">
+              <div>
+                <strong><%= u.username %></strong>
+                <% if (u.id === user.id) { %>
+                  <span class="badge badge-info" style="margin-left:.4rem">You</span>
+                <% } %>
+              </div>
+              <span class="badge <%= u.isAdmin ? 'badge-warning' : 'badge-neutral' %>">
+                <%= u.isAdmin ? 'Admin' : 'User' %>
+              </span>
+            </div>
+            <div class="text-dim" style="font-size:.8rem;margin-bottom:.6rem">Created <%= u.createdAt.split(' ')[0] %></div>
+            <div class="actions">
+              <button class="btn btn-sm btn-secondary user-edit-btn"
+                      data-user="<%- JSON.stringify(u).replace(/"/g, '&quot;') %>">
+                Edit Permissions
+              </button>
+              <button class="btn btn-sm btn-secondary user-pw-btn"
+                      data-id="<%= u.id %>"
+                      data-username="<%= u.username.replace(/'/g, '&#39;') %>">
+                Change Password
+              </button>
+              <% if (u.id !== user.id) { %>
+                <form method="POST" action="/users/delete/<%= u.id %>" style="display:inline"
+                      onsubmit="return confirm('Delete user <%= u.username.replace(/'/g, '\\\'') %>?')">
+                  <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                </form>
+              <% } %>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+      <% } %>
+    </div>
+    <div class="card" style="margin-top:1.5rem">
+      <div class="card-header"><h2>Permission Reference</h2></div>
+      <%
+        var _perms = [
+          { key: 'isAdmin',            label: 'Admin',                desc: 'Full access to all pages and actions. Overrides all other permissions.' },
+          { key: 'canManageUsers',     label: 'Manage Users',         desc: 'Create, edit, and delete users and manage their permissions.' },
+          { key: 'canViewModels',      label: 'View Models',          desc: 'View configured models and their roles.' },
+          { key: 'canManageModels',    label: 'Manage Models',        desc: 'Add, edit, remove, and configure AI models.' },
+          { key: 'canViewPrompts',     label: 'View Prompts',         desc: 'View prompt templates and prompt versions.' },
+          { key: 'canManagePrompts',   label: 'Manage Prompts',       desc: 'Create, edit, activate, and manage prompt templates.' },
+          { key: 'canManageLanguages', label: 'Manage Languages',     desc: 'Add or manage supported subtitle languages.' },
+          { key: 'canManageConfig',    label: 'Manage Config',        desc: 'View and update application configuration and settings.' },
+          { key: 'canAddSubtitles',    label: 'Add Subtitles',        desc: 'Upload, add, or queue subtitles for translation.' },
+          { key: 'canStopSubtitles',   label: 'Stop Subtitles',       desc: 'Stop, cancel, or pause subtitle translation jobs.' },
+          { key: 'canDeleteSubtitles', label: 'Delete Subtitles',     desc: 'Delete subtitles, jobs, or related translation data.' },
+          { key: 'canViewLogs',        label: 'View Logs',            desc: 'View application logs.' },
+          { key: 'canManageSchedules', label: 'Manage Schedules',     desc: 'Create and manage translation schedule windows.' },
+          { key: 'pauseWorker',        label: 'Pause Worker',         desc: 'Start, stop, pause, or resume the translation worker.' },
+          { key: 'downloadSubtitles',  label: 'Download Subtitles',   desc: 'Download and export translated subtitles. Also grants access to the Translated page.' },
+          { key: 'canViewStats',       label: 'View Stats',           desc: 'View translation, model, and prompt statistics.' },
+          { key: 'canManageLibraryPath',        label: 'Manage Library Paths',     desc: 'Manage library path scanning settings and tracked media.' },
+          { key: 'canManageRootLibraryPath',    label: 'Manage Root Library Path', desc: 'Can configure the root folder used to restrict library path browsing.' },
+          { key: 'canManageSecret',             label: 'Manage Secrets',           desc: 'View and manage secret and API key settings.' },
+        ]
+      %>
+      <div class="perm-ref-grid">
+        <% _perms.forEach(function(p) { %>
+          <div class="perm-ref-row">
+            <span class="badge badge-neutral perm-ref-key"><%= p.label %></span>
+            <span class="text-dim perm-ref-desc"><%= p.desc %></span>
+          </div>
+        <% }) %>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="add-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Create User</h2>
+      <button class="btn btn-icon" onclick="closeModal('add-modal')">✕</button>
+    </div>
+    <form method="POST" action="/users/create" id="create-user-form">
+      <div id="create-user-error" class="alert alert-error" style="display:none;margin-bottom:.75rem"></div>
+      <div class="field">
+        <label for="cu-username">Username</label>
+        <input type="text" id="cu-username" name="username" required>
+      </div>
+      <div class="field">
+        <label for="cu-password">Password <span class="hint">(min 8 chars)</span></label>
+        <input type="password" id="cu-password" name="password" required minlength="8">
+      </div>
+      <div class="field">
+        <label for="cu-password2">Confirm Password</label>
+        <input type="password" id="cu-password2" name="password2" required>
+      </div>
+      <div class="field field-checkbox">
+        <input type="checkbox" id="cu-isAdmin" name="isAdmin" value="1"
+               onchange="togglePermFields(this.checked, 'cu-perms')">
+        <label for="cu-isAdmin">Administrator (all permissions)</label>
+      </div>
+      <div id="cu-perms">
+        <div class="field">
+          <label>Permissions</label>
+          <div class="checkbox-group" style="max-height:none">
+            <% permissionKeys.forEach(function(key) { %>
+              <label class="checkbox-label">
+                <input type="checkbox" name="<%= key %>" value="1">
+                <%= key.replace(/([A-Z])/g, ' $1').replace(/^./, function(s){ return s.toUpperCase() }) %>
+              </label>
+            <% }) %>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create User</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="edit-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Edit Permissions — <span id="edit-username"></span></h2>
+      <button class="btn btn-icon" onclick="closeModal('edit-modal')">✕</button>
+    </div>
+    <form method="POST" id="edit-form" action="">
+      <div class="field field-checkbox">
+        <input type="checkbox" id="edit-isAdmin" name="isAdmin" value="1"
+               onchange="togglePermFields(this.checked, 'edit-perms')">
+        <label for="edit-isAdmin">Administrator (all permissions)</label>
+      </div>
+      <div id="edit-perms">
+        <div class="field">
+          <label>Permissions</label>
+          <div class="checkbox-group" style="max-height:none" id="edit-perm-checks">
+            <% permissionKeys.forEach(function(key) { %>
+              <label class="checkbox-label">
+                <input type="checkbox" name="<%= key %>" value="1" data-perm="<%= key %>">
+                <%= key.replace(/([A-Z])/g, ' $1').replace(/^./, function(s){ return s.toUpperCase() }) %>
+              </label>
+            <% }) %>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('edit-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="pw-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Change Password — <span id="pw-username"></span></h2>
+      <button class="btn btn-icon" onclick="closeModal('pw-modal')">✕</button>
+    </div>
+    <form method="POST" id="pw-form" action="">
+      <div id="pw-error" class="alert alert-error" style="display:none;margin-bottom:.75rem"></div>
+      <div class="field">
+        <label for="pw-password">New Password <span class="hint">(min 8 chars)</span></label>
+        <input type="password" id="pw-password" name="password" required minlength="8">
+      </div>
+      <div class="field">
+        <label for="pw-password2">Confirm Password</label>
+        <input type="password" id="pw-password2" name="password2" required>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('pw-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Update Password</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+  document.querySelectorAll('.user-edit-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var u = JSON.parse(btn.dataset.user);
+      document.getElementById('edit-username').textContent = u.username;
+      document.getElementById('edit-form').action = '/users/update/' + u.id;
+      document.getElementById('edit-isAdmin').checked = !!u.isAdmin;
+      document.querySelectorAll('#edit-perm-checks [data-perm]').forEach(function(el) {
+        el.checked = !!u[el.dataset.perm];
+      });
+      togglePermFields(!!u.isAdmin, 'edit-perms');
+      openModal('edit-modal');
+    });
+  });
+
+  document.querySelectorAll('.user-pw-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      openPasswordModal(parseInt(btn.dataset.id), btn.dataset.username);
+    });
+  });
+
+  function togglePermFields(isAdmin, containerId) {
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    el.style.opacity = isAdmin ? '0.4' : '1';
+    el.style.pointerEvents = isAdmin ? 'none' : '';
+  }
+
+  function validatePasswords(form, errorId) {
+    var pw = form.querySelector('[name="password"]');
+    var pw2 = form.querySelector('[name="password2"]');
+    var errEl = document.getElementById(errorId);
+    if (!pw || !pw2) return true;
+    var error = '';
+    if (pw.value.length < 8) error = 'Password must be at least 8 characters.';
+    else if (pw.value !== pw2.value) error = 'Passwords do not match.';
+    if (error) {
+      if (errEl) { errEl.textContent = error; errEl.style.display = ''; }
+      return false;
+    }
+    if (errEl) errEl.style.display = 'none';
+    return true;
+  }
+
+  document.getElementById('pw-form').addEventListener('submit', function(e) {
+    if (!validatePasswords(this, 'pw-error')) e.preventDefault();
+  });
+
+  document.getElementById('create-user-form').addEventListener('submit', function(e) {
+    if (!validatePasswords(this, 'create-user-error')) e.preventDefault();
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Logs — BCookieSubs</title>
+   <%-  include('theme-vars.ejs') %>
+  <link rel="icon" type="image/png" href="/images/icon.png">
+  <link rel="stylesheet" href="/static/css/all.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="mobile-topbar">
+    <button class="hamburger-btn" id="hamburgerBtn" type="button" aria-label="Open menu">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+    <span class="mobile-topbar-title">BCookieSubs</span>
+  </header>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+<div class="app-shell">
+  <%- include('partials/sidebar') %>
+  <main class="main-content">
+
+    <% if (locals.toast && locals.msg) { %>
+      <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
+    <% } %>
+
+    <% if (error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <% if (pagination && pagination.total > 0) { %>
+    <div class="pagination-container" style="margin-bottom: 1.5rem">
+      <span class="pagination-info">
+       Showing <%= pagination.page * pagination.limit + 1 %>-<%= Math.min((pagination.page + 1) * pagination.limit, pagination.total) %> of <%= pagination.total %> logs
+      </span>
+      <div class="pagination-controls">
+        <a href="/logs?page=<%= pagination.page - 1 %>&limit=<%= pagination.limit %>" class="btn btn-sm<%= pagination.hasPrev ? '' : ' btn-disabled' %>"<%= pagination.hasPrev ? '' : ' style="pointer-events:none;"' %>>← Prev</a>
+        <span class="page-indicator">Page <%= pagination.page + 1 %> / <%= pagination.totalPages %></span>
+        <a href="/logs?page=<%= pagination.page + 1 %>&limit=<%= pagination.limit %>" class="btn btn-sm<%= pagination.hasNext ? '' : ' btn-disabled' %>"<%= pagination.hasNext ? '' : ' style="pointer-events:none;"' %>>Next →</a>
+      </div>
+    </div>
+    <% } %>
+
+    <div class="card">
+      <% if (logs.length === 0) { %>
+        <p class="empty-state">No logs found.</p>
+      <% } else { %>
+        <div class="log-panel log-panel-full">
+          <% logs.forEach(function(l) { %>
+            <div class="log-entry log-<%= l.level %>">
+              <span class="log-time" data-utc="<%= l.createdAt %>"><%= l.createdAt %></span>
+              <span class="log-level"><%= l.level.toUpperCase() %></span>
+              <% if (l.entityType) { %>
+                <span class="log-entity text-dim"><%= l.entityType %><% if (l.entityId) { %>:<%= l.entityId %><% } %></span>
+              <% } %>
+              <span class="log-msg"><%= l.message %></span>
+            </div>
+          <% }) %>
+        </div>
+      <% } %>
+    </div>
+
+  </main>
+</div>
+<script src="/app.js"></script>
+<script>
+  document.querySelectorAll('[data-utc]').forEach(function (el) {
+    var utcStr = el.getAttribute('data-utc')
+    if (!utcStr) return
+    var d = new Date(utcStr.replace(' ', 'T') + 'Z')
+    if (!isNaN(d.getTime())) el.textContent = d.toLocaleString()
+  })
+</script>
+</body>
+</html>

@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Library Paths — BCookieSubs</title>
+  <%- include('theme-vars.ejs') %>
+  <link rel="icon" type="image/png" href="/images/icon.png">
+  <link rel="stylesheet" href="/static/css/all.min.css">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    summary::-webkit-details-marker { display: none }
+    details[open] .lp-chevron { transform: rotate(180deg) }
+  </style>
+</head>
+<body>
+  <header class="mobile-topbar">
+    <button class="hamburger-btn" id="hamburgerBtn" type="button" aria-label="Open menu">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+    <span class="mobile-topbar-title">BCookieSubs</span>
+  </header>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+<div class="app-shell">
+  <%- include('partials/sidebar') %>
+  <main class="main-content">
+    <% if (locals.toast && locals.msg) { %>
+      <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
+    <% } %>
+
+    <div class="page-header">
+      <h1>Library Paths</h1>
+      <button class="btn btn-primary" onclick="openModal('add-modal')">+ Add Path</button>
+    </div>
+
+    <div class="tabs" style="display:flex;gap:.5rem;margin-bottom:1rem;border-bottom:1px solid var(--border)">
+      <a href="/library-paths" class="tab-link active"
+         style="padding:.5rem .9rem;border-bottom:2px solid var(--accent);font-weight:600;text-decoration:none;color:var(--text)">
+        Library
+      </a>
+      <a href="/library-paths/blacklist" class="tab-link"
+         style="padding:.5rem .9rem;border-bottom:2px solid transparent;text-decoration:none;color:var(--text-dim)">
+        Blacklisted
+      </a>
+    </div>
+
+    <% if (libraryPaths.length === 0) { %>
+      <div class="card">
+        <p class="empty-state">No library paths configured. Add a path to start scanning for media files.</p>
+      </div>
+    <% } else { %>
+      <% libraryPaths.forEach(function(lp) { %>
+        <div class="card" style="margin-bottom:1.25rem">
+          <div class="card-header" style="flex-wrap:wrap;gap:.5rem">
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+                <h2 style="margin:0"><%= lp.name %></h2>
+                <span class="badge <%= lp.enabled ? 'badge-success' : 'badge-neutral' %>">
+                  <%= lp.enabled ? 'Enabled' : 'Disabled' %>
+                </span>
+                <span class="badge badge-neutral"><%= lp.type %></span>
+                <span class="badge <%= lp.state === 'scanning' ? 'badge-warning' : lp.state === 'error' ? 'badge-error' : 'badge-neutral' %>" data-lp-state="<%= lp.id %>">
+                  <%= lp.state %>
+                </span>
+              </div>
+              <div class="text-dim" style="font-size:.82rem;margin-top:.2rem;word-break:break-all"><%= lp.path %></div>
+              <div class="text-dim" style="font-size:.78rem;margin-top:.15rem">
+                <% var sourceLang = languages.find(function(l){ return l.id === lp.sourceLangId }) %>
+                Source: <%= sourceLang ? sourceLang.name : 'Unknown' %>
+                &nbsp;·&nbsp;
+                AutoTranslate: <%= lp.autoTranslate ? 'Yes' : 'No' %>
+                &nbsp;·&nbsp;
+                AutoExtract: <%= lp.autoExtract ? 'Yes' : 'No' %>
+                <% if (lp.lastRunAt) { %>&nbsp;·&nbsp;Last scan: <%= lp.lastRunAt.split(' ')[0] %><% } %>
+              </div>
+            </div>
+            <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
+              <button class="btn btn-sm btn-secondary lp-edit-btn"
+                      data-lp="<%- JSON.stringify({id:lp.id,name:lp.name,path:lp.path,type:lp.type,sourceLangId:lp.sourceLangId,enabled:lp.enabled,autoTranslate:lp.autoTranslate,autoExtract:lp.autoExtract}).replace(/"/g,'&quot;') %>">Edit</button>
+              <form method="POST" action="/library-paths/toggle/<%= lp.id %>" style="display:inline">
+                <button type="submit" class="btn btn-sm btn-secondary">
+                  <%= lp.enabled ? 'Disable' : 'Enable' %>
+                </button>
+              </form>
+              <form method="POST" action="/library-paths/delete/<%= lp.id %>" style="display:inline"
+                    onsubmit="return confirm('Delete library path \'<%= lp.name %>\'? This will also delete all tracked items.')">
+                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+              </form>
+            </div>
+          </div>
+
+          
+          <% if (lp.groups.length === 0) { %>
+            <p class="text-dim" style="font-size:.85rem;margin:.75rem 0 0">No items found yet. Scanner will discover files on next run.</p>
+          <% } else { %>
+            <div style="margin-top:.75rem;display:flex;flex-direction:column;gap:.65rem">
+              <% lp.groups.forEach(function(group) { %>
+                <details style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+
+                  
+                  <summary style="
+                    display:flex;align-items:flex-start;gap:.85rem;padding:.75rem;
+                    background:var(--surface-3);cursor:pointer;list-style:none;
+                    user-select:none;-webkit-user-select:none;
+                  ">
+                    
+                    <% if (group.mediaItem && group.mediaItem.posterBase64) { %>
+                      <img src="<%= group.mediaItem.posterBase64 %>"
+                           alt="Poster"
+                           style="width:42px;height:63px;object-fit:cover;border-radius:5px;flex-shrink:0">
+                    <% } else { %>
+                      <div style="width:42px;height:63px;background:var(--surface-2);border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center">
+                        <i class="fa-solid fa-<%= lp.type === 'series' ? 'tv' : 'film' %>" style="color:var(--text-dim)"></i>
+                      </div>
+                    <% } %>
+                    <div style="flex:1;min-width:0;padding-top:.1rem">
+                      <% if (group.mediaItem) { %>
+                        <div style="font-weight:700;font-size:.95rem">
+                          <%= group.mediaItem.title %>
+                          <% if (group.mediaItem.year) { %>
+                            <span class="text-dim" style="font-weight:400;font-size:.82rem">(<%= group.mediaItem.year %>)</span>
+                          <% } %>
+                        </div>
+                        <div class="text-dim" style="font-size:.78rem;margin-top:.1rem"><%= group.items.length %> file<%= group.items.length !== 1 ? 's' : '' %></div>
+                      <% } else { %>
+                        <div style="font-weight:600;font-size:.9rem;color:var(--text-dim)">Unmatched</div>
+                        <div class="text-dim" style="font-size:.78rem;margin-top:.1rem"><%= group.items.length %> file<%= group.items.length !== 1 ? 's' : '' %> — no media match yet</div>
+                      <% } %>
+                    </div>
+                    <i class="fa-solid fa-chevron-down lp-chevron" style="margin-top:.35rem;color:var(--text-dim);font-size:.8rem;flex-shrink:0;transition:transform .2s"></i>
+                  </summary>
+
+                  
+                  <div style="display:flex;flex-direction:column">
+                    <% group.items.forEach(function(item, idx) { %>
+                      <div style="
+                        padding:.6rem .85rem;
+                        border-top: <%= idx === 0 ? '1px solid var(--border)' : '1px solid var(--border)' %>;
+                        display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap
+                      ">
+                        <%
+                          var _si = item.subtitleInfo
+                          var _translationDeleted = _si && (_si.deleted || _si.activeJobs.length === 0)
+                          var _activeJobs = (_si && !_si.deleted) ? _si.activeJobs : []
+                          var _hasRunning = _activeJobs.some(function(j){ return j.jobStatus === 'running' })
+                          var _hasFailed  = _activeJobs.some(function(j){ return j.jobStatus === 'failed'  })
+                          var _jobLabel   = _hasRunning ? 'Translating' : _hasFailed ? 'Failed' : 'Queued'
+                          var _langList   = _activeJobs.map(function(j){
+                            return (j.langFlag ? j.langFlag + ' ' : '') + j.langIso.toUpperCase()
+                          }).join(', ')
+                        %>
+                        <div style="flex:1;min-width:0">
+                          <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+                            <% if (item.season !== null && item.episode !== null) { %>
+                              <span style="font-weight:600;font-size:.85rem;flex-shrink:0">
+                                S<%= String(item.season).padStart(2,'0') %>E<%= String(item.episode).padStart(2,'0') %>
+                              </span>
+                            <% } %>
+                            <span style="font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0" title="<%= item.path %>">
+                              <%= item.path.split('/').pop() %>
+                            </span>
+                          </div>
+                          <div style="display:flex;gap:.35rem;margin-top:.25rem;flex-wrap:wrap;align-items:center">
+                            <span class="badge <%= item.status === 'completed' ? 'badge-success' : item.status === 'failed' ? 'badge-error' : item.status === 'queued' ? 'badge-warning' : 'badge-neutral' %>" style="font-size:.7rem" data-item-status="<%= item.id %>">
+                              <%= item.status.replace(/_/g,' ') %>
+                            </span>
+                            <% if (_translationDeleted) { %>
+                              <span class="badge badge-error" style="font-size:.7rem">Translation deleted</span>
+                            <% } else if (_activeJobs.length > 0) { %>
+                              <span class="text-dim" style="font-size:.75rem"><%= _jobLabel %> · <%= _langList %></span>
+                            <% } %>
+                          </div>
+                        </div>
+                        <div style="display:flex;gap:.35rem;align-items:center;flex-shrink:0">
+                          <% if (item.blacklist) { %>
+                            <span class="badge badge-warning" style="font-size:.7rem" title="<%= item.blacklist.reason || '' %>">Blacklisted</span>
+                            <% if (user.isAdmin || user.canManageLibraryPath) { %>
+                              <form method="POST" action="/library-paths/item/<%= item.id %>/unblacklist" style="display:inline">
+                                <button type="submit" class="btn btn-sm btn-secondary">Remove from blacklist</button>
+                              </form>
+                            <% } %>
+                          <% } else { %>
+                            <% if (_translationDeleted && (user.isAdmin || user.canAddSubtitles)) { %>
+                              <form method="POST" action="/library-paths/item/<%= item.id %>/readd" style="display:inline">
+                                <button type="submit" class="btn btn-sm btn-secondary">Re-add</button>
+                              </form>
+                            <% } else if ((user.isAdmin || user.canAddSubtitles) && !_translationDeleted && item.status !== 'queued' && item.status !== 'completed' && item.status !== 'no_srts_found' && (item.candidates.length === 0 || item.mediaItemId)) { %>
+                              <form method="POST" action="/library-paths/item/<%= item.id %>/translate" style="display:inline">
+                                <button type="submit" class="btn btn-sm btn-primary">Translate</button>
+                              </form>
+                            <% } %>
+                            <% if (item.candidates.length > 0 && item.mediaItemId) { %>
+                              <button type="button" class="btn btn-sm btn-secondary lp-match-btn"
+                                data-item-id="<%= item.id %>">Change Match</button>
+                            <% } %>
+                            <% if (user.isAdmin || user.canManageLibraryPath) { %>
+                              <button type="button" class="btn btn-sm btn-secondary lp-blacklist-btn"
+                                      data-item-id="<%= item.id %>"
+                                      data-item-name="<%= item.path.split('/').pop() %>"
+                                      title="Block this item from translation">Blacklist</button>
+                            <% } %>
+                          <% } %>
+                        </div>
+
+                        
+                        <% if (item.candidates && item.candidates.length > 0) { %>
+                          <div id="lp-candidates-<%= item.id %>"
+                            style="width:100%;padding-top:.5rem;border-top:1px dashed var(--border);margin-top:.3rem"
+                            <% if (item.mediaItemId) { %>hidden<% } %>>
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+                              <div class="text-dim" style="font-size:.75rem">
+                                <%= item.mediaItemId ? 'Change the match:' : 'Select the correct match:' %>
+                              </div>
+                              <% if (item.mediaItemId) { %>
+                                <button type="button" class="btn btn-sm btn-secondary lp-match-cancel"
+                                  data-item-id="<%= item.id %>">Cancel</button>
+                              <% } %>
+                            </div>
+                            <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:.5rem">
+                              <% item.candidates.forEach(function(c) { %>
+                                <form method="POST" action="/library-paths/item/<%= item.id %>/select-candidate" style="display:contents">
+                                  <input type="hidden" name="mediaItemId" value="<%= c.mediaItemId %>">
+                                  <button type="submit" class="btn btn-secondary"
+                                    style="display:flex;flex-direction:row;align-items:center;gap:.75rem;padding:.6rem .75rem;height:auto;width:100%;text-align:left"
+                                  >
+                                    <% if (c.mediaPoster) { %>
+                                      <img src="<%= c.mediaPoster %>"
+                                           alt="Poster"
+                                           style="width:54px;height:81px;object-fit:cover;border-radius:4px;flex-shrink:0">
+                                    <% } else { %>
+                                      <div style="width:54px;height:81px;background:var(--surface-2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                                        <i class="fa-solid fa-film" style="font-size:1.4rem;color:var(--text-dim)"></i>
+                                      </div>
+                                    <% } %>
+                                    <span style="font-size:.88rem;line-height:1.35;word-break:break-word;min-width:0">
+                                      <strong><%= c.mediaTitle || 'Unknown' %></strong><% if(c.mediaYear){ %><br><span class="text-dim" style="font-size:.8rem">(<%= c.mediaYear %>)</span><% } %>
+                                    </span>
+                                  </button>
+                                </form>
+                              <% }) %>
+                            </div>
+                          </div>
+                        <% } %>
+                      </div>
+                    <% }) %>
+                  </div>
+
+                </details>
+              <% }) %>
+            </div>
+          <% } %>
+        </div>
+      <% }) %>
+    <% } %>
+  </main>
+</div>
+
+<div id="dir-browser-panel" style="display:none;margin-top:.5rem">
+  <div style="
+    border:1px solid var(--border);
+    border-radius:8px;
+    overflow:hidden;
+    background:var(--surface-2);
+    font-size:.85rem;
+  ">
+    
+    <div style="
+      display:flex;
+      align-items:center;
+      gap:.4rem;
+      padding:.5rem .75rem;
+      border-bottom:1px solid var(--border);
+      background:var(--surface-3);
+      flex-wrap:wrap;
+      min-height:2.4rem;
+    ">
+      <button type="button" id="dir-up-btn"
+        class="btn btn-icon btn-sm"
+        style="flex-shrink:0;padding:.2rem .45rem;font-size:.8rem"
+        title="Go up">↑</button>
+      <span id="dir-current-path"
+        class="text-dim"
+        style="font-size:.78rem;word-break:break-all;flex:1;min-width:0"></span>
+    </div>
+    
+    <div id="dir-list"
+      style="
+        max-height:220px;
+        overflow-y:auto;
+        display:flex;
+        flex-direction:column;
+      ">
+      <div class="text-dim" style="padding:.5rem .75rem;font-size:.8rem">Loading…</div>
+    </div>
+    
+    <div style="
+      padding:.5rem .75rem;
+      border-top:1px solid var(--border);
+      display:flex;
+      justify-content:flex-end;
+      gap:.4rem;
+    ">
+      <button type="button" id="dir-select-btn" class="btn btn-sm btn-primary">
+        Select this folder
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="add-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h2>Add Library Path</h2>
+      <button class="btn btn-icon" onclick="closeModal('add-modal')">✕</button>
+    </div>
+    <form method="POST" action="/library-paths/create">
+      <div class="field">
+        <label for="add-name">Name</label>
+        <input type="text" id="add-name" name="name" required placeholder="e.g. My Movies">
+      </div>
+      <div class="field">
+        <label for="add-path">Filesystem Path</label>
+        <div style="display:flex;gap:.4rem">
+          <input type="text" id="add-path" name="path" required style="flex:1">
+          <button type="button" class="btn btn-secondary" style="flex-shrink:0"
+                  onclick="openDirBrowser('add-path')">Browse</button>
+        </div>
+        <div id="add-path-browser-anchor"></div>
+      </div>
+      <div class="field">
+        <label for="add-type">Type</label>
+        <select id="add-type" name="type" required>
+          <option value="movie">Movie</option>
+          <option value="series">Series</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="add-sourceLangId">Source Language</label>
+        <select id="add-sourceLangId" name="sourceLangId" required>
+          <% var addEnglishFound = false; languages.forEach(function(l) { %>
+            <option value="<%= l.id %>" <%= !addEnglishFound && l.iso639 === 'en' ? 'selected' : '' %>><%= l.flag ? l.flag + ' ' : '' %><%= l.name %></option>
+            <% if (l.iso639 === 'en') addEnglishFound = true; %>
+          <% }) %>
+        </select>
+      </div>
+      <div class="field field-checkbox">
+        <input type="checkbox" id="add-enabled" name="enabled" value="1" checked>
+        <label for="add-enabled">Enabled (actively scanned)</label>
+      </div>
+      <div class="field field-checkbox">
+        <input type="checkbox" id="add-autoTranslate" name="autoTranslate" value="1">
+        <label for="add-autoTranslate">Auto-translate found subtitles</label>
+      </div>
+      <div class="field field-checkbox">
+        <input type="checkbox" id="add-autoExtract" name="autoExtract" value="1">
+        <label for="add-autoExtract">Auto-export translated subtitles to source folder</label>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add Path</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="edit-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h2>Edit Library Path</h2>
+      <button class="btn btn-icon" onclick="closeModal('edit-modal')">✕</button>
+    </div>
+    <form method="POST" id="edit-form" action="">
+      <div class="field">
+        <label for="edit-name">Name</label>
+        <input type="text" id="edit-name" name="name" required>
+      </div>
+      <div class="field">
+        <label for="edit-path">Filesystem Path</label>
+        <div style="display:flex;gap:.4rem">
+          <input type="text" id="edit-path" name="path" required style="flex:1">
+          <button type="button" class="btn btn-secondary" style="flex-shrink:0"
+                  onclick="openDirBrowser('edit-path')">Browse</button>
+        </div>
+        <div id="edit-path-browser-anchor"></div>
+      </div>
+      <div class="field">
+        <label for="edit-type">Type</label>
+        <select id="edit-type" name="type" required>
+          <option value="movie">Movie</option>
+          <option value="series">Series</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="edit-sourceLangId">Source Language</label>
+        <select id="edit-sourceLangId" name="sourceLangId" required>
+          <% languages.forEach(function(l) { %>
+            <option value="<%= l.id %>"><%= l.flag ? l.flag + ' ' : '' %><%= l.name %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="field field-checkbox">
+        <input type="checkbox" id="edit-enabled" name="enabled" value="1">
+        <label for="edit-enabled">Enabled</label>
+      </div>
+      <div class="field field-checkbox">
+        <input type="checkbox" id="edit-autoTranslate" name="autoTranslate" value="1">
+        <label for="edit-autoTranslate">Auto-translate found subtitles</label>
+      </div>
+      <div class="field field-checkbox">
+        <input type="checkbox" id="edit-autoExtract" name="autoExtract" value="1">
+        <label for="edit-autoExtract">Auto-export translated subtitles to source folder</label>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('edit-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script>
+  var ROOT_LIBRARY_PATH = <%- JSON.stringify(rootLibraryPath) %>;
+
+  // ── Edit modal ──────────────────────────────────────────────────────────────
+
+  function openEditModal(lp) {
+    var form = document.getElementById('edit-form')
+    form.action = '/library-paths/update/' + lp.id
+    document.getElementById('edit-name').value = lp.name || ''
+    document.getElementById('edit-path').value = lp.path || ''
+    document.getElementById('edit-type').value = lp.type || 'movie'
+    document.getElementById('edit-sourceLangId').value = String(lp.sourceLangId || '')
+    document.getElementById('edit-enabled').checked = !!lp.enabled
+    document.getElementById('edit-autoTranslate').checked = !!lp.autoTranslate
+    document.getElementById('edit-autoExtract').checked = !!lp.autoExtract
+    closeDirBrowser()
+    openModal('edit-modal')
+  }
+
+  document.querySelectorAll('.lp-edit-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var lp = JSON.parse(btn.getAttribute('data-lp'))
+      openEditModal(lp)
+    })
+  })
+
+  // ── Directory browser ───────────────────────────────────────────────────────
+
+  var _browserTargetInputId = null  // which input field the browser is attached to
+  var _browserCurrentPath = '/'
+
+  function openDirBrowser(inputId) {
+    var panel = document.getElementById('dir-browser-panel')
+    var anchor = document.getElementById(inputId + '-browser-anchor')
+
+    // If already open for the same input, close it
+    if (_browserTargetInputId === inputId && panel.style.display !== 'none') {
+      closeDirBrowser()
+      return
+    }
+
+    _browserTargetInputId = inputId
+
+    // Move the panel into the right anchor
+    anchor.appendChild(panel)
+    panel.style.display = ''
+
+    // Start from current input value, rootLibraryPath, or filesystem root
+    var inputVal = document.getElementById(inputId).value.trim()
+    var startPath = inputVal || ROOT_LIBRARY_PATH || '/'
+    browseDir(startPath)
+  }
+
+  function closeDirBrowser() {
+    var panel = document.getElementById('dir-browser-panel')
+    panel.style.display = 'none'
+    _browserTargetInputId = null
+  }
+
+  function browseDir(dirPath) {
+    _browserCurrentPath = dirPath
+    document.getElementById('dir-current-path').textContent = dirPath
+    document.getElementById('dir-list').innerHTML =
+      '<div class="text-dim" style="padding:.5rem .75rem;font-size:.8rem">Loading…</div>'
+
+    fetch('/library-paths/browse?path=' + encodeURIComponent(dirPath))
+      .then(function(r) { return r.json() })
+      .then(function(data) {
+        _browserCurrentPath = data.path
+        document.getElementById('dir-current-path').textContent = data.path
+
+        // Up button — also disabled when current path equals the configured root
+        var upBtn = document.getElementById('dir-up-btn')
+        var atRoot = !data.parent || (ROOT_LIBRARY_PATH && data.path === ROOT_LIBRARY_PATH)
+        upBtn.disabled = !!atRoot
+        upBtn.onclick = (!atRoot && data.parent) ? function() { browseDir(data.parent) } : null
+
+        var list = document.getElementById('dir-list')
+        if (data.error) {
+          list.innerHTML = '<div style="padding:.5rem .75rem;color:var(--error);font-size:.82rem">' +
+            escHtml(data.error) + '</div>'
+          return
+        }
+        if (data.dirs.length === 0) {
+          list.innerHTML = '<div class="text-dim" style="padding:.5rem .75rem;font-size:.82rem">No subdirectories</div>'
+          return
+        }
+
+        list.innerHTML = ''
+        data.dirs.forEach(function(d) {
+          var btn = document.createElement('button')
+          btn.type = 'button'
+          btn.style.cssText = [
+            'display:flex', 'align-items:center', 'gap:.5rem',
+            'width:100%', 'padding:.4rem .75rem',
+            'background:none', 'border:none', 'border-bottom:1px solid var(--border)',
+            'text-align:left', 'cursor:pointer', 'color:var(--text)',
+            'font-size:.85rem', 'transition:background .1s',
+          ].join(';')
+          btn.innerHTML =
+            '<i class="fa-solid fa-folder" style="color:var(--accent);font-size:.9rem;flex-shrink:0"></i>' +
+            '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(d.name) + '</span>'
+          btn.addEventListener('mouseenter', function() { btn.style.background = 'var(--surface-3)' })
+          btn.addEventListener('mouseleave', function() { btn.style.background = 'none' })
+          btn.addEventListener('click', function() { browseDir(d.fullPath) })
+          list.appendChild(btn)
+        })
+
+        // Remove border from last item
+        var last = list.lastElementChild
+        if (last) last.style.borderBottom = 'none'
+      })
+      .catch(function(e) {
+        document.getElementById('dir-list').innerHTML =
+          '<div style="padding:.5rem .75rem;color:var(--error);font-size:.82rem">Error: ' + escHtml(String(e)) + '</div>'
+      })
+  }
+
+  // "Select this folder" button — writes path into the target input and closes
+  document.getElementById('dir-select-btn').addEventListener('click', function() {
+    if (_browserTargetInputId) {
+      document.getElementById(_browserTargetInputId).value = _browserCurrentPath
+    }
+    closeDirBrowser()
+  })
+
+  // Up button wired per browse call; disable by default
+  document.getElementById('dir-up-btn').disabled = true
+
+  // Close browser when the containing modal is closed
+  document.querySelectorAll('.modal-overlay').forEach(function(overlay) {
+    overlay.addEventListener('click', function(e) {
+      if (e.target === overlay) closeDirBrowser()
+    })
+  })
+  document.querySelectorAll('.modal .btn-icon[onclick*="closeModal"]').forEach(function(btn) {
+    var orig = btn.getAttribute('onclick')
+    btn.addEventListener('click', function() { closeDirBrowser() })
+  })
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;')
+  }
+
+  // ── Status polling (no page reload) ─────────────────────────────────────
+  var LP_POLL_INTERVAL = 10000
+
+  var _stateClasses = { scanning: 'badge-warning', error: 'badge-error' }
+  var _statusClasses = { completed: 'badge-success', failed: 'badge-error', queued: 'badge-warning' }
+  var _allBadgeClasses = ['badge-success', 'badge-error', 'badge-warning', 'badge-neutral']
+
+  function setBadge(el, text, colorClass) {
+    el.classList.remove.apply(el.classList, _allBadgeClasses)
+    el.classList.add(colorClass)
+    el.textContent = text
+  }
+
+  function pollLibraryPaths() {
+    fetch('/library-paths/poll')
+      .then(function(r) { if (redirectIfUnauthorized(r)) return null; return r.json() })
+      .then(function(data) {
+        if (!data) return
+        ;(data.paths || []).forEach(function(lp) {
+          var el = document.querySelector('[data-lp-state="' + lp.id + '"]')
+          if (!el) return
+          var cls = _stateClasses[lp.state] || 'badge-neutral'
+          setBadge(el, lp.state, cls)
+        })
+        ;(data.items || []).forEach(function(item) {
+          var el = document.querySelector('[data-item-status="' + item.id + '"]')
+          if (!el) return
+          var cls = _statusClasses[item.status] || 'badge-neutral'
+          setBadge(el, item.status.replace(/_/g, ' '), cls)
+        })
+      })
+      .catch(function() {})
+  }
+
+  setInterval(pollLibraryPaths, LP_POLL_INTERVAL)
+
+  // ── Change Match toggle ───────────────────────────────────────────────────
+  document.addEventListener('click', function(e) {
+    var openBtn = e.target.closest('.lp-match-btn')
+    if (openBtn) {
+      var picker = document.getElementById('lp-candidates-' + openBtn.dataset.itemId)
+      if (picker) picker.hidden = false
+      return
+    }
+    var cancelBtn = e.target.closest('.lp-match-cancel')
+    if (cancelBtn) {
+      var picker = document.getElementById('lp-candidates-' + cancelBtn.dataset.itemId)
+      if (picker) picker.hidden = true
+      return
+    }
+
+    var blBtn = e.target.closest('.lp-blacklist-btn')
+    if (blBtn) {
+      var form = document.getElementById('blacklist-form')
+      form.action = '/library-paths/item/' + blBtn.dataset.itemId + '/blacklist'
+      document.getElementById('blacklist-target-name').textContent = blBtn.dataset.itemName || ''
+      document.getElementById('blacklist-reason').value = ''
+      openModal('blacklist-modal')
+      return
+    }
+  })
+</script>
+
+<div class="modal-overlay" id="blacklist-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h2>Blacklist Item</h2>
+      <button class="btn btn-icon" onclick="closeModal('blacklist-modal')">✕</button>
+    </div>
+    <form method="POST" id="blacklist-form" action="">
+      <p class="text-dim" style="font-size:.85rem;margin-top:0">
+        Blacklisting <strong id="blacklist-target-name"></strong> will prevent it from being auto-translated or
+        manually queued until it is removed from the blacklist.
+      </p>
+      <div class="field">
+        <label for="blacklist-reason">Reason (optional)</label>
+        <input type="text" id="blacklist-reason" name="reason" maxlength="500" placeholder="e.g. wrong language, duplicate, etc.">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('blacklist-modal')">Cancel</button>
+        <button type="submit" class="btn btn-danger">Blacklist</button>
+      </div>
+    </form>
+  </div>
+</div>
+</body>
+</html>

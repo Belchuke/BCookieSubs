@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — BCookieSubs</title>
+   <%-  include('theme-vars.ejs') %>
+  <link rel="icon" type="image/png" href="/images/icon.png">
+  <link rel="stylesheet" href="/static/css/all.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="mobile-topbar">
+    <button class="hamburger-btn" id="hamburgerBtn" type="button" aria-label="Open menu">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+    <span class="mobile-topbar-title">BCookieSubs</span>
+  </header>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+<div class="app-shell">
+  <%- include('partials/sidebar') %>
+  <main class="main-content">
+    <% if (locals.toast && locals.msg) { %>
+      <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
+    <% } %>
+
+    <div class="page-header">
+      <h1>Dashboard</h1>
+      <div style="display:flex;gap:.5rem;align-items:center">
+        <% if (user.isAdmin) { %>
+          <button id="worker-stop-btn" class="btn btn-warning" onclick="workerControl('pause')" style="<%= workerPaused ? 'display:none' : 'display:inline-flex' %>">⏸ Stop Worker</button>
+          <button id="worker-start-btn" class="btn btn-secondary" onclick="workerControl('resume')" style="<%= workerPaused ? 'display:inline-flex' : 'display:none' %>">▶ Start Worker</button>
+        <% } %>
+        <% if (user.isAdmin || user.canAddSubtitles) { %>
+          <button class="btn btn-primary" onclick="openModal('upload-modal')">+ Add Subtitle</button>
+        <% } %>
+      </div>
+    </div>
+
+    <div class="card" id="queue-card">
+      <div class="card-header"><h2>Translation Queue</h2></div>
+      <div id="queue-list">
+        <p class="empty-state" id="queue-empty">Loading…</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1.5rem">
+      <div class="card-header">
+        <h2>Recent Logs</h2>
+        <small class="text-dim" id="log-count">—</small>
+      </div>
+      <div class="log-panel" id="log-panel">
+        <p class="text-dim" style="padding:.5rem">Loading…</p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="upload-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal modal-xl">
+    <div class="modal-header">
+      <h2>Add Subtitle — Step 1 of 2</h2>
+      <button class="btn btn-icon" onclick="closeModal('upload-modal')">✕</button>
+    </div>
+    <form id="upload-form-step1">
+      <div class="field">
+        <label>SRT File</label>
+        <div class="upload-zone" id="upload-zone" onclick="document.getElementById('up1-srtFile').click()">
+          <input type="file" id="up1-srtFile" name="srtFile" accept=".srt" required style="display:none">
+          <div class="upload-zone-content">
+            <div class="upload-text">
+              <span id="click-to-upload-1" class="upload-text-main">Click to upload or drag and drop</span>
+              <span id="click-to-upload-2" class="upload-text-sub">SRT files only</span>
+            </div>
+            <div class="upload-filename" id="upload-filename"></div>
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label for="up1-sourceLangId">Source Language</label>
+        <select id="up1-sourceLangId" name="sourceLangId" required>
+          <% var englishFound = false; languages.forEach(function(l) { %>
+            <option value="<%= l.id %>" <%= !englishFound && l.iso639 === 'en' ? 'selected' : '' %>><%= l.flag ? l.flag + ' ' : '' %><%= l.name %></option>
+            <% if (l.iso639 === 'en') englishFound = true; %>
+          <% }) %>
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('upload-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Next →</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="upload-modal-step2" onclick="closeModalOnOverlay(event)">
+  <div class="modal modal-xl">
+    <div class="modal-header">
+      <h2>Add Subtitle — Step 2 of 2</h2>
+      <button class="btn btn-icon" onclick="closeModal('upload-modal-step2')">✕</button>
+    </div>
+    <form id="upload-form-step2">
+      <input type="hidden" id="up2-sourceLangId" name="sourceLangId" value="">
+      <input type="hidden" id="up2-theMovieDbId" name="theMovieDbId" value="">
+      <input type="hidden" id="up2-posterBase64" name="posterBase64" value="">
+      <input type="hidden" id="up2-originalTitle" name="originalTitle" value="">
+      <input type="hidden" id="up2-isAnime" name="isAnime" value="">
+      <input type="hidden" id="up2-genres" name="genres" value="">
+      <input type="hidden" id="up2-posterUrl" name="posterUrl" value="">
+
+      
+      <div id="up2-tmdb-selector" style="display:none" class="field">
+        <label for="up2-tmdb-select">TMDB match</label>
+        <select id="up2-tmdb-select"></select>
+      </div>
+
+      <div class="upload-step2-body" style="display:flex;gap:1.5rem;align-items:stretch">
+        <div style="flex:1;min-width:0">
+          <div class="field">
+            <label for="up2-name">Title</label>
+            <input type="text" id="up2-name" name="mediaTitle" required placeholder="e.g. The Dark Knight">
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="up2-type">Type</label>
+              <select id="up2-type" name="mediaType" onchange="toggleSeriesFields(this.value)">
+                <option value="movie">Movie</option>
+                <option value="series">Series</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </div>
+            <div class="field" style="max-width:7rem">
+              <label for="up2-year">Year</label>
+              <input type="number" id="up2-year" name="mediaYear" min="1900" max="2100" placeholder="2024">
+            </div>
+            <div class="field" id="up2-season-field" style="display:none">
+              <label for="up2-season">Season</label>
+              <input type="number" id="up2-season" name="season" min="1"  placeholder="1">
+            </div>
+            <div class="field" id="up2-episode-field" style="display:none">
+              <label for="up2-episode">Episode</label>
+              <input type="number" id="up2-episode" name="episode" min="1" placeholder="1">
+            </div>
+          </div>
+          <div class="field">
+            <label>Target Language(s)</label>
+            <div id="up2-lang-chips" style="display:flex;flex-wrap:wrap;gap:.25rem;min-height:1.5rem;margin-bottom:.4rem"></div>
+            <div class="checkbox-group" id="up2-lang-group" style="max-height:90px">
+              <% languages.forEach(function(l) { %>
+                <% var isDefault = configLangs.some(function(cl){ return cl.languageId === l.id }) %>
+                <label class="checkbox-label">
+                  <input type="checkbox" name="targetLangIds" value="<%= l.id %>" <%= isDefault ? 'checked' : '' %>>
+                  <%= l.flag ? l.flag + ' ' : '' %><%= l.name %>
+                </label>
+              <% }) %>
+            </div>
+          </div>
+          <div class="field">
+            <label for="up2-chunkSize">Chunk Size Override <span class="text-dim">(blank = default <%= config.defaultChunkSize %>)</span></label>
+            <input type="number" id="up2-chunkSize" name="chunkSetting" min="1" max="200" placeholder="<%= config.defaultChunkSize %>">
+          </div>
+        </div>
+
+        
+        <div id="up2-poster-wrap" style="display:none;flex-shrink:0;width:250px">
+          <img id="up2-poster" src="" alt="Poster" style="width:100%;height:100%;object-fit:cover;border-radius:var(--radius);box-shadow:0 2px 12px rgba(0,0,0,.4)">
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('upload-modal-step2');openModal('upload-modal')">← Back</button>
+        <button type="submit" class="btn btn-primary">Add to Queue</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="inspect-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h2 id="inspect-title">Job Details</h2>
+      <button class="btn btn-icon" onclick="closeModal('inspect-modal')">✕</button>
+    </div>
+    <div id="inspect-body" class="inspect-body">Loading…</div>
+  </div>
+</div>
+
+<script>
+  var LANGUAGE_MAP = <%- JSON.stringify(Object.fromEntries(languages.map(function(l){ return [l.id, l] }))) %>;
+  var CAN_STOP = <%- JSON.stringify(user.isAdmin || user.canStopSubtitles) %>;
+  var CAN_DELETE = <%- JSON.stringify(user.isAdmin || user.canDeleteSubtitles) %>;
+  var SHOW_POSTERS = <%- config.showPosters ? 'true' : 'false' %>;
+
+  function toggleSeriesFields(val) {
+    document.getElementById("up2-season-field").style.display = val === "series" ? "" : "none"
+    document.getElementById("up2-episode-field").style.display = val === "series" ? "" : "none"
+  }
+
+  function updateLangChips() {
+    var el = document.getElementById("up2-lang-chips")
+    if (!el) return
+    var checked = Array.from(document.querySelectorAll('#up2-lang-group input[type="checkbox"]:checked'))
+    if (checked.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:.78rem">None selected</span>'
+      return
+    }
+    el.innerHTML = checked.map(function(cb) {
+      var lbl = cb.closest("label")
+      var text = lbl ? lbl.textContent.trim() : cb.value
+      return '<span class="badge badge-info" style="font-size:.73rem">' + text + "</span>"
+    }).join("")
+  }
+
+  ;(function() {
+    var group = document.getElementById("up2-lang-group")
+    if (group) group.addEventListener("change", updateLangChips)
+    updateLangChips()
+  })();
+
+  // Drag and drop file upload
+  ;(function() {
+    var zone = document.getElementById('upload-zone');
+    var fileInput = document.getElementById('up1-srtFile');
+    var fileNameEl = document.getElementById('upload-filename');
+    var uploadFormStep1 = document.getElementById('click-to-upload-1')
+    var uploadFormStep2 = document.getElementById('click-to-upload-2')
+    if (!zone || !fileInput) return;
+
+    function setDragOver(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.classList.add('drag-over');
+    }
+    function clearDragOver(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.classList.remove('drag-over');
+    }
+
+    ['dragenter', 'dragover'].forEach(function(evt) {
+      zone.addEventListener(evt, setDragOver, false);
+    });
+    ['dragleave', 'drop'].forEach(function(evt) {
+      zone.addEventListener(evt, clearDragOver, false);
+    });
+
+    zone.addEventListener('drop', function(e) {
+      var files = e.dataTransfer.files;
+      if (files.length > 0) {
+        var dt = new DataTransfer();
+        dt.items.add(files[0]);
+        fileInput.files = dt.files;
+        updateFileName(files[0].name);
+      }
+    }, false);
+
+    fileInput.addEventListener('change', function() {
+      if (fileInput.files.length > 0) {
+        updateFileName(fileInput.files[0].name);
+        uploadFormStep1.style.display = 'none';
+        uploadFormStep2.style.display = 'none';
+      }
+    });
+
+    function updateFileName(name) {
+      if (fileNameEl) {
+        fileNameEl.textContent = name;
+        fileNameEl.style.display = 'block';
+      }
+    }
+  })();
+</script>
+
+<script src="/app.js"></script>
+</body>
+</html>

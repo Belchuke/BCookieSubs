@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prompts — BCookieSubs</title>
+   <%-  include('theme-vars.ejs') %>
+  <link rel="icon" type="image/png" href="/images/icon.png">
+  <link rel="stylesheet" href="/static/css/all.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="mobile-topbar">
+    <button class="hamburger-btn" id="hamburgerBtn" type="button" aria-label="Open menu">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+    <span class="mobile-topbar-title">BCookieSubs</span>
+  </header>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+<div class="app-shell">
+  <%- include('partials/sidebar') %>
+  <main class="main-content">
+    <% if (locals.toast && locals.msg) { %>
+      <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
+    <% } %>
+
+    <div class="page-header">
+      <h1>Prompts</h1>
+      <% if (user.isAdmin || user.canManagePrompts) { %>
+        <button class="btn btn-primary" onclick="openModal('add-modal')">+ New Prompt</button>
+      <% } %>
+    </div>
+
+    <div class="alert alert-warning" style="margin-bottom:1.5rem">
+      Modifying prompts may affect translation quality. Use the <code>//variable//</code> placeholders documented below.
+    </div>
+
+    <div class="card">
+      <% if (prompts.length === 0) { %>
+        <p class="empty-state">No prompts configured.</p>
+      <% } else { %>
+        <div class="prompt-list">
+          <% prompts.forEach(function(p) { %>
+            <% var activeVersion = p.versions.find(function(v){ return v.active }) %>
+            <div class="prompt-item">
+              <div class="prompt-item-header" onclick="togglePrompt(<%= p.id %>)">
+                <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+                  <strong><%= p.name %></strong>
+                  <span class="badge badge-neutral"><%= p.type %></span>
+                  <% if (!p.active) { %><span class="badge badge-error">Inactive</span><% } else { %><span class="badge badge-success">Active</span><% } %>
+                  <% if (activeVersion) { %><span class="badge badge-info">v<%= activeVersion.version %></span><% } %>
+                  <span class="text-dim" style="font-size:.78rem"><%= p.versions.length %> version<%= p.versions.length !== 1 ? 's' : '' %></span>
+                </div>
+                <% if (user.isAdmin || user.canManagePrompts) { %>
+                <div class="actions" onclick="event.stopPropagation()">
+                  <button
+                    class="btn btn-sm btn-secondary"
+                    onclick='openAddVersionModal(<%= p.id %>, <%- JSON.stringify(p.name) %>)'>
+                    + Version
+                  </button>
+                  <% if (p.type === "translation") { %>
+                  <form method="POST" action="/prompts/toggle/<%= p.id %>" style="display:inline">
+                    <input type="hidden" name="active" value="<%= p.active ? '0' : '1' %>">
+                    <button type="submit" class="btn btn-sm <%= p.active ? 'btn-secondary' : 'btn-primary' %>">
+                      <%= p.active ? 'Disable' : 'Enable' %>
+                    </button>
+                  </form>
+                  <% } %>
+                </div>
+                <% } %>
+              </div>
+
+              
+              <div class="prompt-body" id="prompt-body-<%= p.id %>">
+                <% if (activeVersion) { %>
+                  <pre class="prompt-text"><%= activeVersion.promptText %></pre>
+                <% } else { %>
+                  <p class="text-dim" style="padding:.75rem 1rem">No active version.</p>
+                <% } %>
+
+                <% if (p.versions.length > 1) { %>
+                  <div class="prompt-versions">
+                    <div class="prompt-versions-title">Version History</div>
+                    <% p.versions.slice().sort(function(a,b){ return b.version - a.version }).forEach(function(v) { %>
+                      <div class="prompt-version-row">
+                        <span class="badge badge-neutral" style="min-width:3rem;text-align:center">v<%= v.version %></span>
+                        <span class="text-dim" style="font-size:.82rem"><%= v.createdAt.split(' ')[0] %></span>
+                        <% if (v.active) { %>
+                          <span class="badge badge-success">Active</span>
+                        <% } else if (user.isAdmin || user.canManagePrompts) { %>
+                          <form method="POST" action="/prompts/set-version/<%= p.id %>/<%= v.id %>" style="display:inline">
+                            <button type="submit" class="btn btn-sm btn-primary">Set Active</button>
+                          </form>
+                        <% } %>
+                        <details style="flex:1;min-width:0">
+                          <summary class="btn btn-sm btn-secondary" style="cursor:pointer;list-style:none;display:inline-flex">Preview</summary>
+                          <pre class="prompt-text" style="margin-top:.5rem;font-size:.78em"><%= v.promptText %></pre>
+                        </details>
+                      </div>
+                    <% }) %>
+                  </div>
+                <% } %>
+              </div>
+            </div>
+          <% }) %>
+        </div>
+      <% } %>
+    </div>
+
+    <div class="card" style="margin-top:1.5rem">
+      <div class="card-header"><h2>Prompt Placeholders</h2></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Placeholder</th><th>Description</th></tr></thead>
+          <tbody>
+            <% promptRules.forEach(function(r) { %>
+              <tr><td><code><%= r.replaceText %></code></td><td><%= r.note %></td></tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<% if (user.isAdmin || user.canManagePrompts) { %>
+<div class="modal-overlay" id="add-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h2>New Prompt</h2>
+      <button class="btn btn-icon" onclick="closeModal('add-modal')">✕</button>
+    </div>
+    <form method="POST" action="/prompts/create">
+      <div class="field">
+        <label for="new-name">Name</label>
+        <input type="text" id="new-name" name="name" required>
+      </div>
+      <div class="field">
+        <label for="new-promptText">Prompt Text</label>
+        <textarea id="new-promptText" name="promptText" rows="14" required></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Prompt</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="add-version-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h2>Add Version — <span id="av-prompt-name"></span></h2>
+      <button class="btn btn-icon" onclick="closeModal('add-version-modal')">✕</button>
+    </div>
+    <form method="POST" id="av-form" action="">
+      <div class="field">
+        <label for="av-promptText">Prompt Text</label>
+        <textarea id="av-promptText" name="promptText" rows="16" required></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('add-version-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add Version</button>
+      </div>
+    </form>
+  </div>
+</div>
+<% } %>
+
+<script src="/app.js"></script>
+<script>
+
+  document.querySelectorAll('.prompt-body').forEach(function(el) {
+    el.style.display = 'none';
+  });
+
+  function togglePrompt(id) {
+    var body = document.getElementById('prompt-body-' + id);
+    if (!body) return;
+    body.style.display = body.style.display === 'none' ? '' : 'none';
+  }
+
+  function openAddVersionModal(promptId, name) {
+    document.getElementById('av-prompt-name').textContent = name;
+    document.getElementById('av-form').action = '/prompts/add-version/' + promptId;
+    document.getElementById('av-promptText').value = '';
+    openModal('add-version-modal');
+  }
+</script>
+</body>
+</html>

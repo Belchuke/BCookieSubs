@@ -1,0 +1,401 @@
+export type DBUser = {
+  id: number
+  username: string
+  passwordHash: string | null
+  isAdmin: boolean
+
+  canManageUsers: boolean
+  canViewModels: boolean
+  canManageModels: boolean
+  canViewPrompts: boolean
+  canManagePrompts: boolean
+  canManageLanguages: boolean
+  canManageConfig: boolean
+  canAddSubtitles: boolean
+  canStopSubtitles: boolean
+  canDeleteSubtitles: boolean
+  canManageSchedules: boolean
+  canViewLogs: boolean
+  pauseWorker: boolean
+  downloadSubtitles: boolean
+  canViewStats: boolean
+  canManageSecret: boolean
+  canManageLibraryPath: boolean
+  canManageRootLibraryPath: boolean
+
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export type DBUserSession = {
+  id: number
+  userId: number
+  sessionTokenHash: string
+  expiresAt: string
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export type DBTheme = {
+  id: number
+  name: string
+
+  bg: string
+  surface: string
+  surface2: string
+  surface3: string
+  borderColor: string
+
+  textColor: string
+  textDim: string
+  textHint: string
+
+  accent: string
+  accentDim: string
+
+  success: string
+  successDim: string
+  warning: string
+  warningDim: string
+  error: string
+  errorDim: string
+  infoDim: string
+
+  createdByUserId: number | null
+  isPublic: number
+
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBRecommendedModel = {
+  id: number
+  name: string
+  size: string | null
+  parameterSize: string | null
+  provider: string
+  baseUrl: string | null
+  roles: string | null
+  requireOllamaSubscription: number
+  score: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBModel = {
+  id: number
+  name: string
+  modelName: string
+  size: string | null
+  parameterSize: string | null
+  modelUpdatedAt: string | null
+  closeAfterUse: boolean
+  active: boolean
+  provider: "ollama" | "ollama cloud" | "chatgpt" | "claude" | "copilot" | "custom"
+  baseUrl: string | null
+  recommendedModelId: number | null
+  deletedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBModelRole = {
+  id: number
+  modelId: number
+  role: "translation" | "judge" | "fallbackJudge" | "nameFormatter"
+  createdAt: string
+  deletedAt: string | null
+}
+
+export type DBLanguage = {
+  id: number
+  name: string
+  iso639: string
+  iso6392b: string | null
+  locale: string
+  flag: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBPrompt = {
+  id: number
+  name: string
+  type: "translation" | "judge" | "nameFormatter"
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBPromptVersion = {
+  id: number
+  promptId: number
+  version: number
+  active: boolean
+  promptText: string
+  createdAt: string
+  deletedAt: string | null
+}
+
+export type DBPromptStat = {
+  id: number
+  promptId: number
+  promptVersionId: number
+  modelId: number
+  languageId: number | null
+  requestCount: number
+  failedCount: number
+  successCount: number
+  selectedCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBJudgeEvaluation = {
+  id: number
+  subtitleChunkId: number
+  modelId: number
+  judgeInput: string
+  selectedCandidateId: number | null
+  judgeReason: string | null
+  createdAt: string
+}
+
+export type DBConfig = {
+  id: number
+  defaultChunkSize: number
+  maxRetriesPerChunk: number
+  showPosters: boolean
+  nameDetectionActive: boolean
+  theMovieDbActive: boolean
+  finishSingleSubtitleFirst: boolean
+  scanLibraryPaths: boolean
+  scheduleConfigured: boolean
+  clearLogs: boolean
+  clearLogsOlderThanDays: number
+  version: string
+  sessionTimeoutMinutes: number
+  selectedThemeId: number
+  rootLibraryPath: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBConfigTranslationLanguage = {
+  id: number
+  languageId: number
+  orderNumber: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBSecret = {
+  id: number
+  secretName: string
+  encryptedValue: string
+  iv: string
+  authTag: string
+  algorithm: string
+  setByEnv: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBSchedule = {
+  id: number
+  taskName: string
+  enabled: boolean
+  dayOfTheWeek: number
+  startTimeHour: number
+  startTimeMinute: number
+  durationMinutes: number
+  repeatUnit: "day" | "week" | "month"
+  repeatInterval: number
+  lastRunAt: string | null
+  firstStartAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBMediaItem = {
+  id: number
+  type: "movie" | "series" | "unknown"
+  title: string
+  originalTitle: string | null
+  year: number | null
+  theMovieDbId: string | null
+  isAnime: boolean | null
+  genres: string | null
+  posterBase64: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBSubtitle = {
+  id: number
+  userId: number
+  sourceLangId: number
+  mediaItemId: number | null
+  name: string
+  originalFileHash: string
+  originalTextSRTName: string
+  originalText: string
+  orderNumber: number
+  hide: boolean
+  source: string | null
+  sourcePath: string | null
+  mediaPath: string | null
+  status: "queued" | "running" | "completed" | "failed" | "cancelled" | "paused"
+  finishedAt: string | null
+  cancelledAt: string | null
+  cancelledByUserId: number | null
+  deletedAt: string | null
+  deletedByUserId: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBSubtitleJob = {
+  id: number
+  subtitleId: number
+  userId: number
+  targetLangId: number
+  chunkSetting: number
+  chunkSizeTotal: number
+  chunkCurrent: number
+  season: number | null
+  episode: number | null
+  status: "queued" | "running" | "completed" | "failed" | "cancelled" | "paused"
+  orderNumber: number
+  translatedText: string | null
+  outputFilePath: string | null
+  outputHash: string | null
+  finishedAt: string | null
+  cancelledAt: string | null
+  cancelledByUserId: number | null
+  deletedAt: string | null
+  deletedByUserId: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBSubtitleChunk = {
+  id: number
+  subtitleId: number
+  subtitleJobId: number
+  targetLangId: number
+  chunkIndex: number
+  srtIdFrom: number
+  srtIdTo: number
+  chunkTextRaw: string
+  status: "queued" | "running" | "completed" | "failed" | "cancelled" | "retrying" | "waiting_for_judge"
+  judgeModelId: number | null
+  judgeReason: string | null
+  selectedCandidateId: number | null
+  durationMs: number | null
+  retryCount: number
+  errorMessage: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBSubtitleChunkCandidate = {
+  id: number
+  subtitleChunkId: number
+  modelId: number | null
+  promptId: number | null
+  promptVersionId: number | null
+  promptTextSnapshot: string | null
+  translatedText: string | null
+  status: "queued" | "running" | "completed" | "failed" | "validation_failed"
+  validationPassed: boolean | null
+  selected: boolean
+  retryCount: number
+  durationMs: number | null
+  errorMessage: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBSubtitleSrtLine = {
+  id: number
+  subtitleId: number
+  srtIndex: number
+  startTime: string
+  startSeconds: number
+  endTime: string
+  endSeconds: number
+  text: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBLibraryPath = {
+  id: number
+  name: string
+  enabled: boolean
+  path: string
+  autoTranslate: boolean
+  autoExtract: boolean
+  sourceLangId: number
+  lastRunAt: string | null
+  state: "idle" | "scanning" | "error"
+  type: "movie" | "series"
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBLibraryPathItem = {
+  id: number
+  libraryPathId: number
+  mediaItemId: number | null
+  status: "not_started" | "queued" | "no_srts_found" | "completed" | "failed" | "no_media_item"
+  season: number | null
+  episode: number | null
+  path: string
+  extractFileName: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBLibraryPathItemBlacklist = {
+  id: number
+  libraryPathItemId: number
+  blacklistedByUserId: number | null
+  reason: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBLibraryPathItemCandidate = {
+  id: number
+  libraryPathItemId: number
+  path: string
+  mediaItemId: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBLog = {
+  id: number
+  level: "debug" | "info" | "warning" | "error"
+  entityType: string | null
+  entityId: number | null
+  message: string
+  metadata: string | null
+  createdAt: string
+  deletedAt: string | null
+}
+
+export type Migration = {
+  id: number
+  name: string
+  version: string
+  path: string | null
+  appliedAt: string
+  createdAt: string
+}

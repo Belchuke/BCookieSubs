@@ -1,0 +1,79 @@
+# BCookieSubs — docker-compose
+#
+# Quick start:
+#   1. Copy .env.example -> .env and fill in values you want.
+#   2. Edit the `media` bind mount below to point at your library on the host.
+#   3. `docker compose up -d`
+#   4. Browse http://localhost:4850
+#
+# Notes:
+#   - The app talks to Ollama over the docker network at http://ollama:11434.
+#     DISABLE_OLLAMA_SPAWN=1 prevents the app container from trying to spawn
+#     its own `ollama serve` (the binary isn't installed in the app image).
+#   - GPU passthrough for Ollama is preconfigured but commented out — uncomment
+#     the `deploy.resources.reservations.devices` block once nvidia-container
+#     -toolkit is set up on the host. CPU-only works out of the box.
+
+services:
+  app:
+    build: .
+    image: bcookiesubs:latest
+    # Always build locally — this image isn't published to a registry, so any
+    # `docker compose pull` would otherwise fail with "pull access denied".
+    pull_policy: build
+    container_name: bcookiesubs-app
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    ports:
+      - "${HOST_PORT:-4850}:4850"
+    environment:
+      PORT: "4850"
+      DBPATH: "/data/subtitles.db"
+      DISABLE_OLLAMA_SPAWN: "1"
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      # Required for the secrets table (AES-256-GCM key, 32 raw bytes / 64 hex chars):
+      AES_KEY: "${AES_KEY}"
+      # Optional API keys — synced into the secrets table on startup.
+      THEMOVIEDB_API_KEY: "${THEMOVIEDB_API_KEY:-}"
+      OLLAMA_API_KEY: "${OLLAMA_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      # TRANSLATION_ROOT_DIR is passed through verbatim from .env. The bind
+      # mount below exposes that exact host path at the SAME path inside the
+      # container, so paths the user types in the UI (e.g. /Users/me/Movies)
+      # match what the container sees — no /media translation needed.
+      TRANSLATION_ROOT_DIR: "${TRANSLATION_ROOT_DIR:-/media}"
+      # Token for the /internal/* routes (leave blank unless you use them).
+      INTERNAL_API_TOKEN: "${INTERNAL_API_TOKEN:-}"
+    volumes:
+      - app-data:/data
+      # Mirror the host's TRANSLATION_ROOT_DIR inside the container. When it
+      # isn't set in .env we fall back to ./media on the host -> /media inside.
+      - "${TRANSLATION_ROOT_DIR:-./media}:${TRANSLATION_ROOT_DIR:-/media}"
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: bcookiesubs-ollama
+    restart: unless-stopped
+    # Models are kept in a named volume so they survive container rebuilds.
+    volumes:
+      - ollama-models:/root/.ollama
+    # Expose the Ollama port to the host only if you want to manage it
+    # externally (e.g. `ollama pull` from the host CLI). Comment out
+    # otherwise — the app reaches it via the internal docker network.
+    ports:
+      - "${OLLAMA_HOST_PORT:-11434}:11434"
+    # ─── GPU passthrough (NVIDIA) ───────────────────────────────────────────
+    # Requires nvidia-container-toolkit on the host. Uncomment to enable.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  app-data:
+  ollama-models:

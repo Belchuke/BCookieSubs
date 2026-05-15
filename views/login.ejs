@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — BCookieSubs</title>
+   <%-  include('theme-vars.ejs') %>
+  <link rel="icon" type="image/png" href="/images/icon.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="auth-page">
+  <div class="auth-card">
+    <div style="display: flex; align-items: center; justify-content: center;">
+      <img style="height: 8rem;" src="/images/icon.png" alt="BCookieSubs logo" class="auth-logo">
+    </div>
+    <h1 class="auth-title">BCookieSubs</h1>
+    <p class="auth-subtitle">Sign in to continue</p>
+
+    <% if (locals.error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <form method="POST" action="/login<%= typeof req !== 'undefined' && req.query.next ? '?next=' + encodeURIComponent(req.query.next) : '' %>">
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" autofocus required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">Sign in</button>
+    </form>
+  </div>
+</body>
+</html>

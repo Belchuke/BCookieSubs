@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stats — BCookieSubs</title>
+  <%-  include('theme-vars.ejs') %>
+  <link rel="icon" type="image/png" href="/images/icon.png">
+  <link rel="stylesheet" href="/static/css/all.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="mobile-topbar">
+    <button class="hamburger-btn" id="hamburgerBtn" type="button" aria-label="Open menu">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+    <span class="mobile-topbar-title">BCookieSubs</span>
+  </header>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+<div class="app-shell">
+  <%- include('partials/sidebar') %>
+  <main class="main-content">
+    <% if (locals.toast && locals.msg) { %>
+      <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
+    <% } %>
+
+    <div class="page-header"><h1>Statistics</h1></div>
+
+    <% if (error) { %>
+      <div class="alert alert-error" style="margin-bottom:1rem"><%= error %></div>
+    <% } %>
+
+    
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="prompts">
+        <i class="fa-solid fa-message"></i> Prompts
+      </button>
+      <button class="tab-btn" data-tab="subtitles">
+        <i class="fa-solid fa-closed-captioning"></i> Subtitles
+      </button>
+      <button class="tab-btn" data-tab="models">
+        <i class="fa-solid fa-robot"></i> Models
+      </button>
+      <button class="tab-btn" data-tab="judge">
+        <i class="fa-solid fa-gavel"></i> Judge
+      </button>
+    </div>
+
+    
+    <div class="tab-pane" id="tab-prompts">
+
+      
+      <div class="card stats-filter-card">
+        <div class="stats-filter-row">
+          <div class="field">
+            <label for="f-model">Model</label>
+            <select id="f-model">
+              <option value="">All models</option>
+              <% models.forEach(function(m) { %>
+                <option value="<%= m.name %>"><%= m.name %><%= !m.active ? ' (inactive)' : '' %></option>
+              <% }) %>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-lang">Language</label>
+            <select id="f-lang">
+              <option value="">All languages</option>
+              <%
+                var seenLangs = {};
+                stats.forEach(function(s) {
+                  if (s.languageName && !seenLangs[s.languageName]) {
+                    seenLangs[s.languageName] = true;
+                  }
+                });
+                Object.keys(seenLangs).sort().forEach(function(ln) {
+              %>
+                <option value="<%= ln %>"><%= ln %></option>
+              <% }) %>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-prompt">Prompt</label>
+            <select id="f-prompt">
+              <option value="">All prompts</option>
+              <%
+                var seenPrompts = {};
+                stats.forEach(function(s) {
+                  if (!seenPrompts[s.promptName]) seenPrompts[s.promptName] = true;
+                });
+                Object.keys(seenPrompts).sort().forEach(function(pn) {
+              %>
+                <option value="<%= pn %>"><%= pn %></option>
+              <% }) %>
+            </select>
+          </div>
+          <div class="field stats-filter-check">
+            <label class="checkbox-label" style="gap:.5rem">
+              <input type="checkbox" id="f-active" checked style="width:15px;height:15px;accent-color:var(--accent)">
+              Only active models
+            </label>
+          </div>
+        </div>
+      </div>
+
+      
+      <div class="chart-grid">
+        <div class="card">
+          <div class="card-header"><h2>Selected by Model</h2></div>
+          <div class="chart-wrap"><canvas id="chart-model"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2>Selected by Prompt</h2></div>
+          <div class="chart-wrap"><canvas id="chart-prompt"></canvas></div>
+        </div>
+      </div>
+
+      
+      <div class="card">
+        <% if (stats.length === 0) { %>
+          <p class="empty-state">No statistics recorded yet.</p>
+        <% } else { %>
+          <div class="table-wrap">
+            <table id="stats-table">
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>Prompt</th>
+                  <th>Ver.</th>
+                  <th>Language</th>
+                  <th class="num">Requests</th>
+                  <th class="num">Success</th>
+                  <th class="num">Failed</th>
+                  <th class="num">Selected</th>
+                  <th>Success %</th>
+                  <th>Selection %</th>
+                </tr>
+              </thead>
+              <tbody>
+                
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+    </div>
+
+    
+    <div class="tab-pane" id="tab-subtitles" style="display:none">
+
+      <div class="card stats-filter-card">
+        <div class="stats-filter-row">
+          <div class="field">
+            <label for="sub-select">Subtitle</label>
+            <select id="sub-select">
+              <option value="">— Select subtitle —</option>
+              <% subtitles.forEach(function(s) { %>
+                <%
+                  var subLabel = s.displayName;
+                  if (s.season != null && s.episode != null) {
+                    subLabel += ' — S' + String(s.season).padStart(2,'0') + 'E' + String(s.episode).padStart(2,'0');
+                  }
+                %>
+                <option value="<%= s.id %>"><%= subLabel %> (<%= s.sourceLangName %>)</option>
+              <% }) %>
+            </select>
+          </div>
+          <div class="field" id="job-field" style="display:none">
+            <label for="job-select">Target Language</label>
+            <select id="job-select">
+              <option value="">— Select —</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div id="sub-info-panel" style="display:none">
+        
+        <div class="card" style="margin-top:1rem">
+          <div class="card-header"><h2>Job Info</h2></div>
+          <div class="stat-grid" id="sub-meta-grid"></div>
+        </div>
+
+        
+        <div class="card" style="margin-top:1rem">
+          <div class="card-header"><h2>Selected Candidates by Model</h2></div>
+          <div class="chart-wrap"><canvas id="sub-chart-model"></canvas></div>
+        </div>
+
+        
+        <div class="card" style="margin-top:1rem">
+          <div class="card-header"><h2>Chunks</h2></div>
+          
+          <div class="table-wrap sub-chunk-table-wrap">
+            <table id="sub-chunk-table">
+              <thead>
+                <tr>
+                  <th class="num">#</th>
+                  <th>Status</th>
+                  <th class="num">Valid / Total</th>
+                  <th class="num">Duration</th>
+                  <th>Prompt</th>
+                  <th class="num">Ver.</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          
+          <div class="chunk-stat-cards" id="sub-chunk-cards"></div>
+        </div>
+      </div>
+    </div>
+
+    
+    <div class="tab-pane" id="tab-models" style="display:none">
+
+      <div class="card stats-filter-card">
+        <div class="stats-filter-row">
+          <div class="field">
+            <label for="model-select">Model</label>
+            <select id="model-select">
+              <option value="">— Select model —</option>
+              <% models.forEach(function(m) { %>
+                <option value="<%= m.id %>"><%= m.name %><%= !m.active ? ' (inactive)' : '' %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div id="model-info-panel" style="display:none">
+        <div class="card" style="margin-top:1rem">
+          <div class="stat-grid" id="model-stat-grid"></div>
+        </div>
+
+        <div class="chart-grid chart-grid-2x2" style="margin-top:1rem">
+          <div class="card">
+            <div class="card-header"><h2>Avg Duration by Prompt</h2></div>
+            <div class="chart-wrap"><canvas id="model-chart-prompt-dur"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h2>Selected by Prompt</h2></div>
+            <div class="chart-wrap"><canvas id="model-chart-prompt-sel"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h2>Selected by Language</h2></div>
+            <div class="chart-wrap"><canvas id="model-chart-lang"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h2>Success / Failed</h2></div>
+            <div class="chart-wrap"><canvas id="model-chart-sf"></canvas></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    
+    <div class="tab-pane" id="tab-judge" style="display:none">
+
+      <div class="card stats-filter-card">
+        <div class="stats-filter-row">
+          <div class="field">
+            <label for="judge-model-select">Model</label>
+            <select id="judge-model-select">
+              <option value="">All models</option>
+              <% models.forEach(function(m) { %>
+                <option value="<%= m.id %>"><%= m.name %><%= !m.active ? ' (inactive)' : '' %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:1rem">
+        <div id="judge-table-wrap">
+          <p class="empty-state">Loading…</p>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+</div>
+
+<script>
+  var ALL_STATS  = <%- JSON.stringify(stats) %>;
+  var ALL_MODELS = <%- JSON.stringify(models) %>;
+  var SUBTITLES  = <%- JSON.stringify(subtitles) %>;
+  var ACTIVE_NAMES = (function() {
+    var s = {};
+    ALL_MODELS.forEach(function(m) { if (m.active) s[m.name] = true; });
+    return s;
+  })();
+</script>
+<script src="/chart.js"></script>
+<script src="/app.js"></script>
+<script>
+;(function() {
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function cssv(n) {
+    return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  }
+  function esc(s) {
+    return String(s == null ? '—' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function fmtMs(ms) {
+    if (!ms) return '—';
+    return ms >= 1000 ? (ms/1000).toFixed(1)+'s' : ms+'ms';
+  }
+  function statCard(label, val, cls) {
+    return '<div class="stat-card '+(cls||'')+'"><div class="stat-value">'+esc(val)+'</div><div class="stat-label">'+esc(label)+'</div></div>';
+  }
+
+  // ── Chart factory ──────────────────────────────────────────────────────────
+  function makeBar(id, labels, data) {
+    var el = document.getElementById(id);
+    if (!el) return null;
+    return new Chart(el.getContext('2d'), {
+      type: 'bar',
+      data: { labels: labels, datasets: [{ data: data, backgroundColor: cssv('--accent'), borderRadius: 4 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: cssv('--text-dim'), maxRotation: 40, font: { size: 11 } }, grid: { color: cssv('--border') } },
+          y: { ticks: { color: cssv('--text-dim'), font: { size: 11 } }, grid: { color: cssv('--border') }, beginAtZero: true }
+        }
+      }
+    });
+  }
+  function makePie(id, labels, data, colors) {
+    var el = document.getElementById(id);
+    if (!el) return null;
+    return new Chart(el.getContext('2d'), {
+      type: 'doughnut',
+      data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderWidth: 0 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { color: cssv('--text'), boxWidth: 12, padding: 10 } } }
+      }
+    });
+  }
+  function setBar(chart, labels, data) {
+    if (!chart) return;
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = data;
+    chart.update();
+  }
+  function aggBy(arr, key) {
+    var m = {};
+    arr.forEach(function(s){ var k=s[key]||'Unknown'; m[k]=(m[k]||0)+(s.selectedCount||0); });
+    return m;
+  }
+
+  // ── Tab switching ──────────────────────────────────────────────────────────
+  document.querySelectorAll('.tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+      document.querySelectorAll('.tab-pane').forEach(function(p){ p.style.display='none'; });
+      btn.classList.add('active');
+      document.getElementById('tab-'+btn.dataset.tab).style.display='';
+      if (btn.dataset.tab === 'judge') loadJudgeData();
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TAB 1: Prompts
+  // ══════════════════════════════════════════════════════════════════════════
+  var chartByModel  = makeBar('chart-model',  [], []);
+  var chartByPrompt = makeBar('chart-prompt', [], []);
+
+  function applyPromptFilters() {
+    var model     = document.getElementById('f-model').value;
+    var lang      = document.getElementById('f-lang').value;
+    var prompt    = document.getElementById('f-prompt').value;
+    var activeOnly = document.getElementById('f-active').checked;
+
+    var filtered = ALL_STATS.filter(function(s) {
+      if (model      && s.modelName    !== model)  return false;
+      if (lang       && s.languageName !== lang)   return false;
+      if (prompt     && s.promptName   !== prompt) return false;
+      if (activeOnly && !ACTIVE_NAMES[s.modelName]) return false;
+      return true;
+    });
+
+    var bm = aggBy(filtered, 'modelName');
+    var bp = aggBy(filtered, 'promptName');
+    setBar(chartByModel,  Object.keys(bm), Object.values(bm));
+    setBar(chartByPrompt, Object.keys(bp), Object.values(bp));
+
+    var tbody = document.querySelector('#stats-table tbody');
+    if (!tbody) return;
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No matching stats.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = filtered.map(function(s) {
+      var sr  = s.requestCount > 0 ? Math.round(s.successCount  / s.requestCount  * 100) : 0;
+      var sel = s.successCount > 0 ? Math.round(s.selectedCount / s.successCount * 100)  : 0;
+      return '<tr>'+
+        '<td><strong>'+esc(s.modelName)+'</strong></td>'+
+        '<td>'+esc(s.promptName)+'</td>'+
+        '<td class="num">'+esc(s.promptVersionId)+'</td>'+
+        '<td class="text-dim">'+esc(s.languageName)+'</td>'+
+        '<td class="num">'+s.requestCount+'</td>'+
+        '<td class="num text-success">'+s.successCount+'</td>'+
+        '<td class="num text-error">'+s.failedCount+'</td>'+
+        '<td class="num text-accent">'+s.selectedCount+'</td>'+
+        '<td><div class="mini-bar"><div class="mini-fill" style="width:'+sr+'%"></div></div> <span class="num">'+sr+'%</span></td>'+
+        '<td><div class="mini-bar"><div class="mini-fill mini-fill-accent" style="width:'+sel+'%"></div></div> <span class="num">'+sel+'%</span></td>'+
+        '</tr>';
+    }).join('');
+  }
+
+  ['f-model','f-lang','f-prompt','f-active'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('change', applyPromptFilters);
+  });
+  applyPromptFilters();
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TAB 2: Subtitles
+  // ══════════════════════════════════════════════════════════════════════════
+  var subChartModel = null;
+
+  document.getElementById('sub-select').addEventListener('change', function() {
+    var sid = this.value;
+    if (!sid) {
+      document.getElementById('job-field').style.display = 'none';
+      document.getElementById('sub-info-panel').style.display = 'none';
+      return;
+    }
+    fetch('/stats/subtitle-data?subtitleId='+sid)
+      .then(function(r){ return r.json(); })
+      .then(function(data) {
+        var jobSel = document.getElementById('job-select');
+        jobSel.innerHTML = '<option value="">— Select —</option>';
+        (data.jobs||[]).forEach(function(j) {
+          jobSel.innerHTML += '<option value="'+j.id+'">'+esc(j.targetLangName)+'</option>';
+        });
+        if (data.jobs && data.jobs.length === 1) {
+          jobSel.value = data.jobs[0].id;
+          loadJobData(data.jobs[0].id);
+          document.getElementById('job-field').style.display = 'none';
+        } else {
+          document.getElementById('job-field').style.display = '';
+          document.getElementById('sub-info-panel').style.display = 'none';
+        }
+      });
+  });
+
+  document.getElementById('job-select').addEventListener('change', function() {
+    if (this.value) loadJobData(parseInt(this.value));
+  });
+
+  function loadJobData(jobId) {
+    fetch('/stats/job-data?jobId='+jobId)
+      .then(function(r){ return r.json(); })
+      .then(function(d) {
+        document.getElementById('sub-info-panel').style.display = '';
+
+        // Metadata
+        document.getElementById('sub-meta-grid').innerHTML = [
+          statCard('Title',       d.subtitle ? d.subtitle.name : '—', ''),
+          statCard('Chunk Size',  d.job.chunkSetting,  'stat-processing'),
+          statCard('Source Lang', d.sourceLangName,    ''),
+          statCard('Target Lang', d.targetLangName,    ''),
+          statCard('Chunks',      d.chunks.length,     ''),
+          statCard('Status',      d.job.status,        d.job.status==='completed'?'stat-success':'stat-processing'),
+        ].join('');
+
+        // Chart
+        var bm = {};
+        (d.chunks||[]).forEach(function(c) {
+          if (c.selectedModelName) bm[c.selectedModelName] = (bm[c.selectedModelName]||0)+1;
+        });
+        if (subChartModel) subChartModel.destroy();
+        subChartModel = makeBar('sub-chart-model', Object.keys(bm), Object.values(bm));
+
+        // Chunk table (desktop)
+        var tbody = document.querySelector('#sub-chunk-table tbody');
+        tbody.innerHTML = (d.chunks||[]).map(function(c) {
+          var statusCls = c.status==='completed'?'text-success':c.status==='failed'?'text-error':'text-dim';
+          return '<tr>'+
+            '<td class="num">'+(c.chunkIndex+1)+'</td>'+
+            '<td class="'+statusCls+'">'+esc(c.status)+'</td>'+
+            '<td class="num">'+c.validCandidateCount+' / '+c.totalCandidateCount+'</td>'+
+            '<td class="num">'+fmtMs(c.durationMs)+'</td>'+
+            '<td>'+esc(c.selectedPromptName)+'</td>'+
+            '<td class="num">'+esc(c.selectedPromptVersion)+'</td>'+
+            '</tr>';
+        }).join('');
+
+        // Chunk cards (mobile)
+        document.getElementById('sub-chunk-cards').innerHTML = (d.chunks||[]).map(function(c) {
+          var bdge = c.status==='completed'?'badge-success':c.status==='failed'?'badge-error':'badge-neutral';
+          return '<div class="chunk-stat-card">'+
+            '<div class="chunk-stat-header">'+
+              '<span class="chunk-stat-num">#'+(c.chunkIndex+1)+'</span>'+
+              '<span class="badge '+bdge+'">'+esc(c.status)+'</span>'+
+            '</div>'+
+            '<div class="chunk-stat-row"><span>Valid / Total</span><span>'+c.validCandidateCount+' / '+c.totalCandidateCount+'</span></div>'+
+            '<div class="chunk-stat-row"><span>Duration</span><span>'+fmtMs(c.durationMs)+'</span></div>'+
+            '<div class="chunk-stat-row"><span>Prompt</span><span>'+esc(c.selectedPromptName)+(c.selectedPromptVersion?' v'+c.selectedPromptVersion:'')+'</span></div>'+
+            (c.judgeReason?'<div class="chunk-stat-row chunk-stat-reason"><span>Reason</span><span>'+esc(c.judgeReason)+'</span></div>':'')+
+            '</div>';
+        }).join('');
+      });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TAB 3: Models
+  // ══════════════════════════════════════════════════════════════════════════
+  var mCharts = {};
+
+  document.getElementById('model-select').addEventListener('change', function() {
+    var mid = this.value;
+    if (!mid) { document.getElementById('model-info-panel').style.display='none'; return; }
+    fetch('/stats/model-data?modelId='+mid)
+      .then(function(r){ return r.json(); })
+      .then(function(d) {
+        document.getElementById('model-info-panel').style.display = '';
+        var o = d.overall || {};
+        var sr   = o.totalCandidates > 0 ? Math.round(o.successCount  / o.totalCandidates * 100) : 0;
+        var selR = o.successCount    > 0 ? Math.round(o.selectedCount / o.successCount    * 100) : 0;
+
+        document.getElementById('model-stat-grid').innerHTML = [
+          statCard('Total',      o.totalCandidates||0,                  ''),
+          statCard('Success',    o.successCount||0,                     'stat-success'),
+          statCard('Failed',     o.failedCount||0,                      'stat-error'),
+          statCard('Selected',   o.selectedCount||0,                    'stat-processing'),
+          statCard('Success %',  sr+'%',                                ''),
+          statCard('Selection %',selR+'%',                              ''),
+          statCard('Avg Duration', fmtMs(o.avgDurationMs ? Math.round(o.avgDurationMs) : null), ''),
+        ].join('');
+
+        Object.values(mCharts).forEach(function(c){ if(c) c.destroy(); });
+        mCharts = {};
+
+        var bp = d.byPrompt   || [];
+        var bl = d.byLanguage || [];
+        mCharts.pd = makeBar('model-chart-prompt-dur',
+          bp.map(function(p){ return p.promptName; }),
+          bp.map(function(p){ return p.avgDurationMs ? Math.round(p.avgDurationMs) : 0; }));
+        mCharts.ps = makeBar('model-chart-prompt-sel',
+          bp.map(function(p){ return p.promptName; }),
+          bp.map(function(p){ return p.selectedCount||0; }));
+        mCharts.la = makeBar('model-chart-lang',
+          bl.map(function(l){ return l.languageName; }),
+          bl.map(function(l){ return l.selectedCount||0; }));
+        mCharts.sf = makePie('model-chart-sf',
+          ['Success','Failed'],
+          [o.successCount||0, o.failedCount||0],
+          [cssv('--success'), cssv('--error')]);
+      });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TAB 4: Judge
+  // ══════════════════════════════════════════════════════════════════════════
+  var judgeLoaded = false;
+  var _judgePage = 0;
+  var JUDGE_PAGE_SIZE = 30;
+
+  function loadJudgeData(page) {
+    _judgePage = page != null ? page : _judgePage;
+    var modelId = document.getElementById('judge-model-select').value;
+    var url = '/stats/judge-data?page=' + _judgePage + (modelId ? '&modelId=' + modelId : '');
+    fetch(url)
+      .then(function(r){ return r.json(); })
+      .then(function(data) {
+        judgeLoaded = true;
+        var rows = data.rows || [];
+        var total = data.total || 0;
+        var totalPages = Math.ceil(total / JUDGE_PAGE_SIZE);
+        var wrap = document.getElementById('judge-table-wrap');
+        if (!rows.length && _judgePage === 0) {
+          wrap.innerHTML = '<p class="empty-state">No judge evaluations recorded yet.</p>';
+          return;
+        }
+        var html = '<div class="table-wrap"><table id="judge-table"><thead><tr>' +
+          '<th>Date</th><th>Model</th><th>Subtitle</th><th class="num">Chunk</th>' +
+          '<th>Reason</th><th>Prompt</th>' +
+          '</tr></thead><tbody>';
+        rows.forEach(function(r) {
+          html += '<tr>' +
+            '<td class="text-dim" style="white-space:nowrap;font-size:.8em">' + esc(r.createdAt ? r.createdAt.split(' ')[0] : '—') + '</td>' +
+            '<td><strong>' + esc(r.modelName || '—') + '</strong></td>' +
+            '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.subtitleName || '—') + '</td>' +
+            '<td class="num">' + (r.chunkIndex != null ? r.chunkIndex + 1 : '—') + '</td>' +
+            '<td style="max-width:260px;font-size:.82em">' + esc(r.judgeReason || '—') + '</td>' +
+            '<td>' +
+              '<details>' +
+                '<summary class="btn btn-sm btn-secondary" style="cursor:pointer;list-style:none;display:inline-flex">Preview</summary>' +
+                '<pre class="prompt-text" style="margin-top:.5rem;font-size:.75em;max-height:300px">' + esc(r.judgeInput || '') + '</pre>' +
+              '</details>' +
+            '</td>' +
+            '</tr>';
+        });
+        html += '</tbody></table></div>';
+        if (totalPages > 1) {
+          html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem .25rem 0;gap:.5rem;flex-wrap:wrap">';
+          html += '<span class="text-dim" style="font-size:.82rem">' +
+            'Showing ' + (_judgePage * JUDGE_PAGE_SIZE + 1) + '–' + Math.min((_judgePage + 1) * JUDGE_PAGE_SIZE, total) +
+            ' of ' + total + '</span>';
+          html += '<div style="display:flex;gap:.35rem">';
+          html += '<button class="btn btn-sm btn-secondary" ' + (_judgePage === 0 ? 'disabled' : '') +
+            ' onclick="loadJudgeData(' + (_judgePage - 1) + ')">← Prev</button>';
+          for (var p = 0; p < totalPages; p++) {
+            html += '<button class="btn btn-sm ' + (p === _judgePage ? 'btn-primary' : 'btn-secondary') + '"' +
+              ' onclick="loadJudgeData(' + p + ')">' + (p + 1) + '</button>';
+          }
+          html += '<button class="btn btn-sm btn-secondary" ' + (_judgePage >= totalPages - 1 ? 'disabled' : '') +
+            ' onclick="loadJudgeData(' + (_judgePage + 1) + ')">Next →</button>';
+          html += '</div></div>';
+        }
+        wrap.innerHTML = html;
+      });
+  }
+
+  window.loadJudgeData = loadJudgeData;
+
+  document.getElementById('judge-model-select').addEventListener('change', function() {
+    loadJudgeData(0);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Auto-refresh every 15 s — preserve tab + filter state via sessionStorage
+  // ══════════════════════════════════════════════════════════════════════════
+  var STORAGE_KEY = 'stats_state';
+
+  function saveState() {
+    var activeBtn = document.querySelector('.tab-btn.active');
+    var state = {
+      tab:        activeBtn ? activeBtn.dataset.tab : 'prompts',
+      fModel:     document.getElementById('f-model')         ? document.getElementById('f-model').value         : '',
+      fLang:      document.getElementById('f-lang')          ? document.getElementById('f-lang').value          : '',
+      fPrompt:    document.getElementById('f-prompt')        ? document.getElementById('f-prompt').value        : '',
+      fActive:    document.getElementById('f-active')        ? document.getElementById('f-active').checked      : true,
+      subSelect:  document.getElementById('sub-select')      ? document.getElementById('sub-select').value      : '',
+      jobSelect:  document.getElementById('job-select')      ? document.getElementById('job-select').value      : '',
+      modelSel:   document.getElementById('model-select')    ? document.getElementById('model-select').value    : '',
+      judgeSel:   document.getElementById('judge-model-select') ? document.getElementById('judge-model-select').value : '',
+    };
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function restoreState() {
+    var raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    var state;
+    try { state = JSON.parse(raw); } catch(e) { return; }
+
+    // Restore tab
+    if (state.tab) {
+      var targetBtn = document.querySelector('.tab-btn[data-tab="' + state.tab + '"]');
+      if (targetBtn) {
+        document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+        document.querySelectorAll('.tab-pane').forEach(function(p){ p.style.display='none'; });
+        targetBtn.classList.add('active');
+        var pane = document.getElementById('tab-' + state.tab);
+        if (pane) pane.style.display = '';
+        if (state.tab === 'judge') loadJudgeData();
+      }
+    }
+
+    // Restore Prompts filters
+    if (state.fModel !== undefined) { var el = document.getElementById('f-model'); if(el) el.value = state.fModel; }
+    if (state.fLang  !== undefined) { var el = document.getElementById('f-lang');  if(el) el.value = state.fLang; }
+    if (state.fPrompt!== undefined) { var el = document.getElementById('f-prompt');if(el) el.value = state.fPrompt; }
+    if (state.fActive!== undefined) { var el = document.getElementById('f-active'); if(el) el.checked = state.fActive; }
+    if (state.fModel !== undefined || state.fLang !== undefined) applyPromptFilters();
+
+    // Restore Subtitle selection
+    if (state.subSelect) {
+      var subEl = document.getElementById('sub-select');
+      if (subEl) {
+        subEl.value = state.subSelect;
+        if (subEl.value) {
+          fetch('/stats/subtitle-data?subtitleId=' + subEl.value)
+            .then(function(r){ return r.json(); })
+            .then(function(data) {
+              var jobSel = document.getElementById('job-select');
+              jobSel.innerHTML = '<option value="">— Select —</option>';
+              (data.jobs||[]).forEach(function(j) {
+                jobSel.innerHTML += '<option value="'+j.id+'">'+esc(j.targetLangName)+'</option>';
+              });
+              if (state.jobSelect) {
+                jobSel.value = state.jobSelect;
+                if (jobSel.value) loadJobData(parseInt(jobSel.value));
+              }
+              document.getElementById('job-field').style.display = (data.jobs||[]).length > 1 ? '' : 'none';
+            });
+        }
+      }
+    }
+
+    // Restore Model selection
+    if (state.modelSel) {
+      var modelEl = document.getElementById('model-select');
+      if (modelEl) {
+        modelEl.value = state.modelSel;
+        if (modelEl.value) {
+          var evt = new Event('change');
+          modelEl.dispatchEvent(evt);
+        }
+      }
+    }
+
+    // Restore Judge model selection
+    if (state.judgeSel) {
+      var judgeEl = document.getElementById('judge-model-select');
+      if (judgeEl) { judgeEl.value = state.judgeSel; }
+    }
+  }
+
+  // Save state before unload and on every change
+  window.addEventListener('beforeunload', saveState);
+  document.querySelectorAll('#f-model,#f-lang,#f-prompt,#f-active,#sub-select,#job-select,#model-select,#judge-model-select').forEach(function(el) {
+    el.addEventListener('change', saveState);
+  });
+
+  // Restore on load
+  restoreState();
+
+  // ── Poll: update data without a page reload ───────────────────────────────
+  var STATS_POLL_INTERVAL = 30000;
+
+  function pollStats() {
+    fetch('/stats/poll')
+      .then(function(r){ if (redirectIfUnauthorized(r)) return null; return r.json(); })
+      .then(function(data) {
+        if (!data) return;
+        if (data.stats && data.stats.length) {
+          ALL_STATS = data.stats;
+          applyPromptFilters();
+        }
+        var activeTab = (document.querySelector('.tab-btn.active') || {}).dataset && document.querySelector('.tab-btn.active').dataset.tab;
+        if (activeTab === 'judge' && judgeLoaded) loadJudgeData();
+        if (activeTab === 'subtitles') {
+          var jobSel = document.getElementById('job-select');
+          if (jobSel && jobSel.value) loadJobData(parseInt(jobSel.value));
+        }
+      })
+      .catch(function(){});
+  }
+
+  setInterval(pollStats, STATS_POLL_INTERVAL);
+
+})();
+</script>
+</body>
+</html>

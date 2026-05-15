@@ -1,0 +1,39 @@
+{
+  "name": "bcookiesubs",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "tsc && node dist/index.js",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "Belchuke",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/ejs": "^3.1.5",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.2"
+  },
+  "dependencies": {
+    "@fortawesome/fontawesome-free": "^7.2.0",
+    "axios": "^1.15.0",
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.9.0",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.4.2",
+    "ejs": "^5.0.2",
+    "express": "^5.2.1",
+    "multer": "^2.1.1",
+    "ollama": "^0.6.3",
+    "srt-parser-2": "^1.2.3"
+  }
+}
