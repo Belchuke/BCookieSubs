@@ -115,9 +115,3 @@ In the meantime the best support is:
 - Star the repo so it's easier for others to find.
 - File issues with reproduction steps when something breaks.
 - Share which translation prompts work well for your language pair so I can fold them into the defaults.
-
----
-
-## License
-
-ISC. See `package.json`. Translations produced by this project are yours; do whatever you'd like with them.
