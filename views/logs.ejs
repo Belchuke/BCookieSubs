@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<%= locale %>">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Logs — BCookieSubs</title>
+  <title><%= __('logs.title') %> — BCookieSubs</title>
    <%-  include('theme-vars.ejs') %>
   <link rel="icon" type="image/png" href="/images/icon.png">
   <link rel="stylesheet" href="/static/css/all.min.css">
@@ -32,19 +32,19 @@
     <% if (pagination && pagination.total > 0) { %>
     <div class="pagination-container" style="margin-bottom: 1.5rem">
       <span class="pagination-info">
-       Showing <%= pagination.page * pagination.limit + 1 %>-<%= Math.min((pagination.page + 1) * pagination.limit, pagination.total) %> of <%= pagination.total %> logs
+       <%= __('logs.showing') %> <%= pagination.page * pagination.limit + 1 %>-<%= Math.min((pagination.page + 1) * pagination.limit, pagination.total) %> <%= __('logs.of') %> <%= pagination.total %> <%= __('logs.logs') %>
       </span>
       <div class="pagination-controls">
-        <a href="/logs?page=<%= pagination.page - 1 %>&limit=<%= pagination.limit %>" class="btn btn-sm<%= pagination.hasPrev ? '' : ' btn-disabled' %>"<%= pagination.hasPrev ? '' : ' style="pointer-events:none;"' %>>← Prev</a>
-        <span class="page-indicator">Page <%= pagination.page + 1 %> / <%= pagination.totalPages %></span>
-        <a href="/logs?page=<%= pagination.page + 1 %>&limit=<%= pagination.limit %>" class="btn btn-sm<%= pagination.hasNext ? '' : ' btn-disabled' %>"<%= pagination.hasNext ? '' : ' style="pointer-events:none;"' %>>Next →</a>
+        <a href="/logs?page=<%= pagination.page - 1 %>&limit=<%= pagination.limit %>" class="btn btn-sm<%= pagination.hasPrev ? '' : ' btn-disabled' %>"<%= pagination.hasPrev ? '' : ' style="pointer-events:none;"' %>><%= __('logs.prev') %></a>
+        <span class="page-indicator"><%= __('logs.page') %> <%= pagination.page + 1 %> / <%= pagination.totalPages %></span>
+        <a href="/logs?page=<%= pagination.page + 1 %>&limit=<%= pagination.limit %>" class="btn btn-sm<%= pagination.hasNext ? '' : ' btn-disabled' %>"<%= pagination.hasNext ? '' : ' style="pointer-events:none;"' %>><%= __('logs.nextPage') %></a>
       </div>
     </div>
     <% } %>
 
     <div class="card">
       <% if (logs.length === 0) { %>
-        <p class="empty-state">No logs found.</p>
+        <p class="empty-state"><%= __('logs.noLogsFound') %></p>
       <% } else { %>
         <div class="log-panel log-panel-full">
           <% logs.forEach(function(l) { %>

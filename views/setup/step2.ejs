@@ -1,227 +1,151 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Setup — Install Models</title>
-  <%-  include('../theme-vars.ejs') %>
-  <link rel="icon" type="image/png" href="/images/icon.png">
-  <link rel="stylesheet" href="/style.css">
-</head>
-<body>
-<div class="setup-page">
-  <div class="setup-steps">
-    <span class="step done">✓</span>
-    <span class="step-line done"></span>
-    <span class="step active">2</span>
-    <span class="step-line"></span>
-    <span class="step">3</span>
-  </div>
-  <h1>Install a Model</h1>
-  <p class="page-subtitle">Install at least one model. Roles (Translation, Judge, Name Formatter) are assigned in the next step.</p>
+<html lang="<%= locale %>">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Setup — How It Works</title>
+    <%- include('../theme-vars.ejs') %>
+    <link rel="icon" type="image/png" href="/images/icon.png" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="setup-page">
+      <div class="setup-steps">
+        <span class="step done">✓</span>
+        <span class="step-line done"></span>
+        <span class="step active">2</span>
+        <span class="step-line"></span>
+        <span class="step">3</span>
+        <span class="step-line"></span>
+        <span class="step">4</span>
+        <span class="step-line"></span>
+        <span class="step">5</span>
+      </div>
+      <h1><%= __('setup.step2.title') %></h1>
+      <p class="page-subtitle"><%= __('setup.step2.subtitle') %></p>
 
-  <% if (locals.error) { %>
-    <div class="alert alert-error"><%= error %></div>
-  <% } %>
-  <% if (locals.toast === 'success') { %>
-    <div class="alert alert-success"><%= msg %></div>
-  <% } %>
-  <% if (locals.ollamaError) { %>
-    <div class="alert alert-warning"><%= ollamaError %></div>
-  <% } %>
+      <div style="display: flex; flex-direction: column; gap: 1.25rem; margin-bottom: 2rem">
+        <div class="card">
+          <div class="card-header"><h2><%= __('setup.step2.modelRoles') %></h2></div>
+          <div style="display: flex; flex-direction: column; gap: 0.85rem; padding: 0.25rem 0">
+            <div style="display: flex; gap: 0.85rem; align-items: flex-start">
+              <span
+                class="badge badge-info"
+                style="flex-shrink: 0; margin-top: 0.1rem; min-width: 112px; text-align: center"
+                ><%= __('setup.step2.roleTranslation') %></span
+              >
+              <div style="font-size: 0.88rem; line-height: 1.5"><%= __('setup.step2.roleTranslationDesc') %></div>
+            </div>
 
-  
-  <div class="card" style="margin-bottom:1.5rem">
-    <div class="card-header">
-      <h2>Recommended Models</h2>
-      <small class="text-dim"><%= recommendedModels.length %> available</small>
-    </div>
-    <% if (recommendedModels.length === 0) { %>
-      <p class="empty-state">All recommended models are already installed.</p>
-    <% } else { %>
-      <div class="model-list">
-        <% recommendedModels.forEach(function(r) { %>
-          <%
-            var alreadyAdded = dbModels.some(function(d){ return d.modelName === r.name })
-            var isInstalled = ollamaModels.indexOf(r.name) !== -1
-            var isCloud = r.provider === 'ollama cloud' || r.provider === 'chatgpt' || r.provider === 'claude'
-          %>
-          <div class="model-row" style="flex-wrap:wrap;gap:.5rem;align-items:center">
-            <div style="flex:1;min-width:160px">
-              <code class="model-name"><%= r.name %></code>
-              <% if (r.requireOllamaSubscription) { %>
-                <span class="badge badge-warning" style="margin-left:.3rem;font-size:.72rem">Subscription</span>
-              <% } %>
-              <div class="text-dim" style="font-size:.78rem;margin-top:.2rem">
-                <%= r.provider %> · <%= r.score %>
-                <% if (r.roles) { %> · <%= r.roles %><% } %>
-              </div>
+            <div style="display: flex; gap: 0.85rem; align-items: flex-start">
+              <span
+                class="badge badge-warning"
+                style="flex-shrink: 0; margin-top: 0.1rem; min-width: 112px; text-align: center"
+                ><%= __('setup.step2.roleJudge') %></span
+              >
+              <div style="font-size: 0.88rem; line-height: 1.5"><%= __('setup.step2.roleJudgeDesc') %></div>
+            </div>
+
+            <div style="display: flex; gap: 0.85rem; align-items: flex-start">
+              <span
+                class="badge badge-success"
+                style="flex-shrink: 0; margin-top: 0.1rem; min-width: 112px; text-align: center"
+                ><%= __('setup.step2.roleNameFormatter') %></span
+              >
+              <div style="font-size: 0.88rem; line-height: 1.5"><%= __('setup.step2.roleNameFormatterDesc') %></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h2><%= __('setup.step2.promptsTitle') %></h2></div>
+          <div style="font-size: 0.88rem; line-height: 1.6">
+            <p style="margin: 0 0 0.6rem"><%= __('setup.step2.promptsDesc') %></p>
+            <p style="margin: 0 0 0.4rem"><%= __('setup.step2.placeholdersLabel') %></p>
+            <div
+              style="
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                gap: 0.3rem 0.75rem;
+                font-size: 0.82rem;
+              "
+            ></div>
+            <p style="margin: 0.6rem 0 0" class="text-dim"><%= __('setup.step2.promptsEditHint') %></p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h2><%= __('setup.step2.settingsOverview') %></h2></div>
+          <div style="display: flex; flex-direction: column; gap: 0.7rem; font-size: 0.88rem; line-height: 1.5">
+            <div style="display: flex; gap: 1rem; align-items: flex-start">
+              <span style="font-weight: 600; min-width: 185px; flex-shrink: 0"
+                ><%= __('setup.step2.defaultChunkSize') %></span
+              >
+              <span class="text-dim"><%= __('setup.step2.defaultChunkSizeDesc') %></span>
+            </div>
+            <div style="display: flex; gap: 1rem; align-items: flex-start">
+              <span style="font-weight: 600; min-width: 185px; flex-shrink: 0"
+                ><%= __('setup.step2.finishOneFirst') %></span
+              >
+              <span class="text-dim"><%= __('setup.step2.finishOneFirstDesc') %></span>
+            </div>
+            <div style="display: flex; gap: 1rem; align-items: flex-start">
+              <span style="font-weight: 600; min-width: 185px; flex-shrink: 0"
+                ><%= __('setup.step2.nameDetection') %></span
+              >
+              <span class="text-dim"><%= __('setup.step2.nameDetectionDesc') %></span>
+            </div>
+            <div style="display: flex; gap: 1rem; align-items: flex-start">
+              <span style="font-weight: 600; min-width: 185px; flex-shrink: 0"
+                ><%= __('setup.step2.tmdbIntegration') %></span
+              >
+              <span class="text-dim"><%= __('setup.step2.tmdbIntegrationDesc') %></span>
+            </div>
+            <div style="display: flex; gap: 1rem; align-items: flex-start">
+              <span style="font-weight: 600; min-width: 185px; flex-shrink: 0"
+                ><%= __('setup.step2.showPosters') %></span
+              >
+              <span class="text-dim"><%= __('setup.step2.showPostersDesc') %></span>
+            </div>
+            <div style="display: flex; gap: 1rem; align-items: flex-start">
+              <span style="font-weight: 600; min-width: 185px; flex-shrink: 0"
+                ><%= __('setup.step2.libraryScanning') %></span
+              >
+              <span class="text-dim"><%= __('setup.step2.libraryScanningDesc') %></span>
+            </div>
+            <div style="display: flex; gap: 1rem; align-items: flex-start">
+              <span style="font-weight: 600; min-width: 185px; flex-shrink: 0"
+                ><%= __('setup.step2.autoClearLogs') %></span
+              >
+              <span class="text-dim"><%= __('setup.step2.autoClearLogsDesc') %></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h2><%= __('setup.step2.languagesTitle') %></h2></div>
+          <div style="font-size: 0.88rem; line-height: 1.5; display: flex; flex-direction: column; gap: 0.5rem">
+            <div>
+              <strong><%= __('setup.step2.defaultTargetLangs') %></strong>
+              <span class="text-dim" style="margin-left: 0.4rem"><%= __('setup.step2.systemWide') %></span>
+              <br />
+              <span class="text-dim"> <%= __('setup.step2.defaultTargetLangsDesc') %> </span>
             </div>
             <div>
-              <% if (alreadyAdded) { %>
-                <span class="badge badge-success">Installed</span>
-              <% } else if (isCloud) { %>
-                <form method="POST" action="/setup/2/install-recommended/<%= r.id %>" style="display:inline">
-                  <button type="submit" class="btn btn-sm btn-primary">+ Add</button>
-                </form>
-              <% } else if (isInstalled) { %>
-                <form method="POST" action="/setup/2/install-recommended/<%= r.id %>" style="display:inline">
-                  <button type="submit" class="btn btn-sm btn-primary">+ Add</button>
-                </form>
-              <% } else { %>
-                <button class="btn btn-sm btn-secondary setup-pull-btn"
-                        data-model="<%= r.name %>"
-                        data-rec-id="<%= r.id %>">
-                  Install
-                </button>
-              <% } %>
+              <strong><%= __('setup.step2.perUserLangs') %></strong>
+              <span class="text-dim" style="margin-left: 0.4rem"><%= __('setup.step2.accountOverride') %></span>
+              <br />
+              <span class="text-dim"> <%= __('setup.step2.perUserLangsDesc') %> </span>
             </div>
           </div>
-        <% }) %>
-      </div>
-    <% } %>
-  </div>
-
-  <div id="pull-container" class="card" style="margin-bottom:1.5rem;display:none">
-    <div class="card-header"><h2>Installing models</h2></div>
-    <div id="pull-rows" style="display:flex;flex-direction:column;gap:.75rem;padding:.75rem 1rem"></div>
-  </div>
-
-  
-  <% if (dbModels.length > 0) { %>
-  <div class="card" style="margin-bottom:1.5rem">
-    <div class="card-header">
-      <h2>Installed Models</h2>
-      <small class="text-dim"><%= dbModels.length %> model(s)</small>
-    </div>
-    <div class="model-list">
-      <% dbModels.forEach(function(m) { %>
-        <div class="model-row">
-          <div class="model-info">
-            <span class="model-display-name"><%= m.name %></span>
-            <code class="model-name text-dim"><%= m.modelName %></code>
-          </div>
-          <span class="badge badge-neutral text-dim" style="font-size:.75rem">Roles configured in step 3</span>
         </div>
-      <% }) %>
+      </div>
+
+      <div class="setup-actions">
+        <form method="POST" action="/setup/2/next">
+          <button type="submit" class="btn btn-primary"><%= __('setup.step2.continue') %></button>
+        </form>
+      </div>
     </div>
-  </div>
-  <% } %>
-
-  <div class="setup-actions">
-    <form method="POST" action="/setup/2/next">
-      <button type="submit" class="btn btn-primary" <%= dbModels.length === 0 ? 'disabled title="Install at least one model first"' : '' %>>
-        Continue →
-      </button>
-    </form>
-  </div>
-</div>
-
-<script>
-  function redirectIfUnauthorized(response) {
-    if (response && response.status === 401) {
-      location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search);
-      return true;
-    }
-    return false;
-  }
-
-  var activePulls = 0;
-  var container = document.getElementById('pull-container');
-  var rowsEl = document.getElementById('pull-rows');
-
-  function escHtml(s) {
-    return String(s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-
-  function createRow(modelName) {
-    container.style.display = '';
-    var row = document.createElement('div');
-    row.className = 'pull-row';
-    row.style.cssText = 'border:1px solid var(--border);border-radius:var(--radius-sm);padding:.65rem .75rem;background:var(--surface-2)';
-    row.innerHTML =
-      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;flex-wrap:wrap">' +
-        '<code class="model-name">' + escHtml(modelName) + '</code>' +
-        '<span class="pull-status text-dim" style="font-size:.82rem">Connecting…</span>' +
-      '</div>' +
-      '<div style="background:var(--surface-3);border-radius:var(--radius-sm);height:8px;overflow:hidden;border:1px solid var(--border);margin-top:.4rem">' +
-        '<div class="pull-bar" style="height:100%;width:0%;background:var(--accent);transition:width .3s"></div>' +
-      '</div>' +
-      '<small class="pull-label text-dim" style="display:block;margin-top:.25rem"></small>';
-    rowsEl.appendChild(row);
-    return {
-      status: row.querySelector('.pull-status'),
-      bar: row.querySelector('.pull-bar'),
-      label: row.querySelector('.pull-label'),
-    };
-  }
-
-  function finishPull(reload) {
-    activePulls--;
-    if (activePulls <= 0 && reload) {
-      location.reload();
-    }
-  }
-
-  document.querySelectorAll('.setup-pull-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var modelName = btn.dataset.model;
-      var recId = btn.dataset.recId;
-      btn.disabled = true;
-      btn.textContent = 'Installing…';
-
-      var ui = createRow(modelName);
-      activePulls++;
-      var anyDone = false;
-
-      var es = new EventSource('/models/pull-stream/' + encodeURIComponent(modelName));
-      es.onmessage = function(ev) {
-        var d = JSON.parse(ev.data);
-        if (d.error) {
-          es.close();
-          ui.status.textContent = 'Error: ' + d.error;
-          ui.bar.style.background = 'var(--error)';
-          btn.disabled = false; btn.textContent = 'Retry';
-          finishPull(false);
-          return;
-        }
-        if (d.done) {
-          es.close();
-          ui.status.textContent = 'Installed — registering…';
-          ui.bar.style.width = '100%';
-          fetch('/setup/2/install-recommended/' + recId, { method: 'POST' })
-            .then(function(r) {
-              if (redirectIfUnauthorized(r)) return;
-              ui.status.textContent = 'Done';
-              anyDone = true;
-              finishPull(true);
-            })
-            .catch(function() {
-              ui.status.textContent = 'Registered locally, page reload needed.';
-              finishPull(true);
-            });
-          return;
-        }
-        ui.status.textContent = d.status || '';
-        if (d.total && d.completed) {
-          var pct = Math.round(d.completed / d.total * 100);
-          ui.bar.style.width = pct + '%';
-          ui.label.textContent =
-            Math.round(d.completed / 1e6) + ' MB / ' + Math.round(d.total / 1e6) + ' MB';
-        }
-      };
-      es.onerror = function() {
-        es.close();
-        if (anyDone) return;
-        ui.status.textContent = 'Connection lost.';
-        ui.bar.style.background = 'var(--error)';
-        btn.disabled = false; btn.textContent = 'Retry';
-        finishPull(false);
-      };
-    });
-  });
-</script>
-</body>
+  </body>
 </html>

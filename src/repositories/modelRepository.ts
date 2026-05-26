@@ -24,8 +24,8 @@ export const getModelsListWithRoles = (
   db: Database.Database,
   user: DBUser,
 ): { models: ModelWithRoles[] } & DefaultResponse => {
-  const hasPermission = userHasPermission(db, user.id, "canViewModels").hasPermission
-  if (!hasPermission) return { models: [], success: false, msg: "User does not have permission to view models" }
+  const hasPermission = userHasPermission(db, user.id, "canViewModelsPage").hasPermission
+  if (!hasPermission) return { models: [], success: false, msg: "Permission denied" }
 
   const models = db.prepare(`SELECT * FROM model WHERE deletedAt IS NULL ORDER BY createdAt ASC`).all() as DBModel[]
   const modelRoles = db.prepare(`SELECT * FROM modelRole WHERE deletedAt IS NULL`).all() as DBModelRole[]
@@ -42,8 +42,8 @@ export const getListOfOllamaModelsInstalled = async (
   db: Database.Database,
   user: DBUser,
 ): Promise<{ models: OllamaModel[]; error: string | null; ollamaRunning: boolean | null }> => {
-  if (!userHasPermission(db, user.id, "canViewModels").hasPermission) {
-    return { models: [], error: "User does not have permission to view models", ollamaRunning: null }
+  if (!userHasPermission(db, user.id, "canViewModelsPage").hasPermission) {
+    return { models: [], error: "Permission denied", ollamaRunning: null }
   }
 
   const result = await getModelsFromOllama()
@@ -83,10 +83,10 @@ export const addModel = (
   baseUrl: string | null = null,
   recommendedModelId: number | null = null,
 ): DefaultResponse => {
-  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageModels")
-  if (!perm) return { success: false, msg: "User does not have permission to manage models" }
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canAddOrInstallAModel")
+  if (!perm) return { success: false, msg: "Permission denied" }
 
-    const existingActive = getModelsByName(db, name)
+  const existingActive = getModelsByName(db, name)
   if (existingActive.length > 0) {
     const byName = existingActive.find((m) => m.name === name)
     if (byName) return { success: false, msg: `Model with name "${name}" already exists` }
@@ -103,10 +103,8 @@ export const addModel = (
     }
   }
 
-    const softDeleted = db
-    .prepare(
-      `SELECT * FROM model WHERE modelName = ? AND modelUpdatedAt = ? AND deletedAt IS NOT NULL`,
-    )
+  const softDeleted = db
+    .prepare(`SELECT * FROM model WHERE modelName = ? AND modelUpdatedAt = ? AND deletedAt IS NOT NULL`)
     .get(ollamaModel.model, ollamaModel.modifiedAt) as DBModel | undefined
 
   if (softDeleted) {
@@ -128,8 +126,12 @@ export const addModel = (
       softDeleted.id,
     )
 
-        db.prepare(`UPDATE modelRole SET deletedAt = datetime('now') WHERE modelId = ? AND deletedAt IS NULL`).run(softDeleted.id)
-    const reactivateStmt = db.prepare(`UPDATE modelRole SET deletedAt = NULL WHERE modelId = ? AND role = ? AND deletedAt IS NOT NULL`)
+    db.prepare(`UPDATE modelRole SET deletedAt = datetime('now') WHERE modelId = ? AND deletedAt IS NULL`).run(
+      softDeleted.id,
+    )
+    const reactivateStmt = db.prepare(
+      `UPDATE modelRole SET deletedAt = NULL WHERE modelId = ? AND role = ? AND deletedAt IS NOT NULL`,
+    )
     const roleStmt = db.prepare(`INSERT INTO modelRole (modelId, role) VALUES (?, ?)`)
     for (const role of roles) {
       const result = reactivateStmt.run(softDeleted.id, role)
@@ -179,8 +181,8 @@ export const updateModel = (
   provider: DBModel["provider"] = "ollama",
   baseUrl: string | null = null,
 ): DefaultResponse => {
-  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageModels")
-  if (!perm) return { success: false, msg: "User does not have permission to manage models" }
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canEditModels")
+  if (!perm) return { success: false, msg: "Permission denied" }
 
   const model = getModelById(db, modelId)
   if (!model) return { success: false, msg: "Model not found" }
@@ -200,27 +202,31 @@ export const updateRolesForModel = (
   role: DBModelRole["role"],
   add: boolean,
 ): DefaultResponse => {
-  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageModels")
-  if (!perm) return { success: false, msg: "User does not have permission to manage models" }
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageModelRoles")
+  if (!perm) return { success: false, msg: "Permission denied" }
 
   const model = getModelById(db, modelId)
   if (!model) return { success: false, msg: "Model not found" }
 
   if (add) {
-    const reactivated = db.prepare(`UPDATE modelRole SET deletedAt = NULL WHERE modelId = ? AND role = ? AND deletedAt IS NOT NULL`).run(modelId, role)
+    const reactivated = db
+      .prepare(`UPDATE modelRole SET deletedAt = NULL WHERE modelId = ? AND role = ? AND deletedAt IS NOT NULL`)
+      .run(modelId, role)
     if (reactivated.changes === 0) {
       db.prepare(`INSERT OR IGNORE INTO modelRole (modelId, role) VALUES (?, ?)`).run(modelId, role)
     }
   } else {
-    db.prepare(`UPDATE modelRole SET deletedAt = datetime('now') WHERE modelId = ? AND role = ? AND deletedAt IS NULL`).run(modelId, role)
+    db.prepare(
+      `UPDATE modelRole SET deletedAt = datetime('now') WHERE modelId = ? AND role = ? AND deletedAt IS NULL`,
+    ).run(modelId, role)
   }
 
   return { success: true, msg: "Model roles updated successfully" }
 }
 
 export const deleteModel = (db: Database.Database, user: DBUser, modelId: number): DefaultResponse => {
-  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageModels")
-  if (!perm) return { success: false, msg: "User does not have permission to manage models" }
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canRemoveAndDeleteModels")
+  if (!perm) return { success: false, msg: "Permission denied" }
 
   const model = getModelById(db, modelId)
   if (!model) return { success: false, msg: "Model not found" }

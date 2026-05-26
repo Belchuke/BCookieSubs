@@ -1,16 +1,18 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<%= locale %>">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Library Paths — BCookieSubs</title>
+  <title><%= __('librarypaths.title') %> — BCookieSubs</title>
   <%- include('theme-vars.ejs') %>
   <link rel="icon" type="image/png" href="/images/icon.png">
   <link rel="stylesheet" href="/static/css/all.min.css">
   <link rel="stylesheet" href="/style.css">
   <style>
     summary::-webkit-details-marker { display: none }
-    details[open] .lp-chevron { transform: rotate(180deg) }
+    summary { list-style: none }
+    details.lp-card[open] .lp-chevron { transform: rotate(180deg) }
+    details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg) }
   </style>
 </head>
 <body>
@@ -29,41 +31,81 @@
     <% } %>
 
     <div class="page-header">
-      <h1>Library Paths</h1>
-      <button class="btn btn-primary" onclick="openModal('add-modal')">+ Add Path</button>
+      <h1><%= __('librarypaths.title') %></h1>
+      <button class="btn btn-primary" onclick="openModal('add-modal')"><%= __('librarypaths.addPath') %></button>
     </div>
 
+    <%
+      var _missingSrtCount = 0
+      var _allGenres = []
+      libraryPaths.forEach(function(lp) {
+        lp.groups.forEach(function(group) {
+          if (group.mediaItem && group.mediaItem.genres) {
+            group.mediaItem.genres.split(',').forEach(function(g) {
+              var trimmed = g.trim()
+              if (trimmed && _allGenres.indexOf(trimmed) === -1) _allGenres.push(trimmed)
+            })
+          }
+          group.items.forEach(function(item) {
+            if (item.status === 'no_srts_found' && !item.blacklist) _missingSrtCount++
+          })
+        })
+      })
+      _allGenres.sort()
+    %>
     <div class="tabs" style="display:flex;gap:.5rem;margin-bottom:1rem;border-bottom:1px solid var(--border)">
-      <a href="/library-paths" class="tab-link active"
-         style="padding:.5rem .9rem;border-bottom:2px solid var(--accent);font-weight:600;text-decoration:none;color:var(--text)">
-        Library
-      </a>
-      <a href="/library-paths/blacklist" class="tab-link"
-         style="padding:.5rem .9rem;border-bottom:2px solid transparent;text-decoration:none;color:var(--text-dim)">
-        Blacklisted
-      </a>
+      <button type="button" id="lp-tab-btn-library" class="tab-btn active" onclick="lpSwitchTab('library')"><%= __('librarypaths.library') %></button>
+      <button type="button" id="lp-tab-btn-missing" class="tab-btn" onclick="lpSwitchTab('missing')">
+        <%= __('librarypaths.missingSrts') %><% if (_missingSrtCount > 0) { %> <span class="badge badge-neutral" style="font-size:.7rem"><%= _missingSrtCount %></span><% } %>
+      </button>
+      <button type="button" id="lp-tab-btn-blacklist" class="tab-btn" onclick="lpSwitchTab('blacklist')"><%= __('librarypaths.blacklistedTab') %></button>
     </div>
 
+    <div id="lp-tab-library">
     <% if (libraryPaths.length === 0) { %>
       <div class="card">
-        <p class="empty-state">No library paths configured. Add a path to start scanning for media files.</p>
+        <p class="empty-state"><%= __('librarypaths.noPathsConfigured') %></p>
       </div>
     <% } else { %>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem;align-items:flex-end">
+        <div class="field" style="margin-bottom:0;flex:1;min-width:160px;max-width:420px">
+          <input type="search" id="lp-search" placeholder="<%= __('libraryrequests.searchPlaceholder') %>">
+        </div>
+        <div class="field" style="margin-bottom:0;min-width:140px">
+          <select id="lp-genre-filter">
+            <option value=""><%= __('libraryrequests.allGenres') %></option>
+            <% _allGenres.forEach(function(g) { %>
+              <option value="<%= g %>"><%= g %></option>
+            <% }) %>
+          </select>
+        </div>
+      </div>
+
       <% libraryPaths.forEach(function(lp) { %>
-        <div class="card" style="margin-bottom:1.25rem">
-          <div class="card-header" style="flex-wrap:wrap;gap:.5rem">
+        <details class="card lp-card" data-lp-accordion="<%= lp.id %>" style="margin-bottom:1.25rem">
+          <summary class="card-header" style="flex-wrap:wrap;gap:.5rem;cursor:pointer">
             <div style="flex:1;min-width:0">
+              <%
+                var _lpFolderName = lp.path.split('/').filter(Boolean).pop() || lp.path
+                var _lpTotalFiles = lp.groups.reduce(function(sum, g) {
+                  return sum + g.items.filter(function(i){ return !i.blacklist && i.status !== 'no_srts_found' }).length
+                }, 0)
+              %>
               <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
                 <h2 style="margin:0"><%= lp.name %></h2>
                 <span class="badge <%= lp.enabled ? 'badge-success' : 'badge-neutral' %>">
-                  <%= lp.enabled ? 'Enabled' : 'Disabled' %>
+                  <%= lp.enabled ? __('librarypaths.enabledBadge') : __('librarypaths.disabledBadge') %>
                 </span>
                 <span class="badge badge-neutral"><%= lp.type %></span>
                 <span class="badge <%= lp.state === 'scanning' ? 'badge-warning' : lp.state === 'error' ? 'badge-error' : 'badge-neutral' %>" data-lp-state="<%= lp.id %>">
                   <%= lp.state %>
                 </span>
               </div>
-              <div class="text-dim" style="font-size:.82rem;margin-top:.2rem;word-break:break-all"><%= lp.path %></div>
+              <div class="text-dim" style="font-size:.82rem;margin-top:.2rem;word-break:break-all">
+                <strong style="color:var(--text)"><%= _lpFolderName %></strong>
+                &nbsp;·&nbsp;<%= _lpTotalFiles %> file<%= _lpTotalFiles !== 1 ? 's' : '' %>
+              </div>
+              <div class="text-dim" style="font-size:.78rem;margin-top:.1rem;word-break:break-all;opacity:.7"><%= lp.path %></div>
               <div class="text-dim" style="font-size:.78rem;margin-top:.15rem">
                 <% var sourceLang = languages.find(function(l){ return l.id === lp.sourceLangId }) %>
                 Source: <%= sourceLang ? sourceLang.name : 'Unknown' %>
@@ -75,42 +117,58 @@
               </div>
             </div>
             <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
+              <i class="fa-solid fa-chevron-down lp-chevron" style="color:var(--text-dim);font-size:.85rem;transition:transform .2s;margin-right:.15rem"></i>
               <button class="btn btn-sm btn-secondary lp-edit-btn"
-                      data-lp="<%- JSON.stringify({id:lp.id,name:lp.name,path:lp.path,type:lp.type,sourceLangId:lp.sourceLangId,enabled:lp.enabled,autoTranslate:lp.autoTranslate,autoExtract:lp.autoExtract}).replace(/"/g,'&quot;') %>">Edit</button>
-              <form method="POST" action="/library-paths/toggle/<%= lp.id %>" style="display:inline">
+                      onclick="event.stopPropagation()"
+                      data-lp="<%- JSON.stringify({id:lp.id,name:lp.name,path:lp.path,type:lp.type,sourceLangId:lp.sourceLangId,enabled:lp.enabled,autoTranslate:lp.autoTranslate,autoExtract:lp.autoExtract}).replace(/"/g,'&quot;') %>"><%= __('common.edit') %></button>
+              <form method="POST" action="/library-paths/toggle/<%= lp.id %>" style="display:inline" onclick="event.stopPropagation()">
                 <button type="submit" class="btn btn-sm btn-secondary">
-                  <%= lp.enabled ? 'Disable' : 'Enable' %>
+                  <%= lp.enabled ? __('librarypaths.disable') : __('librarypaths.enable') %>
                 </button>
               </form>
-              <form method="POST" action="/library-paths/delete/<%= lp.id %>" style="display:inline"
+              <form method="POST" action="/library-paths/delete/<%= lp.id %>" style="display:inline" onclick="event.stopPropagation()"
                     onsubmit="return confirm('Delete library path \'<%= lp.name %>\'? This will also delete all tracked items.')">
-                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                <button type="submit" class="btn btn-sm btn-danger"><%= __('common.delete') %></button>
               </form>
             </div>
-          </div>
+          </summary>
 
-          
           <% if (lp.groups.length === 0) { %>
             <p class="text-dim" style="font-size:.85rem;margin:.75rem 0 0">No items found yet. Scanner will discover files on next run.</p>
           <% } else { %>
             <div style="margin-top:.75rem;display:flex;flex-direction:column;gap:.65rem">
-              <% lp.groups.forEach(function(group) { %>
-                <details style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+              <% var _groupIdx = 0; lp.groups.forEach(function(group) { _groupIdx++ %>
+                <%
+                  var _visibleItems = group.items.filter(function(item) {
+                    return !item.blacklist && item.status !== 'no_srts_found'
+                  })
+                  var _allItemIds = group.items.map(function(i) { return i.id })
+                  var _blacklistableIds = group.items.filter(function(i) { return !i.blacklist }).map(function(i) { return i.id })
+                  var _firstItemId = group.items.length > 0 ? group.items[0].id : null
+                  var _groupCandidates = (group.items.length > 0 && group.items[0].candidates) ? group.items[0].candidates : []
+                  var _groupKey = 'g' + lp.id + '-' + (group.mediaItemId != null ? group.mediaItemId : 'u' + _groupIdx)
+                  var _isSeries = lp.type === 'series'
+                  var _lpRootNorm = lp.path.endsWith('/') ? lp.path : lp.path + '/'
+                  var _firstItemPath = group.items.length > 0 ? group.items[0].path : ''
+                  var _relFirst = _firstItemPath.startsWith(_lpRootNorm) ? _firstItemPath.slice(_lpRootNorm.length) : _firstItemPath.replace(/^\//, '')
+                  var _relParts = _relFirst.split('/')
+                  var _groupFolderName = _relParts.length > 1 ? _relParts[0] + '/' : ''
+                %>
+                <% if (_visibleItems.length > 0) { %>
+                <div data-lp-group
+                  data-search="<%= ((group.mediaItem ? group.mediaItem.title + ' ' + (group.mediaItem.year || '') : 'unmatched') + ' ' + _visibleItems.map(function(i){ return i.path.split('/').pop() }).join(' ')).toLowerCase() %>"
+                  data-genre="<%= group.mediaItem && group.mediaItem.genres ? group.mediaItem.genres.toLowerCase() : '' %>"
+                  style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
 
-                  
-                  <summary style="
-                    display:flex;align-items:flex-start;gap:.85rem;padding:.75rem;
-                    background:var(--surface-3);cursor:pointer;list-style:none;
-                    user-select:none;-webkit-user-select:none;
-                  ">
-                    
-                    <% if (group.mediaItem && group.mediaItem.posterBase64) { %>
-                      <img src="<%= group.mediaItem.posterBase64 %>"
+                  <%# ── Group header ─────────────────────────────────────────── %>
+                  <div style="display:flex;align-items:flex-start;gap:.85rem;padding:.75rem;background:var(--surface-3)">
+                    <% if (showPosters && group.mediaItem && group.mediaItem.mediaItemPhotoPath) { %>
+                      <img src="/media-photos/<%= group.mediaItem.mediaItemPhotoPath %>"
                            alt="Poster"
                            style="width:42px;height:63px;object-fit:cover;border-radius:5px;flex-shrink:0">
                     <% } else { %>
                       <div style="width:42px;height:63px;background:var(--surface-2);border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center">
-                        <i class="fa-solid fa-<%= lp.type === 'series' ? 'tv' : 'film' %>" style="color:var(--text-dim)"></i>
+                        <i class="fa-solid fa-<%= _isSeries ? 'tv' : 'film' %>" style="color:var(--text-dim)"></i>
                       </div>
                     <% } %>
                     <div style="flex:1;min-width:0;padding-top:.1rem">
@@ -121,139 +179,382 @@
                             <span class="text-dim" style="font-weight:400;font-size:.82rem">(<%= group.mediaItem.year %>)</span>
                           <% } %>
                         </div>
-                        <div class="text-dim" style="font-size:.78rem;margin-top:.1rem"><%= group.items.length %> file<%= group.items.length !== 1 ? 's' : '' %></div>
+                        <div class="text-dim" style="font-size:.78rem;margin-top:.1rem">
+                          <% if (_groupFolderName) { %><span style="color:var(--text-dim)"><%= _groupFolderName %></span> &ndash; <% } %><%= _visibleItems.length %> file<%= _visibleItems.length !== 1 ? 's' : '' %>
+                        </div>
                       <% } else { %>
                         <div style="font-weight:600;font-size:.9rem;color:var(--text-dim)">Unmatched</div>
-                        <div class="text-dim" style="font-size:.78rem;margin-top:.1rem"><%= group.items.length %> file<%= group.items.length !== 1 ? 's' : '' %> — no media match yet</div>
+                        <div class="text-dim" style="font-size:.78rem;margin-top:.1rem">
+                          <% if (_groupFolderName) { %><span style="color:var(--text-dim)"><%= _groupFolderName %></span> &ndash; <% } %><%= _visibleItems.length %> file<%= _visibleItems.length !== 1 ? 's' : '' %> — no media match yet
+                        </div>
                       <% } %>
                     </div>
-                    <i class="fa-solid fa-chevron-down lp-chevron" style="margin-top:.35rem;color:var(--text-dim);font-size:.8rem;flex-shrink:0;transition:transform .2s"></i>
-                  </summary>
-
-                  
-                  <div style="display:flex;flex-direction:column">
-                    <% group.items.forEach(function(item, idx) { %>
-                      <div style="
-                        padding:.6rem .85rem;
-                        border-top: <%= idx === 0 ? '1px solid var(--border)' : '1px solid var(--border)' %>;
-                        display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap
-                      ">
-                        <%
-                          var _si = item.subtitleInfo
-                          var _translationDeleted = _si && (_si.deleted || _si.activeJobs.length === 0)
-                          var _activeJobs = (_si && !_si.deleted) ? _si.activeJobs : []
-                          var _hasRunning = _activeJobs.some(function(j){ return j.jobStatus === 'running' })
-                          var _hasFailed  = _activeJobs.some(function(j){ return j.jobStatus === 'failed'  })
-                          var _jobLabel   = _hasRunning ? 'Translating' : _hasFailed ? 'Failed' : 'Queued'
-                          var _langList   = _activeJobs.map(function(j){
-                            return (j.langFlag ? j.langFlag + ' ' : '') + j.langIso.toUpperCase()
-                          }).join(', ')
-                        %>
-                        <div style="flex:1;min-width:0">
-                          <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
-                            <% if (item.season !== null && item.episode !== null) { %>
-                              <span style="font-weight:600;font-size:.85rem;flex-shrink:0">
-                                S<%= String(item.season).padStart(2,'0') %>E<%= String(item.episode).padStart(2,'0') %>
-                              </span>
-                            <% } %>
-                            <span style="font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0" title="<%= item.path %>">
-                              <%= item.path.split('/').pop() %>
-                            </span>
-                          </div>
-                          <div style="display:flex;gap:.35rem;margin-top:.25rem;flex-wrap:wrap;align-items:center">
-                            <span class="badge <%= item.status === 'completed' ? 'badge-success' : item.status === 'failed' ? 'badge-error' : item.status === 'queued' ? 'badge-warning' : 'badge-neutral' %>" style="font-size:.7rem" data-item-status="<%= item.id %>">
-                              <%= item.status.replace(/_/g,' ') %>
-                            </span>
-                            <% if (_translationDeleted) { %>
-                              <span class="badge badge-error" style="font-size:.7rem">Translation deleted</span>
-                            <% } else if (_activeJobs.length > 0) { %>
-                              <span class="text-dim" style="font-size:.75rem"><%= _jobLabel %> · <%= _langList %></span>
-                            <% } %>
-                          </div>
-                        </div>
-                        <div style="display:flex;gap:.35rem;align-items:center;flex-shrink:0">
-                          <% if (item.blacklist) { %>
-                            <span class="badge badge-warning" style="font-size:.7rem" title="<%= item.blacklist.reason || '' %>">Blacklisted</span>
-                            <% if (user.isAdmin || user.canManageLibraryPath) { %>
-                              <form method="POST" action="/library-paths/item/<%= item.id %>/unblacklist" style="display:inline">
-                                <button type="submit" class="btn btn-sm btn-secondary">Remove from blacklist</button>
-                              </form>
-                            <% } %>
-                          <% } else { %>
-                            <% if (_translationDeleted && (user.isAdmin || user.canAddSubtitles)) { %>
-                              <form method="POST" action="/library-paths/item/<%= item.id %>/readd" style="display:inline">
-                                <button type="submit" class="btn btn-sm btn-secondary">Re-add</button>
-                              </form>
-                            <% } else if ((user.isAdmin || user.canAddSubtitles) && !_translationDeleted && item.status !== 'queued' && item.status !== 'completed' && item.status !== 'no_srts_found' && (item.candidates.length === 0 || item.mediaItemId)) { %>
-                              <form method="POST" action="/library-paths/item/<%= item.id %>/translate" style="display:inline">
-                                <button type="submit" class="btn btn-sm btn-primary">Translate</button>
-                              </form>
-                            <% } %>
-                            <% if (item.candidates.length > 0 && item.mediaItemId) { %>
-                              <button type="button" class="btn btn-sm btn-secondary lp-match-btn"
-                                data-item-id="<%= item.id %>">Change Match</button>
-                            <% } %>
-                            <% if (user.isAdmin || user.canManageLibraryPath) { %>
-                              <button type="button" class="btn btn-sm btn-secondary lp-blacklist-btn"
-                                      data-item-id="<%= item.id %>"
-                                      data-item-name="<%= item.path.split('/').pop() %>"
-                                      title="Block this item from translation">Blacklist</button>
-                            <% } %>
-                          <% } %>
-                        </div>
-
-                        
-                        <% if (item.candidates && item.candidates.length > 0) { %>
-                          <div id="lp-candidates-<%= item.id %>"
-                            style="width:100%;padding-top:.5rem;border-top:1px dashed var(--border);margin-top:.3rem"
-                            <% if (item.mediaItemId) { %>hidden<% } %>>
-                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
-                              <div class="text-dim" style="font-size:.75rem">
-                                <%= item.mediaItemId ? 'Change the match:' : 'Select the correct match:' %>
-                              </div>
-                              <% if (item.mediaItemId) { %>
-                                <button type="button" class="btn btn-sm btn-secondary lp-match-cancel"
-                                  data-item-id="<%= item.id %>">Cancel</button>
-                              <% } %>
-                            </div>
-                            <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:.5rem">
-                              <% item.candidates.forEach(function(c) { %>
-                                <form method="POST" action="/library-paths/item/<%= item.id %>/select-candidate" style="display:contents">
-                                  <input type="hidden" name="mediaItemId" value="<%= c.mediaItemId %>">
-                                  <button type="submit" class="btn btn-secondary"
-                                    style="display:flex;flex-direction:row;align-items:center;gap:.75rem;padding:.6rem .75rem;height:auto;width:100%;text-align:left"
-                                  >
-                                    <% if (c.mediaPoster) { %>
-                                      <img src="<%= c.mediaPoster %>"
-                                           alt="Poster"
-                                           style="width:54px;height:81px;object-fit:cover;border-radius:4px;flex-shrink:0">
-                                    <% } else { %>
-                                      <div style="width:54px;height:81px;background:var(--surface-2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-                                        <i class="fa-solid fa-film" style="font-size:1.4rem;color:var(--text-dim)"></i>
-                                      </div>
-                                    <% } %>
-                                    <span style="font-size:.88rem;line-height:1.35;word-break:break-word;min-width:0">
-                                      <strong><%= c.mediaTitle || 'Unknown' %></strong><% if(c.mediaYear){ %><br><span class="text-dim" style="font-size:.8rem">(<%= c.mediaYear %>)</span><% } %>
-                                    </span>
-                                  </button>
-                                </form>
-                              <% }) %>
-                            </div>
-                          </div>
-                        <% } %>
-                      </div>
-                    <% }) %>
+                    <div style="display:flex;gap:.35rem;align-items:center;flex-shrink:0;flex-wrap:wrap">
+                      <% if (group.mediaItemId) { %>
+                        <button type="button" class="btn btn-sm btn-secondary lp-group-match-btn"
+                          data-group-key="<%= _groupKey %>">Change Match</button>
+                      <% } %>
+                      <% if (group.mediaItemId && can('canEditLibraryPath')) { %>
+                        <label class="btn btn-sm btn-secondary" style="cursor:pointer;position:relative;margin:0" title="Upload custom poster">
+                          <i class="fa-solid fa-image"></i>
+                          <input type="file" accept="image/*" class="lp-photo-input"
+                                 data-media-item-id="<%= group.mediaItemId %>"
+                                 style="position:absolute;opacity:0;width:1px;height:1px;overflow:hidden">
+                        </label>
+                      <% } %>
+                      <% if (can('canBlackListALibraryPathItem') && _blacklistableIds.length > 0) { %>
+                        <button type="button" class="btn btn-sm btn-danger lp-blacklist-group-btn"
+                          data-item-ids="<%- JSON.stringify(_blacklistableIds) %>"
+                          data-group-name="<%= group.mediaItem ? group.mediaItem.title : 'Unmatched group' %>"
+                          title="Blacklist all items in this group"><%= __('librarypaths.blacklistBtn') %></button>
+                      <% } %>
+                    </div>
                   </div>
 
-                </details>
+                  <%# ── Group-level match picker ─────────────────────────────── %>
+                  <div id="lp-group-picker-<%= _groupKey %>"
+                       style="padding:.65rem .85rem;border-top:1px solid var(--border);background:var(--surface-2)"
+                       <% if (group.mediaItemId) { %>hidden<% } %>>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+                      <div class="text-dim" style="font-size:.75rem">
+                        <%= group.mediaItemId ? 'Change the match:' : 'Select the correct match:' %>
+                      </div>
+                      <% if (group.mediaItemId) { %>
+                        <button type="button" class="btn btn-sm btn-secondary lp-group-match-cancel"
+                          data-group-key="<%= _groupKey %>">Cancel</button>
+                      <% } %>
+                    </div>
+                    <% if (_groupCandidates.length > 0) { %>
+                    <div class="lp-candidate-grid" style="margin-bottom:.5rem">
+                      <% _groupCandidates.forEach(function(c) { %>
+                        <button type="button" class="btn btn-secondary lp-select-group-candidate-btn"
+                          data-group-key="<%= _groupKey %>"
+                          data-item-ids="<%- JSON.stringify(_allItemIds) %>"
+                          data-media-item-id="<%= c.mediaItemId %>"
+                          style="display:flex;flex-direction:row;align-items:center;gap:.75rem;padding:.6rem .75rem;height:auto;width:100%;text-align:left"
+                        >
+                          <% if (showPosters && c.mediaPoster) { %>
+                            <img src="/media-photos/<%= c.mediaPoster %>"
+                                 alt="Poster"
+                                 style="width:54px;height:81px;object-fit:cover;border-radius:4px;flex-shrink:0">
+                          <% } else { %>
+                            <div style="width:54px;height:81px;background:var(--surface-2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                              <i class="fa-solid fa-film" style="font-size:1.4rem;color:var(--text-dim)"></i>
+                            </div>
+                          <% } %>
+                          <span style="font-size:.88rem;line-height:1.35;word-break:break-word;min-width:0">
+                            <strong><%= c.mediaTitle || 'Unknown' %></strong><br><span class="text-dim" style="font-size:.8rem">(<%= c.mediaYear || 'year unknown' %>)</span>
+                          </span>
+                        </button>
+                      <% }) %>
+                    </div>
+                    <% } %>
+                    <div style="border-top:1px dashed var(--border);padding-top:.45rem">
+                      <div class="field" style="margin-bottom:.35rem">
+                        <input type="search" class="lp-tmdb-search"
+                          data-item-id="<%= _firstItemId %>"
+                          data-item-ids="<%- JSON.stringify(_allItemIds) %>"
+                          data-group-key="<%= _groupKey %>"
+                          data-type="<%= lp.type %>"
+                          placeholder="Search TheMovieDB…">
+                      </div>
+                      <div class="lp-tmdb-results" data-item-id="<%= _firstItemId %>" data-group-key="<%= _groupKey %>"></div>
+                    </div>
+                  </div>
+
+                  <%# ── File / episode list ─────────────────────────────────── %>
+                  <% if (_isSeries) { %>
+                    <details class="series-ep-accordion" data-ep-accordion="<%= _groupKey %>">
+                      <summary style="
+                        cursor:pointer;
+                        padding:.5rem .85rem;
+                        border-top:1px solid var(--border);
+                        display:flex;
+                        align-items:center;
+                        gap:.5rem;
+                        background:var(--surface-2);
+                        user-select:none;
+                      ">
+                        <i class="fa-solid fa-chevron-right series-ep-chevron" style="font-size:.72rem;color:var(--text-dim);transition:transform .2s;flex-shrink:0"></i>
+                        <span class="text-dim" style="font-size:.81rem">
+                          <%= _visibleItems.length %> episode<%= _visibleItems.length !== 1 ? 's' : '' %>
+                        </span>
+                      </summary>
+                      <div style="display:flex;flex-direction:column">
+                        <% _visibleItems.forEach(function(item) { %>
+                          <%
+                            var _si = item.subtitleInfo
+                            var _translationDeleted = _si && (_si.deleted || _si.activeJobs.length === 0)
+                            var _activeJobs = (_si && !_si.deleted) ? _si.activeJobs : []
+                            var _hasRunning = _activeJobs.some(function(j){ return j.jobStatus === 'running' })
+                            var _hasFailed  = _activeJobs.some(function(j){ return j.jobStatus === 'failed'  })
+                            var _jobLabel   = _hasRunning ? 'Translating' : _hasFailed ? 'Failed' : 'Queued'
+                            var _langList   = _activeJobs.map(function(j){
+                              return (j.langFlag ? j.langFlag + ' ' : '') + j.langIso.toUpperCase()
+                            }).join(', ')
+                          %>
+                          <div data-item-row="<%= item.id %>" style="
+                            padding:.6rem .85rem;
+                            border-top:1px solid var(--border);
+                            display:flex;flex-direction:column;gap:.35rem
+                          ">
+                            <div style="min-width:0">
+                              <div style="display:flex;align-items:center;gap:.4rem">
+                                <% if (item.season !== null && item.episode !== null) { %>
+                                  <span style="font-weight:600;font-size:.85rem;flex-shrink:0">
+                                    S<%= String(item.season).padStart(2,'0') %>E<%= String(item.episode).padStart(2,'0') %>
+                                  </span>
+                                <% } %>
+                                <span style="font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1" title="<%= item.path %>">
+                                  <%= item.path.split('/').pop() %>
+                                </span>
+                              </div>
+                              <div style="display:flex;gap:.35rem;margin-top:.2rem;flex-wrap:wrap;align-items:center">
+                                <span class="badge <%= item.status === 'completed' ? 'badge-success' : item.status === 'failed' ? 'badge-error' : item.status === 'queued' ? 'badge-warning' : 'badge-neutral' %>" style="font-size:.7rem" data-item-status="<%= item.id %>">
+                                  <%= item.status.replace(/_/g,' ') %>
+                                </span>
+                                <% if (_translationDeleted) { %>
+                                  <span class="badge badge-error" style="font-size:.7rem">Translation deleted</span>
+                                <% } else if (_activeJobs.length > 0) { %>
+                                  <span class="text-dim" style="font-size:.75rem"><%= _jobLabel %> · <%= _langList %></span>
+                                <% } %>
+                              </div>
+                            </div>
+                            <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+                              <% if (item.blacklist) { %>
+                                <span class="badge badge-warning" style="font-size:.7rem" title="<%= item.blacklist.reason || '' %>">Blacklisted</span>
+                                <% if (can('canBlackListALibraryPathItem')) { %>
+                                  <form method="POST" action="/library-paths/item/<%= item.id %>/unblacklist" style="display:inline">
+                                    <button type="submit" class="btn btn-sm btn-secondary"><%= __('librarypaths.removeFromBlacklist') %></button>
+                                  </form>
+                                <% } %>
+                              <% } else { %>
+                                <% if (_translationDeleted && can('canAddSubtitleToTranslateFromLibrary')) { %>
+                                  <form method="POST" action="/library-paths/item/<%= item.id %>/readd" style="display:inline">
+                                    <button type="submit" class="btn btn-sm btn-secondary"><%= __('librarypaths.readd') %></button>
+                                  </form>
+                                <% } else if (can('canAddSubtitleToTranslateFromLibrary') && !_translationDeleted && item.status !== 'queued' && item.status !== 'completed' && item.status !== 'no_srts_found' && (item.candidates.length === 0 || item.mediaItemId)) { %>
+                                  <form method="POST" action="/library-paths/item/<%= item.id %>/translate" style="display:inline">
+                                    <button type="submit" class="btn btn-sm btn-primary"><%= __('librarypaths.translate') %></button>
+                                  </form>
+                                <% } %>
+                                <% if (can('canBlackListALibraryPathItem')) { %>
+                                  <button type="button" class="btn btn-sm btn-secondary lp-blacklist-btn"
+                                          data-item-id="<%= item.id %>"
+                                          data-item-name="<%= item.path.split('/').pop() %>"
+                                          title="Block this item from translation"><%= __('librarypaths.blacklistBtn') %></button>
+                                <% } %>
+                              <% } %>
+                            </div>
+                          </div>
+                        <% }) %>
+                      </div>
+                    </details>
+                  <% } else { %>
+                    <details class="series-ep-accordion" data-ep-accordion="<%= _groupKey %>">
+                      <summary style="
+                        cursor:pointer;
+                        padding:.5rem .85rem;
+                        border-top:1px solid var(--border);
+                        display:flex;
+                        align-items:center;
+                        gap:.5rem;
+                        background:var(--surface-2);
+                        user-select:none;
+                      ">
+                        <i class="fa-solid fa-chevron-right series-ep-chevron" style="font-size:.72rem;color:var(--text-dim);transition:transform .2s;flex-shrink:0"></i>
+                        <span class="text-dim" style="font-size:.81rem">
+                          <%= _visibleItems.length %> translation track<%= _visibleItems.length !== 1 ? 's' : '' %>
+                        </span>
+                      </summary>
+                      <div style="display:flex;flex-direction:column">
+                        <% _visibleItems.forEach(function(item) { %>
+                          <%
+                            var _si = item.subtitleInfo
+                            var _translationDeleted = _si && (_si.deleted || _si.activeJobs.length === 0)
+                            var _activeJobs = (_si && !_si.deleted) ? _si.activeJobs : []
+                            var _hasRunning = _activeJobs.some(function(j){ return j.jobStatus === 'running' })
+                            var _hasFailed  = _activeJobs.some(function(j){ return j.jobStatus === 'failed'  })
+                            var _jobLabel   = _hasRunning ? 'Translating' : _hasFailed ? 'Failed' : 'Queued'
+                            var _langList   = _activeJobs.map(function(j){
+                              return (j.langFlag ? j.langFlag + ' ' : '') + j.langIso.toUpperCase()
+                            }).join(', ')
+                          %>
+                          <div data-item-row="<%= item.id %>" style="
+                            padding:.6rem .85rem;
+                            border-top:1px solid var(--border);
+                            display:flex;flex-direction:column;gap:.35rem
+                          ">
+                            <div style="min-width:0">
+                              <div style="display:flex;align-items:center;gap:.4rem">
+                                <span style="font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1" title="<%= item.path %>">
+                                  <%= item.path.split('/').pop() %>
+                                </span>
+                              </div>
+                              <div style="display:flex;gap:.35rem;margin-top:.2rem;flex-wrap:wrap;align-items:center">
+                                <span class="badge <%= item.status === 'completed' ? 'badge-success' : item.status === 'failed' ? 'badge-error' : item.status === 'queued' ? 'badge-warning' : 'badge-neutral' %>" style="font-size:.7rem" data-item-status="<%= item.id %>">
+                                  <%= item.status.replace(/_/g,' ') %>
+                                </span>
+                                <% if (_translationDeleted) { %>
+                                  <span class="badge badge-error" style="font-size:.7rem">Translation deleted</span>
+                                <% } else if (_activeJobs.length > 0) { %>
+                                  <span class="text-dim" style="font-size:.75rem"><%= _jobLabel %> · <%= _langList %></span>
+                                <% } %>
+                              </div>
+                            </div>
+                            <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+                              <% if (item.blacklist) { %>
+                                <span class="badge badge-warning" style="font-size:.7rem" title="<%= item.blacklist.reason || '' %>">Blacklisted</span>
+                                <% if (can('canBlackListALibraryPathItem')) { %>
+                                  <form method="POST" action="/library-paths/item/<%= item.id %>/unblacklist" style="display:inline">
+                                    <button type="submit" class="btn btn-sm btn-secondary"><%= __('librarypaths.removeFromBlacklist') %></button>
+                                  </form>
+                                <% } %>
+                              <% } else { %>
+                                <% if (_translationDeleted && can('canAddSubtitleToTranslateFromLibrary')) { %>
+                                  <form method="POST" action="/library-paths/item/<%= item.id %>/readd" style="display:inline">
+                                    <button type="submit" class="btn btn-sm btn-secondary"><%= __('librarypaths.readd') %></button>
+                                  </form>
+                                <% } else if (can('canAddSubtitleToTranslateFromLibrary') && !_translationDeleted && item.status !== 'queued' && item.status !== 'completed' && item.status !== 'no_srts_found' && (item.candidates.length === 0 || item.mediaItemId)) { %>
+                                  <form method="POST" action="/library-paths/item/<%= item.id %>/translate" style="display:inline">
+                                    <button type="submit" class="btn btn-sm btn-primary"><%= __('librarypaths.translate') %></button>
+                                  </form>
+                                <% } %>
+                                <% if (can('canBlackListALibraryPathItem')) { %>
+                                  <button type="button" class="btn btn-sm btn-secondary lp-blacklist-btn"
+                                          data-item-id="<%= item.id %>"
+                                          data-item-name="<%= item.path.split('/').pop() %>"
+                                          title="Block this item from translation"><%= __('librarypaths.blacklistBtn') %></button>
+                                <% } %>
+                              <% } %>
+                            </div>
+                          </div>
+                        <% }) %>
+                      </div>
+                    </details>
+                  <% } %>
+
+                </div>
+                <% } %>
               <% }) %>
             </div>
           <% } %>
-        </div>
+        </details>
       <% }) %>
     <% } %>
+    </div>
+
+    <div id="lp-tab-missing" style="display:none">
+      <% if (_missingSrtCount === 0) { %>
+        <div class="card">
+          <p class="empty-state"><%= __('librarypaths.noMissingSrts') %></p>
+        </div>
+      <% } else { %>
+        <% libraryPaths.forEach(function(lp) { %>
+          <%
+            var _missItems = []
+            lp.groups.forEach(function(group) {
+              group.items.forEach(function(item) {
+                if (item.status === 'no_srts_found' && !item.blacklist) _missItems.push(item)
+              })
+            })
+          %>
+          <% if (_missItems.length > 0) { %>
+            <div class="card" style="margin-bottom:1.25rem">
+              <div class="card-header" style="flex-wrap:wrap;gap:.5rem">
+                <h2 style="margin:0"><%= lp.name %></h2>
+                <span class="badge badge-neutral"><%= _missItems.length %> item<%= _missItems.length !== 1 ? 's' : '' %></span>
+              </div>
+              <div style="display:flex;flex-direction:column">
+                <% _missItems.forEach(function(item) { %>
+                  <div style="padding:.6rem .85rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">
+                    <div style="flex:1;min-width:0">
+                      <span style="font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block" title="<%= item.path %>">
+                        <%= item.path.split('/').pop() %>
+                      </span>
+                      <span class="badge badge-neutral" style="font-size:.7rem;margin-top:.25rem;display:inline-block"><%= __('librarypaths.noSrtsFound') %></span>
+                    </div>
+                    <div style="display:flex;gap:.35rem;align-items:center;flex-shrink:0">
+                      <% if (can('canBlackListALibraryPathItem')) { %>
+                        <button type="button" class="btn btn-sm btn-secondary lp-blacklist-btn"
+                                data-item-id="<%= item.id %>"
+                                data-item-name="<%= item.path.split('/').pop() %>"
+                                title="Block this item from translation"><%= __('librarypaths.blacklistBtn') %></button>
+                      <% } %>
+                    </div>
+                  </div>
+                <% }) %>
+              </div>
+            </div>
+          <% } %>
+        <% }) %>
+      <% } %>
+    </div>
+
+    <div id="lp-tab-blacklist" style="display:none">
+      <div class="card">
+        <% if (!blacklisted || blacklisted.length === 0) { %>
+          <p class="empty-state"><%= __('librarypaths.noBlacklisted') %></p>
+        <% } else { %>
+          <div style="overflow-x:auto">
+            <table class="table" style="width:100%;border-collapse:collapse">
+              <thead>
+                <tr style="text-align:left;border-bottom:1px solid var(--border)">
+                  <th style="padding:.5rem .35rem"><%= __('librarypaths.filesystemPath') %></th>
+                  <th style="padding:.5rem .35rem"><%= __('librarypaths.library') %></th>
+                  <th style="padding:.5rem .35rem"><%= __('common.match') %></th>
+                  <th style="padding:.5rem .35rem"><%= __('librarypaths.blacklistedBy') %></th>
+                  <th style="padding:.5rem .35rem"><%= __('common.when') %></th>
+                  <th style="padding:.5rem .35rem"><%= __('librarypaths.blacklistReason') %></th>
+                  <% if (can('canBlackListALibraryPathItem')) { %>
+                    <th style="padding:.5rem .35rem"><%= __('common.actions') %></th>
+                  <% } %>
+                </tr>
+              </thead>
+              <tbody>
+                <% blacklisted.forEach(function(b) { %>
+                  <tr style="border-bottom:1px solid var(--border)">
+                    <td style="padding:.55rem .35rem;max-width:340px;word-break:break-all">
+                      <% var _fileName = b.itemPath.split('/').pop() %>
+                      <div style="font-weight:600;font-size:.88rem"><%= _fileName %></div>
+                      <% if (b.season !== null && b.episode !== null) { %>
+                        <div class="text-dim" style="font-size:.75rem">
+                          S<%= String(b.season).padStart(2,'0') %>E<%= String(b.episode).padStart(2,'0') %>
+                        </div>
+                      <% } %>
+                      <div class="text-dim" style="font-size:.72rem;margin-top:.15rem"><%= b.itemPath %></div>
+                    </td>
+                    <td style="padding:.55rem .35rem"><%= b.libraryPathName || '—' %></td>
+                    <td style="padding:.55rem .35rem">
+                      <% if (b.mediaTitle) { %>
+                        <%= b.mediaTitle %><% if (b.mediaYear) { %> <span class="text-dim">(<%= b.mediaYear %>)</span><% } %>
+                      <% } else { %>
+                        <span class="text-dim">Unmatched</span>
+                      <% } %>
+                    </td>
+                    <td style="padding:.55rem .35rem"><%= b.blacklistedByUsername || '—' %></td>
+                    <td style="padding:.55rem .35rem;white-space:nowrap"><%= b.createdAt %></td>
+                    <td style="padding:.55rem .35rem;max-width:280px;word-break:break-word">
+                      <% if (b.reason) { %><%= b.reason %><% } else { %><span class="text-dim">—</span><% } %>
+                    </td>
+                    <% if (can('canBlackListALibraryPathItem')) { %>
+                      <td style="padding:.55rem .35rem;white-space:nowrap">
+                        <form method="POST" action="/library-paths/item/<%= b.libraryPathItemId %>/unblacklist?from=blacklist" style="display:inline">
+                          <button type="submit" class="btn btn-sm btn-secondary"><%= __('librarypaths.removeFromBlacklist') %></button>
+                        </form>
+                      </td>
+                    <% } %>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+    </div>
   </main>
 </div>
+<div id="lp-config" data-show-posters="<%= showPosters ? '1' : '0' %>" hidden></div>
 
 <div id="dir-browser-panel" style="display:none;margin-top:.5rem">
   <div style="
@@ -263,7 +564,6 @@
     background:var(--surface-2);
     font-size:.85rem;
   ">
-    
     <div style="
       display:flex;
       align-items:center;
@@ -282,7 +582,6 @@
         class="text-dim"
         style="font-size:.78rem;word-break:break-all;flex:1;min-width:0"></span>
     </div>
-    
     <div id="dir-list"
       style="
         max-height:220px;
@@ -292,7 +591,6 @@
       ">
       <div class="text-dim" style="padding:.5rem .75rem;font-size:.8rem">Loading…</div>
     </div>
-    
     <div style="
       padding:.5rem .75rem;
       border-top:1px solid var(--border);
@@ -301,7 +599,7 @@
       gap:.4rem;
     ">
       <button type="button" id="dir-select-btn" class="btn btn-sm btn-primary">
-        Select this folder
+        <%= __('librarypaths.selectThisFolder') %>
       </button>
     </div>
   </div>
@@ -310,32 +608,32 @@
 <div class="modal-overlay" id="add-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal" style="max-width:480px">
     <div class="modal-header">
-      <h2>Add Library Path</h2>
+      <h2><%= __('librarypaths.addPathTitle') %></h2>
       <button class="btn btn-icon" onclick="closeModal('add-modal')">✕</button>
     </div>
     <form method="POST" action="/library-paths/create">
       <div class="field">
-        <label for="add-name">Name</label>
+        <label for="add-name"><%= __('common.name') %></label>
         <input type="text" id="add-name" name="name" required placeholder="e.g. My Movies">
       </div>
       <div class="field">
-        <label for="add-path">Filesystem Path</label>
+        <label for="add-path"><%= __('librarypaths.filesystemPath') %></label>
         <div style="display:flex;gap:.4rem">
           <input type="text" id="add-path" name="path" required style="flex:1">
           <button type="button" class="btn btn-secondary" style="flex-shrink:0"
-                  onclick="openDirBrowser('add-path')">Browse</button>
+                  onclick="openDirBrowser('add-path')"><%= __('librarypaths.browse') %></button>
         </div>
         <div id="add-path-browser-anchor"></div>
       </div>
       <div class="field">
-        <label for="add-type">Type</label>
+        <label for="add-type"><%= __('librarypaths.type') %></label>
         <select id="add-type" name="type" required>
-          <option value="movie">Movie</option>
-          <option value="series">Series</option>
+          <option value="movie"><%= __('librarypaths.movie') %></option>
+          <option value="series"><%= __('librarypaths.series') %></option>
         </select>
       </div>
       <div class="field">
-        <label for="add-sourceLangId">Source Language</label>
+        <label for="add-sourceLangId"><%= __('librarypaths.sourceLanguage') %></label>
         <select id="add-sourceLangId" name="sourceLangId" required>
           <% var addEnglishFound = false; languages.forEach(function(l) { %>
             <option value="<%= l.id %>" <%= !addEnglishFound && l.iso639 === 'en' ? 'selected' : '' %>><%= l.flag ? l.flag + ' ' : '' %><%= l.name %></option>
@@ -345,19 +643,19 @@
       </div>
       <div class="field field-checkbox">
         <input type="checkbox" id="add-enabled" name="enabled" value="1" checked>
-        <label for="add-enabled">Enabled (actively scanned)</label>
+        <label for="add-enabled"><%= __('librarypaths.enabledActivelyScanned') %></label>
       </div>
       <div class="field field-checkbox">
         <input type="checkbox" id="add-autoTranslate" name="autoTranslate" value="1">
-        <label for="add-autoTranslate">Auto-translate found subtitles</label>
+        <label for="add-autoTranslate"><%= __('librarypaths.autoTranslate') %></label>
       </div>
       <div class="field field-checkbox">
         <input type="checkbox" id="add-autoExtract" name="autoExtract" value="1">
-        <label for="add-autoExtract">Auto-export translated subtitles to source folder</label>
+        <label for="add-autoExtract"><%= __('librarypaths.autoExport') %></label>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Add Path</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-primary"><%= __('librarypaths.addPathBtn') %></button>
       </div>
     </form>
   </div>
@@ -366,32 +664,32 @@
 <div class="modal-overlay" id="edit-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal" style="max-width:480px">
     <div class="modal-header">
-      <h2>Edit Library Path</h2>
+      <h2><%= __('librarypaths.editPathTitle') %></h2>
       <button class="btn btn-icon" onclick="closeModal('edit-modal')">✕</button>
     </div>
     <form method="POST" id="edit-form" action="">
       <div class="field">
-        <label for="edit-name">Name</label>
+        <label for="edit-name"><%= __('common.name') %></label>
         <input type="text" id="edit-name" name="name" required>
       </div>
       <div class="field">
-        <label for="edit-path">Filesystem Path</label>
+        <label for="edit-path"><%= __('librarypaths.filesystemPath') %></label>
         <div style="display:flex;gap:.4rem">
           <input type="text" id="edit-path" name="path" required style="flex:1">
           <button type="button" class="btn btn-secondary" style="flex-shrink:0"
-                  onclick="openDirBrowser('edit-path')">Browse</button>
+                  onclick="openDirBrowser('edit-path')"><%= __('librarypaths.browse') %></button>
         </div>
         <div id="edit-path-browser-anchor"></div>
       </div>
       <div class="field">
-        <label for="edit-type">Type</label>
+        <label for="edit-type"><%= __('librarypaths.type') %></label>
         <select id="edit-type" name="type" required>
-          <option value="movie">Movie</option>
-          <option value="series">Series</option>
+          <option value="movie"><%= __('librarypaths.movie') %></option>
+          <option value="series"><%= __('librarypaths.series') %></option>
         </select>
       </div>
       <div class="field">
-        <label for="edit-sourceLangId">Source Language</label>
+        <label for="edit-sourceLangId"><%= __('librarypaths.sourceLanguage') %></label>
         <select id="edit-sourceLangId" name="sourceLangId" required>
           <% languages.forEach(function(l) { %>
             <option value="<%= l.id %>"><%= l.flag ? l.flag + ' ' : '' %><%= l.name %></option>
@@ -400,19 +698,41 @@
       </div>
       <div class="field field-checkbox">
         <input type="checkbox" id="edit-enabled" name="enabled" value="1">
-        <label for="edit-enabled">Enabled</label>
+        <label for="edit-enabled"><%= __('librarypaths.enabledBadge') %></label>
       </div>
       <div class="field field-checkbox">
         <input type="checkbox" id="edit-autoTranslate" name="autoTranslate" value="1">
-        <label for="edit-autoTranslate">Auto-translate found subtitles</label>
+        <label for="edit-autoTranslate"><%= __('librarypaths.autoTranslate') %></label>
       </div>
       <div class="field field-checkbox">
         <input type="checkbox" id="edit-autoExtract" name="autoExtract" value="1">
-        <label for="edit-autoExtract">Auto-export translated subtitles to source folder</label>
+        <label for="edit-autoExtract"><%= __('librarypaths.autoExport') %></label>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('edit-modal')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('edit-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-primary"><%= __('common.save') %></button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="blacklist-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h2><%= __('librarypaths.blacklistTitle') %></h2>
+      <button class="btn btn-icon" onclick="closeModal('blacklist-modal')">✕</button>
+    </div>
+    <form method="POST" id="blacklist-form" action="">
+      <p class="text-dim" style="font-size:.85rem;margin-top:0">
+        <%= __('librarypaths.blacklistWarningPrefix') %> <strong id="blacklist-target-name"></strong> <%= __('librarypaths.blacklistWarningSuffix') %>
+      </p>
+      <div class="field">
+        <label for="blacklist-reason"><%= __('librarypaths.blacklistReason') %></label>
+        <input type="text" id="blacklist-reason" name="reason" maxlength="500" placeholder="e.g. wrong language, duplicate, etc.">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('blacklist-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-danger"><%= __('librarypaths.blacklistBtn') %></button>
       </div>
     </form>
   </div>
@@ -421,8 +741,88 @@
 <script src="/app.js"></script>
 <script>
   var ROOT_LIBRARY_PATH = <%- JSON.stringify(rootLibraryPath) %>;
+  var SHOW_POSTERS = document.getElementById('lp-config').dataset.showPosters === '1';
 
-  // ── Edit modal ──────────────────────────────────────────────────────────────
+  var _intentionalNavigation = false
+  var _pendingReload = false
+  var _pendingScrollPos = null
+
+  function safeReload(scrollPos) {
+    if (document.querySelector('.modal-overlay.open')) {
+      _pendingReload = true
+      if (scrollPos != null) _pendingScrollPos = scrollPos
+      return
+    }
+    _intentionalNavigation = true
+    if (scrollPos != null) sessionStorage.setItem('lp_scroll_pos', String(scrollPos))
+    location.reload()
+  }
+
+  ;(function() {
+    var observer = new MutationObserver(function() {
+      if (_pendingReload && !document.querySelector('.modal-overlay.open')) {
+        _pendingReload = false
+        _intentionalNavigation = true
+        if (_pendingScrollPos != null) sessionStorage.setItem('lp_scroll_pos', String(_pendingScrollPos))
+        location.reload()
+      }
+    })
+    document.querySelectorAll('.modal-overlay').forEach(function(el) {
+      observer.observe(el, { attributes: true, attributeFilter: ['class'] })
+    })
+  })()
+
+  document.querySelectorAll('.modal-overlay form').forEach(function(form) {
+    form.addEventListener('submit', function() { _intentionalNavigation = true })
+  })
+
+  window.addEventListener('beforeunload', function(e) {
+    if (!_intentionalNavigation && document.querySelector('.modal-overlay.open')) {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+  })
+
+  var LP_ACCORDION_KEY = 'lp-accordion-v1'
+
+  function getAccordionState() {
+    try { return JSON.parse(localStorage.getItem(LP_ACCORDION_KEY) || '{}') } catch { return {} }
+  }
+
+  function saveAccordionOpen(key, isOpen) {
+    var s = getAccordionState()
+    s[key] = isOpen
+    localStorage.setItem(LP_ACCORDION_KEY, JSON.stringify(s))
+  }
+
+  document.querySelectorAll('details[data-lp-accordion]').forEach(function(el) {
+    var key = 'lp-' + el.getAttribute('data-lp-accordion')
+    var state = getAccordionState()
+    if (state[key] === true) el.open = true
+    el.addEventListener('toggle', function() { saveAccordionOpen(key, el.open) })
+  })
+
+  document.querySelectorAll('details[data-ep-accordion]').forEach(function(el) {
+    var key = 'ep-' + el.getAttribute('data-ep-accordion')
+    var state = getAccordionState()
+    if (state[key] === true) el.open = true
+    el.addEventListener('toggle', function() { saveAccordionOpen(key, el.open) })
+  })
+
+  ;(function() {
+    var saved = sessionStorage.getItem('lp_scroll_pos')
+    if (saved !== null) {
+      sessionStorage.removeItem('lp_scroll_pos')
+      var y = parseInt(saved, 10)
+      if (!isNaN(y)) {
+        setTimeout(function() { window.scrollTo(0, y) }, 50)
+      }
+    }
+  })()
+
+  function reloadWithScrollRestore() {
+    safeReload(window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0)
+  }
 
   function openEditModal(lp) {
     var form = document.getElementById('edit-form')
@@ -445,28 +845,27 @@
     })
   })
 
-  // ── Directory browser ───────────────────────────────────────────────────────
+  document.querySelectorAll('details.lp-card > summary').forEach(function(summary) {
+    summary.addEventListener('click', function(e) {
+      if (e.target !== summary && e.target.closest('button, a, input, select, form')) {
+        e.preventDefault()
+      }
+    })
+  })
 
-  var _browserTargetInputId = null  // which input field the browser is attached to
+  var _browserTargetInputId = null
   var _browserCurrentPath = '/'
 
   function openDirBrowser(inputId) {
     var panel = document.getElementById('dir-browser-panel')
     var anchor = document.getElementById(inputId + '-browser-anchor')
-
-    // If already open for the same input, close it
     if (_browserTargetInputId === inputId && panel.style.display !== 'none') {
       closeDirBrowser()
       return
     }
-
     _browserTargetInputId = inputId
-
-    // Move the panel into the right anchor
     anchor.appendChild(panel)
     panel.style.display = ''
-
-    // Start from current input value, rootLibraryPath, or filesystem root
     var inputVal = document.getElementById(inputId).value.trim()
     var startPath = inputVal || ROOT_LIBRARY_PATH || '/'
     browseDir(startPath)
@@ -490,7 +889,6 @@
         _browserCurrentPath = data.path
         document.getElementById('dir-current-path').textContent = data.path
 
-        // Up button — also disabled when current path equals the configured root
         var upBtn = document.getElementById('dir-up-btn')
         var atRoot = !data.parent || (ROOT_LIBRARY_PATH && data.path === ROOT_LIBRARY_PATH)
         upBtn.disabled = !!atRoot
@@ -527,7 +925,6 @@
           list.appendChild(btn)
         })
 
-        // Remove border from last item
         var last = list.lastElementChild
         if (last) last.style.borderBottom = 'none'
       })
@@ -537,7 +934,6 @@
       })
   }
 
-  // "Select this folder" button — writes path into the target input and closes
   document.getElementById('dir-select-btn').addEventListener('click', function() {
     if (_browserTargetInputId) {
       document.getElementById(_browserTargetInputId).value = _browserCurrentPath
@@ -545,18 +941,12 @@
     closeDirBrowser()
   })
 
-  // Up button wired per browse call; disable by default
   document.getElementById('dir-up-btn').disabled = true
 
-  // Close browser when the containing modal is closed
   document.querySelectorAll('.modal-overlay').forEach(function(overlay) {
     overlay.addEventListener('click', function(e) {
       if (e.target === overlay) closeDirBrowser()
     })
-  })
-  document.querySelectorAll('.modal .btn-icon[onclick*="closeModal"]').forEach(function(btn) {
-    var orig = btn.getAttribute('onclick')
-    btn.addEventListener('click', function() { closeDirBrowser() })
   })
 
   function escHtml(str) {
@@ -565,12 +955,16 @@
       .replace(/"/g,'&quot;').replace(/'/g,'&#39;')
   }
 
-  // ── Status polling (no page reload) ─────────────────────────────────────
-  var LP_POLL_INTERVAL = 10000
-
+  var LP_POLL_INTERVAL = 8000
   var _stateClasses = { scanning: 'badge-warning', error: 'badge-error' }
   var _statusClasses = { completed: 'badge-success', failed: 'badge-error', queued: 'badge-warning' }
   var _allBadgeClasses = ['badge-success', 'badge-error', 'badge-warning', 'badge-neutral']
+
+  var _knownItemIds = new Set(
+    Array.from(document.querySelectorAll('[data-item-row]')).map(function(el) {
+      return String(el.getAttribute('data-item-row'))
+    })
+  )
 
   function setBadge(el, text, colorClass) {
     el.classList.remove.apply(el.classList, _allBadgeClasses)
@@ -585,10 +979,15 @@
         if (!data) return
         ;(data.paths || []).forEach(function(lp) {
           var el = document.querySelector('[data-lp-state="' + lp.id + '"]')
-          if (!el) return
-          var cls = _stateClasses[lp.state] || 'badge-neutral'
-          setBadge(el, lp.state, cls)
+          if (el) {
+            var cls = _stateClasses[lp.state] || 'badge-neutral'
+            setBadge(el, lp.state, cls)
+          }
         })
+        var hasNewItems = (data.items || []).some(function(item) {
+          return !_knownItemIds.has(String(item.id))
+        })
+        if (hasNewItems) { safeReload(); return }
         ;(data.items || []).forEach(function(item) {
           var el = document.querySelector('[data-item-status="' + item.id + '"]')
           if (!el) return
@@ -599,56 +998,311 @@
       .catch(function() {})
   }
 
+  pollLibraryPaths()
   setInterval(pollLibraryPaths, LP_POLL_INTERVAL)
 
-  // ── Change Match toggle ───────────────────────────────────────────────────
+  function showLpToast(msg, type) {
+    var el = document.createElement('div')
+    el.className = 'toast toast-' + (type || 'success')
+    el.textContent = msg
+    document.body.appendChild(el)
+    setTimeout(function() {
+      el.style.transition = 'opacity .4s'
+      el.style.opacity = '0'
+      setTimeout(function() { el.remove() }, 400)
+    }, 4000)
+  }
+
+  function lpAjaxPost(url, body, onSuccess) {
+    fetch(url + '?json=1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body || ''
+    })
+      .then(function(r) { if (redirectIfUnauthorized(r)) return null; return r.json() })
+      .then(function(data) {
+        if (!data) return
+        if (data.success) {
+          onSuccess(data)
+        } else {
+          showLpToast(data.msg || 'Action failed', 'error')
+        }
+      })
+      .catch(function() { showLpToast('Request failed', 'error') })
+  }
+
+  function hideGroupPicker(groupKey) {
+    var picker = document.getElementById('lp-group-picker-' + groupKey)
+    if (picker) picker.hidden = true
+  }
+
   document.addEventListener('click', function(e) {
-    var openBtn = e.target.closest('.lp-match-btn')
+
+    var openBtn = e.target.closest('.lp-group-match-btn')
     if (openBtn) {
-      var picker = document.getElementById('lp-candidates-' + openBtn.dataset.itemId)
+      var picker = document.getElementById('lp-group-picker-' + openBtn.dataset.groupKey)
       if (picker) picker.hidden = false
       return
     }
-    var cancelBtn = e.target.closest('.lp-match-cancel')
+
+    var cancelBtn = e.target.closest('.lp-group-match-cancel')
     if (cancelBtn) {
-      var picker = document.getElementById('lp-candidates-' + cancelBtn.dataset.itemId)
-      if (picker) picker.hidden = true
+      hideGroupPicker(cancelBtn.dataset.groupKey)
+      return
+    }
+
+    var groupCandBtn = e.target.closest('.lp-select-group-candidate-btn')
+    if (groupCandBtn) {
+      var itemIds = groupCandBtn.dataset.itemIds
+      var mediaItemId = groupCandBtn.dataset.mediaItemId
+      var groupKey = groupCandBtn.dataset.groupKey
+      lpAjaxPost(
+        '/library-paths/group/select-candidate',
+        'itemIds=' + encodeURIComponent(itemIds) + '&mediaItemId=' + encodeURIComponent(mediaItemId),
+        function(data) {
+          hideGroupPicker(groupKey)
+          reloadWithScrollRestore()
+        }
+      )
       return
     }
 
     var blBtn = e.target.closest('.lp-blacklist-btn')
     if (blBtn) {
-      var form = document.getElementById('blacklist-form')
-      form.action = '/library-paths/item/' + blBtn.dataset.itemId + '/blacklist'
+      _blItemId = blBtn.dataset.itemId
+      _blItemIds = null
       document.getElementById('blacklist-target-name').textContent = blBtn.dataset.itemName || ''
       document.getElementById('blacklist-reason').value = ''
       openModal('blacklist-modal')
       return
     }
+
+    var blGroupBtn = e.target.closest('.lp-blacklist-group-btn')
+    if (blGroupBtn) {
+      _blItemId = null
+      _blItemIds = JSON.parse(blGroupBtn.dataset.itemIds || '[]')
+      document.getElementById('blacklist-target-name').textContent = (blGroupBtn.dataset.groupName || 'this group') + ' — all items'
+      document.getElementById('blacklist-reason').value = ''
+      openModal('blacklist-modal')
+      return
+    }
+
+    var tmdbBtn = e.target.closest('.lp-select-tmdb-btn')
+    if (tmdbBtn) {
+      var itemId = tmdbBtn.dataset.itemId
+      var itemIds = tmdbBtn.dataset.itemIds
+      var groupKey = tmdbBtn.dataset.groupKey
+      var ti = JSON.parse(tmdbBtn.dataset.tmdbItem)
+      var year = ti.releaseDate ? ti.releaseDate.substring(0, 4) : ''
+      var bodyParts = [
+        'title=' + encodeURIComponent(ti.name || ''),
+        'originalTitle=' + encodeURIComponent(ti.originalTitle || ''),
+        'year=' + encodeURIComponent(year),
+        'isAnime=' + encodeURIComponent(ti.isAnime ? '1' : '0'),
+        'genres=' + encodeURIComponent(ti.genres || ''),
+        'theMovieDbId=' + encodeURIComponent(String(ti.id || '')),
+        'posterUrl=' + encodeURIComponent(ti.posterUrl || ''),
+        'type=' + encodeURIComponent(tmdbBtn.dataset.type || ''),
+      ]
+      if (itemIds) {
+        bodyParts.push('itemIds=' + encodeURIComponent(itemIds))
+        lpAjaxPost('/library-paths/group/select-tmdb-result', bodyParts.join('&'), function(data) {
+          if (groupKey) hideGroupPicker(groupKey)
+          reloadWithScrollRestore()
+        })
+      } else {
+        lpAjaxPost('/library-paths/item/' + itemId + '/select-tmdb-result', bodyParts.join('&'), function(data) {
+          reloadWithScrollRestore()
+        })
+      }
+      return
+    }
+  })
+
+  document.addEventListener('submit', function(e) {
+    var form = e.target
+    if (!form || form.tagName !== 'FORM') return
+    var action = form.action || ''
+
+    var translateMatch = action.match(/\/library-paths\/item\/(\d+)\/(translate|readd)$/)
+    if (translateMatch) {
+      e.preventDefault()
+      var itemId = translateMatch[1]
+      var row = document.querySelector('[data-item-row="' + itemId + '"]')
+      lpAjaxPost(action, '', function(data) {
+        if (row) {
+          var badge = row.querySelector('[data-item-status]')
+          if (badge) {
+            badge.className = 'badge badge-warning'
+            badge.textContent = 'queued'
+          }
+          var submitForms = row.querySelectorAll('form')
+          submitForms.forEach(function(f) {
+            if (f.action && (f.action.includes('/translate') || f.action.includes('/readd'))) f.remove()
+          })
+        }
+        showLpToast(data.msg || 'Queued', 'success')
+      })
+      return
+    }
+  })
+
+  var _blItemId = null
+  var _blItemIds = null
+
+  document.getElementById('blacklist-form').addEventListener('submit', function(e) {
+    e.preventDefault()
+    var reason = document.getElementById('blacklist-reason').value || ''
+
+    if (_blItemIds && _blItemIds.length > 0) {
+      lpAjaxPost(
+        '/library-paths/group/blacklist',
+        'itemIds=' + encodeURIComponent(JSON.stringify(_blItemIds)) + '&reason=' + encodeURIComponent(reason),
+        function(data) {
+          closeModal('blacklist-modal')
+          _blItemIds.forEach(function(id) {
+            var row = document.querySelector('[data-item-row="' + id + '"]')
+            if (row) row.remove()
+          })
+          showLpToast(data.msg || 'Group blacklisted', 'success')
+          _blItemIds = null
+        }
+      )
+    } else if (_blItemId) {
+      lpAjaxPost('/library-paths/item/' + _blItemId + '/blacklist', 'reason=' + encodeURIComponent(reason), function(data) {
+        closeModal('blacklist-modal')
+        var row = document.querySelector('[data-item-row="' + _blItemId + '"]')
+        if (row) row.remove()
+        showLpToast(data.msg || 'Item blacklisted', 'success')
+        _blItemId = null
+      })
+    }
+  })
+
+  document.addEventListener('change', function(e) {
+    var input = e.target
+    if (!input.classList.contains('lp-photo-input')) return
+    var mediaItemId = input.dataset.mediaItemId
+    var file = input.files && input.files[0]
+    if (!file) return
+    var formData = new FormData()
+    formData.append('photo', file)
+    showLpToast('Uploading…', 'success')
+    fetch('/library-paths/media-item/' + mediaItemId + '/upload-photo', { method: 'POST', body: formData })
+      .then(function(r) { return r.json() })
+      .then(function(data) {
+        if (data.success) {
+          showLpToast('Photo updated', 'success')
+          safeReload()
+        } else {
+          showLpToast(data.msg || 'Upload failed', 'error')
+        }
+      })
+      .catch(function() { showLpToast('Upload failed', 'error') })
+    input.value = ''
+  })
+
+  var _lpSearchTimer = null
+
+  function applyFilters() {
+    var q = (document.getElementById('lp-search').value || '').trim().toLowerCase()
+    var genreEl = document.getElementById('lp-genre-filter')
+    var genre = genreEl ? genreEl.value.toLowerCase() : ''
+    document.querySelectorAll('[data-lp-group]').forEach(function(el) {
+      var text = el.getAttribute('data-search') || ''
+      var elGenre = el.getAttribute('data-genre') || ''
+      var matchQ = !q || text.includes(q)
+      var matchGenre = !genre || elGenre.includes(genre)
+      el.style.display = (matchQ && matchGenre) ? '' : 'none'
+    })
+  }
+
+  var lpSearchEl = document.getElementById('lp-search')
+  if (lpSearchEl) {
+    lpSearchEl.addEventListener('input', function() {
+      clearTimeout(_lpSearchTimer)
+      _lpSearchTimer = setTimeout(applyFilters, 300)
+    })
+  }
+
+  var lpGenreEl = document.getElementById('lp-genre-filter')
+  if (lpGenreEl) {
+    lpGenreEl.addEventListener('change', applyFilters)
+  }
+
+  function lpSwitchTab(tab) {
+    document.getElementById('lp-tab-library').style.display = tab === 'library' ? '' : 'none'
+    document.getElementById('lp-tab-missing').style.display = tab === 'missing' ? '' : 'none'
+    document.getElementById('lp-tab-blacklist').style.display = tab === 'blacklist' ? '' : 'none'
+    document.getElementById('lp-tab-btn-library').classList.toggle('active', tab === 'library')
+    document.getElementById('lp-tab-btn-missing').classList.toggle('active', tab === 'missing')
+    document.getElementById('lp-tab-btn-blacklist').classList.toggle('active', tab === 'blacklist')
+  }
+
+  var _initialTab = new URLSearchParams(location.search).get('tab')
+  if (_initialTab === 'missing') {
+    lpSwitchTab('missing')
+  } else if (_initialTab === 'blacklist') {
+    lpSwitchTab('blacklist')
+  }
+
+  var _tmdbTimers = {}
+
+  document.addEventListener('input', function(e) {
+    var input = e.target
+    if (!input.classList.contains('lp-tmdb-search')) return
+    var itemId = input.dataset.itemId
+    var itemIds = input.dataset.itemIds || null
+    var groupKey = input.dataset.groupKey || null
+    var type = input.dataset.type
+    var q = input.value.trim()
+    clearTimeout(_tmdbTimers[itemId])
+
+    var resultsEl = document.querySelector('.lp-tmdb-results[data-item-id="' + itemId + '"]')
+    if (!q) { if (resultsEl) resultsEl.innerHTML = ''; return }
+
+    _tmdbTimers[itemId] = setTimeout(function() {
+      if (resultsEl) resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">Searching…</div>'
+      fetch('/library-paths/item/' + itemId + '/search-tmdb?q=' + encodeURIComponent(q) + '&type=' + encodeURIComponent(type))
+        .then(function(r) { return r.json() })
+        .then(function(data) {
+          if (!resultsEl) return
+          if (!data.items || data.items.length === 0) {
+            resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">No results.</div>'
+            return
+          }
+          resultsEl.innerHTML = ''
+          var grid = document.createElement('div')
+          grid.className = 'lp-candidate-grid'
+          data.items.slice(0, 8).forEach(function(ti) {
+            var year = (ti.releaseDate && ti.releaseDate.length >= 4) ? ti.releaseDate.substring(0, 4) : 'year unknown'
+            var btn = document.createElement('button')
+            btn.type = 'button'
+            btn.className = 'btn btn-secondary lp-select-tmdb-btn'
+            btn.dataset.itemId = itemId
+            if (itemIds) btn.dataset.itemIds = itemIds
+            if (groupKey) btn.dataset.groupKey = groupKey
+            btn.dataset.type = type
+            btn.dataset.tmdbItem = JSON.stringify(ti)
+            btn.style.cssText = 'display:flex;flex-direction:row;align-items:center;gap:.75rem;padding:.6rem .75rem;height:auto;width:100%;text-align:left'
+            var posterHtml = (SHOW_POSTERS && ti.posterUrl)
+              ? '<img src="' + escHtml(ti.posterUrl) + '" alt="Poster" style="width:54px;height:81px;object-fit:cover;border-radius:4px;flex-shrink:0" onerror="this.style.display=\'none\'">'
+              : '<div style="width:54px;height:81px;background:var(--surface-2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fa-solid fa-film" style="font-size:1.4rem;color:var(--text-dim)"></i></div>'
+            btn.innerHTML = posterHtml +
+              '<span style="font-size:.88rem;line-height:1.35;word-break:break-word;min-width:0"><strong>' +
+              escHtml(ti.name || 'Unknown') + '</strong>' +
+              '<br><span class="text-dim" style="font-size:.8rem">(' + escHtml(year) + ')</span>' +
+              (ti.genres ? '<br><span class="text-dim" style="font-size:.75rem">' + escHtml(ti.genres) + '</span>' : '') +
+              '</span>'
+            grid.appendChild(btn)
+          })
+          resultsEl.appendChild(grid)
+        })
+        .catch(function() {
+          if (resultsEl) resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">Search failed.</div>'
+        })
+    }, 300)
   })
 </script>
-
-<div class="modal-overlay" id="blacklist-modal" onclick="closeModalOnOverlay(event)">
-  <div class="modal" style="max-width:480px">
-    <div class="modal-header">
-      <h2>Blacklist Item</h2>
-      <button class="btn btn-icon" onclick="closeModal('blacklist-modal')">✕</button>
-    </div>
-    <form method="POST" id="blacklist-form" action="">
-      <p class="text-dim" style="font-size:.85rem;margin-top:0">
-        Blacklisting <strong id="blacklist-target-name"></strong> will prevent it from being auto-translated or
-        manually queued until it is removed from the blacklist.
-      </p>
-      <div class="field">
-        <label for="blacklist-reason">Reason (optional)</label>
-        <input type="text" id="blacklist-reason" name="reason" maxlength="500" placeholder="e.g. wrong language, duplicate, etc.">
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('blacklist-modal')">Cancel</button>
-        <button type="submit" class="btn btn-danger">Blacklist</button>
-      </div>
-    </form>
-  </div>
-</div>
 </body>
 </html>

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<%= locale %>">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Prompts — BCookieSubs</title>
+  <title><%= __('prompts.title') %> — BCookieSubs</title>
    <%-  include('theme-vars.ejs') %>
   <link rel="icon" type="image/png" href="/images/icon.png">
   <link rel="stylesheet" href="/static/css/all.min.css">
@@ -25,19 +25,19 @@
     <% } %>
 
     <div class="page-header">
-      <h1>Prompts</h1>
-      <% if (user.isAdmin || user.canManagePrompts) { %>
-        <button class="btn btn-primary" onclick="openModal('add-modal')">+ New Prompt</button>
+      <h1><%= __('prompts.title') %></h1>
+      <% if (can('canManagePrompts')) { %>
+        <button class="btn btn-primary" onclick="openModal('add-modal')"><%= __('prompts.newPrompt') %></button>
       <% } %>
     </div>
 
     <div class="alert alert-warning" style="margin-bottom:1.5rem">
-      Modifying prompts may affect translation quality. Use the <code>//variable//</code> placeholders documented below.
+      <%= __('prompts.warningMessage') %>
     </div>
 
     <div class="card">
       <% if (prompts.length === 0) { %>
-        <p class="empty-state">No prompts configured.</p>
+        <p class="empty-state"><%= __('prompts.noPromptsConfigured') %></p>
       <% } else { %>
         <div class="prompt-list">
           <% prompts.forEach(function(p) { %>
@@ -47,22 +47,22 @@
                 <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
                   <strong><%= p.name %></strong>
                   <span class="badge badge-neutral"><%= p.type %></span>
-                  <% if (!p.active) { %><span class="badge badge-error">Inactive</span><% } else { %><span class="badge badge-success">Active</span><% } %>
+                  <% if (!p.active) { %><span class="badge badge-error"><%= __('status.inactive') %></span><% } else { %><span class="badge badge-success"><%= __('status.active') %></span><% } %>
                   <% if (activeVersion) { %><span class="badge badge-info">v<%= activeVersion.version %></span><% } %>
                   <span class="text-dim" style="font-size:.78rem"><%= p.versions.length %> version<%= p.versions.length !== 1 ? 's' : '' %></span>
                 </div>
-                <% if (user.isAdmin || user.canManagePrompts) { %>
+                <% if (can('canManagePrompts')) { %>
                 <div class="actions" onclick="event.stopPropagation()">
                   <button
                     class="btn btn-sm btn-secondary"
                     onclick='openAddVersionModal(<%= p.id %>, <%- JSON.stringify(p.name) %>)'>
-                    + Version
+                    <%= __('prompts.addVersion') %>
                   </button>
                   <% if (p.type === "translation") { %>
                   <form method="POST" action="/prompts/toggle/<%= p.id %>" style="display:inline">
                     <input type="hidden" name="active" value="<%= p.active ? '0' : '1' %>">
                     <button type="submit" class="btn btn-sm <%= p.active ? 'btn-secondary' : 'btn-primary' %>">
-                      <%= p.active ? 'Disable' : 'Enable' %>
+                      <%= p.active ? __('prompts.disable') : __('prompts.enable') %>
                     </button>
                   </form>
                   <% } %>
@@ -80,20 +80,20 @@
 
                 <% if (p.versions.length > 1) { %>
                   <div class="prompt-versions">
-                    <div class="prompt-versions-title">Version History</div>
+                    <div class="prompt-versions-title"><%= __('prompts.versionHistory') %></div>
                     <% p.versions.slice().sort(function(a,b){ return b.version - a.version }).forEach(function(v) { %>
                       <div class="prompt-version-row">
                         <span class="badge badge-neutral" style="min-width:3rem;text-align:center">v<%= v.version %></span>
                         <span class="text-dim" style="font-size:.82rem"><%= v.createdAt.split(' ')[0] %></span>
                         <% if (v.active) { %>
-                          <span class="badge badge-success">Active</span>
-                        <% } else if (user.isAdmin || user.canManagePrompts) { %>
+                          <span class="badge badge-success"><%= __('status.active') %></span>
+                        <% } else if (can('canManagePrompts')) { %>
                           <form method="POST" action="/prompts/set-version/<%= p.id %>/<%= v.id %>" style="display:inline">
-                            <button type="submit" class="btn btn-sm btn-primary">Set Active</button>
+                            <button type="submit" class="btn btn-sm btn-primary"><%= __('prompts.setActive') %></button>
                           </form>
                         <% } %>
                         <details style="flex:1;min-width:0">
-                          <summary class="btn btn-sm btn-secondary" style="cursor:pointer;list-style:none;display:inline-flex">Preview</summary>
+                          <summary class="btn btn-sm btn-secondary" style="cursor:pointer;list-style:none;display:inline-flex"><%= __('prompts.preview') %></summary>
                           <pre class="prompt-text" style="margin-top:.5rem;font-size:.78em"><%= v.promptText %></pre>
                         </details>
                       </div>
@@ -108,10 +108,10 @@
     </div>
 
     <div class="card" style="margin-top:1.5rem">
-      <div class="card-header"><h2>Prompt Placeholders</h2></div>
+      <div class="card-header"><h2><%= __('prompts.placeholdersTitle') %></h2></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Placeholder</th><th>Description</th></tr></thead>
+          <thead><tr><th><%= __('prompts.placeholder') %></th><th><%= __('common.description') %></th></tr></thead>
           <tbody>
             <% promptRules.forEach(function(r) { %>
               <tr><td><code><%= r.replaceText %></code></td><td><%= r.note %></td></tr>
@@ -123,25 +123,25 @@
   </main>
 </div>
 
-<% if (user.isAdmin || user.canManagePrompts) { %>
+<% if (can('canManagePrompts')) { %>
 <div class="modal-overlay" id="add-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal modal-wide">
     <div class="modal-header">
-      <h2>New Prompt</h2>
+      <h2><%= __('prompts.newPrompt') %></h2>
       <button class="btn btn-icon" onclick="closeModal('add-modal')">✕</button>
     </div>
     <form method="POST" action="/prompts/create">
       <div class="field">
-        <label for="new-name">Name</label>
+        <label for="new-name"><%= __('common.name') %></label>
         <input type="text" id="new-name" name="name" required>
       </div>
       <div class="field">
-        <label for="new-promptText">Prompt Text</label>
+        <label for="new-promptText"><%= __('prompts.promptText') %></label>
         <textarea id="new-promptText" name="promptText" rows="14" required></textarea>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Create Prompt</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-primary"><%= __('prompts.createPrompt') %></button>
       </div>
     </form>
   </div>
@@ -150,17 +150,17 @@
 <div class="modal-overlay" id="add-version-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal modal-wide">
     <div class="modal-header">
-      <h2>Add Version — <span id="av-prompt-name"></span></h2>
+      <h2><%= __('prompts.addVersionTitle') %><span id="av-prompt-name"></span></h2>
       <button class="btn btn-icon" onclick="closeModal('add-version-modal')">✕</button>
     </div>
     <form method="POST" id="av-form" action="">
       <div class="field">
-        <label for="av-promptText">Prompt Text</label>
+        <label for="av-promptText"><%= __('prompts.promptText') %></label>
         <textarea id="av-promptText" name="promptText" rows="16" required></textarea>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('add-version-modal')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Add Version</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('add-version-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-primary"><%= __('prompts.addVersion') %></button>
       </div>
     </form>
   </div>

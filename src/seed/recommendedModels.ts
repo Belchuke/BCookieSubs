@@ -33,7 +33,7 @@ export const recommendedSeeds: [string, string, string | null, string, number, s
     "https://ollama.com",
     "translation, judge, nameFormatter",
     1,
-    "99% accurate · Slow · Handles profanity",
+    "99% accurate · Very Fast · Handles profanity",
   ],
   [
     "deepseek-v4-flash:cloud",

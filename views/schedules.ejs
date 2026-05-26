@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<%= locale %>">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Schedules — BCookieSubs</title>
+  <title><%= __('schedules.title') %> — BCookieSubs</title>
   <%-  include('theme-vars.ejs') %>
   <link rel="icon" type="image/png" href="/images/icon.png">
   <link rel="stylesheet" href="/static/css/all.min.css">
@@ -25,15 +25,15 @@
     <% } %>
 
     <div class="page-header">
-      <h1>Schedules</h1>
-      <% if (user.isAdmin || user.canManageSchedules) { %>
-        <button class="btn btn-primary" onclick="openModal('add-schedule-modal')">+ Add</button>
+      <h1><%= __('schedules.title') %></h1>
+      <% if (can('canManageSchedules')) { %>
+        <button class="btn btn-primary" onclick="openModal('add-schedule-modal')"><%= __('schedules.add') %></button>
       <% } %>
     </div>
 
     <div class="card">
       <% if (schedules.length === 0) { %>
-        <p class="empty-state">No schedules configured. Add one to gate translation to specific time windows.</p>
+        <p class="empty-state"><%= __('schedules.noSchedules') %></p>
       <% } else { %>
         <div style="display:flex;flex-direction:column;gap:.75rem">
           <% var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] %>
@@ -42,13 +42,13 @@
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
                 <strong><%= s.taskName %></strong>
                 <div style="display:flex;gap:.4rem;align-items:center">
-                  <span class="badge <%= s.enabled ? 'badge-success' : 'badge-neutral' %>"><%= s.enabled ? 'On' : 'Off' %></span>
-                  <% if (user.isAdmin || user.canManageSchedules) { %>
+                  <span class="badge <%= s.enabled ? 'badge-success' : 'badge-neutral' %>"><%= s.enabled ? __('common.on') : __('common.off') %></span>
+                  <% if (can('canManageSchedules')) { %>
                   <button class="btn btn-sm btn-secondary sched-edit-btn"
-                          data-sched="<%- JSON.stringify(s).replace(/"/g, '&quot;') %>">Edit</button>
+                          data-sched="<%- JSON.stringify(s).replace(/"/g, '&quot;') %>"><%= __('schedules.edit') %></button>
                   <form method="POST" action="/schedules/delete/<%= s.id %>" style="display:inline"
                         class="sched-delete-form">
-                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                    <button type="submit" class="btn btn-sm btn-danger"><%= __('schedules.delete') %></button>
                   </form>
                   <% } %>
                 </div>
@@ -68,39 +68,39 @@
   </main>
 </div>
 
-<% if (user.isAdmin || user.canManageSchedules) { %>
+<% if (can('canManageSchedules')) { %>
 <div class="modal-overlay" id="add-schedule-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal">
     <div class="modal-header">
-      <h2>Add Schedule</h2>
+      <h2><%= __('schedules.addTitle') %></h2>
       <button class="btn btn-icon" onclick="closeModal('add-schedule-modal')">✕</button>
     </div>
     <form method="POST" action="/schedules/add">
       <div class="field">
-        <label>Task Name</label>
+        <label><%= __('schedules.taskName') %></label>
         <input type="text" name="taskName" value="translation" required>
       </div>
       <div class="field field-checkbox">
         <input type="checkbox" name="enabled" value="1" id="as-enabled" checked>
-        <label for="as-enabled">Enabled</label>
+        <label for="as-enabled"><%= __('schedules.enabledLabel') %></label>
       </div>
       <div class="field-row">
         <div class="field">
-          <label>Repeat Every</label>
+          <label><%= __('schedules.repeatEvery') %></label>
           <input type="number" name="repeatInterval" value="1" min="1" required>
         </div>
         <div class="field">
-          <label>Unit</label>
+          <label><%= __('schedules.unit') %></label>
           <select name="repeatUnit">
-            <option value="day">Day</option>
-            <option value="week" selected>Week</option>
-            <option value="month">Month</option>
+            <option value="day"><%= __('schedules.unitDay') %></option>
+            <option value="week" selected><%= __('schedules.unitWeek') %></option>
+            <option value="month"><%= __('schedules.unitMonth') %></option>
           </select>
         </div>
       </div>
       <div class="field-row">
         <div class="field">
-          <label>Day of Week</label>
+          <label><%= __('schedules.dayOfWeek') %></label>
           <select name="dayOfTheWeek">
             <% ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(function(d,i){ %>
               <option value="<%= i %>"><%= d %></option>
@@ -108,25 +108,25 @@
           </select>
         </div>
         <div class="field">
-          <label>Hour (0–23)</label>
+          <label><%= __('schedules.hour') %></label>
           <input type="number" name="startTimeHour" value="8" min="0" max="23" required>
         </div>
         <div class="field">
-          <label>Minute (0–59)</label>
+          <label><%= __('schedules.minute') %></label>
           <input type="number" name="startTimeMinute" value="0" min="0" max="59" required>
         </div>
       </div>
       <div class="field">
-        <label>Duration (minutes)</label>
+        <label><%= __('schedules.duration') %></label>
         <input type="number" name="durationMinutes" value="60" min="1" required>
       </div>
       <div class="field">
-        <label>First Start Date</label>
+        <label><%= __('schedules.firstStartDate') %></label>
         <input type="date" name="firstStartAt">
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('add-schedule-modal')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Create Schedule</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('add-schedule-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-primary"><%= __('schedules.createSchedule') %></button>
       </div>
     </form>
   </div>
@@ -135,14 +135,14 @@
 <div class="modal-overlay" id="edit-schedule-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal">
     <div class="modal-header">
-      <h2>Edit Schedule</h2>
+      <h2><%= __('schedules.editTitle') %></h2>
       <button class="btn btn-icon" onclick="closeModal('edit-schedule-modal')">✕</button>
     </div>
     <form method="POST" id="edit-sched-form" action="">
       <div id="edit-sched-fields"></div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('edit-schedule-modal')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('edit-schedule-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-primary"><%= __('common.save') %></button>
       </div>
     </form>
   </div>
@@ -157,7 +157,7 @@
     });
   });
 
-  <% if (user.isAdmin || user.canManageSchedules) { %>
+  <% if (can('canManageSchedules')) { %>
   var DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
   document.querySelectorAll('.sched-edit-btn').forEach(function(btn) {
@@ -169,26 +169,41 @@
     });
   });
 
+  var SCHED_LABELS = {
+    taskName:      '<%= __("schedules.taskName") %>',
+    enabledLabel:  '<%= __("schedules.enabledLabel") %>',
+    every:         '<%= __("schedules.every") %>',
+    unit:          '<%= __("schedules.unit") %>',
+    unitDay:       '<%= __("schedules.unitDay") %>',
+    unitWeek:      '<%= __("schedules.unitWeek") %>',
+    unitMonth:     '<%= __("schedules.unitMonth") %>',
+    dayOfWeek:     '<%= __("schedules.dayOfWeek") %>',
+    hour:          '<%= __("schedules.hour") %>',
+    minute:        '<%= __("schedules.minute") %>',
+    duration:      '<%= __("schedules.duration") %>'
+  };
+
   function buildSchedFields(s) {
-    var units = ['day','week','month'];
     var html = '';
-    html += '<div class="field"><label>Task Name</label>';
+    html += '<div class="field"><label>' + SCHED_LABELS.taskName + '</label>';
     html += '<input type="text" name="taskName" value="' + esc(s.taskName) + '" required></div>';
     html += '<div class="field field-checkbox"><input type="checkbox" name="enabled" value="1" id="es-en" ' + (s.enabled ? 'checked' : '') + '>';
-    html += '<label for="es-en">Enabled</label></div>';
+    html += '<label for="es-en">' + SCHED_LABELS.enabledLabel + '</label></div>';
     html += '<div class="field-row">';
-    html += '<div class="field"><label>Every</label><input type="number" name="repeatInterval" value="' + s.repeatInterval + '" min="1" required></div>';
-    html += '<div class="field"><label>Unit</label><select name="repeatUnit">';
-    units.forEach(function(u) { html += '<option value="' + u + '"' + (s.repeatUnit === u ? ' selected' : '') + '>' + u + '</option>'; });
+    html += '<div class="field"><label>' + SCHED_LABELS.every + '</label><input type="number" name="repeatInterval" value="' + s.repeatInterval + '" min="1" required></div>';
+    html += '<div class="field"><label>' + SCHED_LABELS.unit + '</label><select name="repeatUnit">';
+    html += '<option value="day"' + (s.repeatUnit === 'day' ? ' selected' : '') + '>' + SCHED_LABELS.unitDay + '</option>';
+    html += '<option value="week"' + (s.repeatUnit === 'week' ? ' selected' : '') + '>' + SCHED_LABELS.unitWeek + '</option>';
+    html += '<option value="month"' + (s.repeatUnit === 'month' ? ' selected' : '') + '>' + SCHED_LABELS.unitMonth + '</option>';
     html += '</select></div></div>';
     html += '<div class="field-row">';
-    html += '<div class="field"><label>Day of Week</label><select name="dayOfTheWeek">';
+    html += '<div class="field"><label>' + SCHED_LABELS.dayOfWeek + '</label><select name="dayOfTheWeek">';
     DAYS.forEach(function(d, i) { html += '<option value="' + i + '"' + (s.dayOfTheWeek === i ? ' selected' : '') + '>' + d + '</option>'; });
     html += '</select></div>';
-    html += '<div class="field"><label>Hour (0–23)</label><input type="number" name="startTimeHour" value="' + s.startTimeHour + '" min="0" max="23" required></div>';
-    html += '<div class="field"><label>Minute (0–59)</label><input type="number" name="startTimeMinute" value="' + s.startTimeMinute + '" min="0" max="59" required></div>';
+    html += '<div class="field"><label>' + SCHED_LABELS.hour + '</label><input type="number" name="startTimeHour" value="' + s.startTimeHour + '" min="0" max="23" required></div>';
+    html += '<div class="field"><label>' + SCHED_LABELS.minute + '</label><input type="number" name="startTimeMinute" value="' + s.startTimeMinute + '" min="0" max="59" required></div>';
     html += '</div>';
-    html += '<div class="field"><label>Duration (minutes)</label><input type="number" name="durationMinutes" value="' + s.durationMinutes + '" min="1" required></div>';
+    html += '<div class="field"><label>' + SCHED_LABELS.duration + '</label><input type="number" name="durationMinutes" value="' + s.durationMinutes + '" min="1" required></div>';
     return html;
   }
 

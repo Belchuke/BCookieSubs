@@ -14,7 +14,7 @@ export const getAllPrompts = (
   job = false,
 ): { prompts: PromptsWithVersions[] } & DefaultResponse => {
   if (!job) {
-    const { hasPermission: perm } = userHasPermission(db, user?.id ?? -1, "canViewPrompts")
+    const { hasPermission: perm } = userHasPermission(db, user?.id ?? -1, "canViewPromptsPage")
     if (!perm) return { prompts: [], success: false, msg: "User does not have permission to view prompts" }
   }
 
@@ -88,6 +88,18 @@ export const getNameFormatterPromptVersion = (db: Database.Database): DBPromptVe
   return result ?? null
 }
 
+export const getTheMovieDbMatcherPromptVersion = (db: Database.Database): DBPromptVersion | null => {
+  const result = db
+    .prepare(
+      `SELECT pv.* FROM promptVersion pv
+       INNER JOIN prompt p ON pv.promptId = p.id
+       WHERE p.name = 'theMovieDBMatchingPrompt' AND p.active = 1 AND pv.active = 1 AND pv.deletedAt IS NULL
+       LIMIT 1`,
+    )
+    .get() as DBPromptVersion | undefined
+  return result ?? null
+}
+
 export const getPromptStatByKeys = (
   db: Database.Database,
   promptId: number,
@@ -107,7 +119,7 @@ export const getAllPromptStats = (
   db: Database.Database,
   user: DBUser,
 ): { stats: PromptStatListItem[] } & DefaultResponse => {
-  if (!userHasPermission(db, user.id, "canViewPrompts").hasPermission) {
+  if (!userHasPermission(db, user.id, "canViewPromptsPage").hasPermission) {
     return { stats: [], success: false, msg: "User does not have permission to view prompts" }
   }
 
@@ -190,7 +202,7 @@ export const addPromptVersion = (
 
   if (existingVersion) return { success: false, msg: "Prompt version already exists for this prompt" }
 
-    db.prepare(`UPDATE promptVersion SET active = 0 WHERE promptId = ? AND active = 1`).run(promptId)
+  db.prepare(`UPDATE promptVersion SET active = 0 WHERE promptId = ? AND active = 1`).run(promptId)
 
   db.prepare(`INSERT INTO promptVersion (promptId, version, promptText, active) VALUES (?, ?, ?, 1)`).run(
     promptId,

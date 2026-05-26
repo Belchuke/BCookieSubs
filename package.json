@@ -12,7 +12,7 @@
   },
   "keywords": [],
   "author": "Belchuke",
-  "license": "MIT",
+  "license": "ISC",
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
     "@types/better-sqlite3": "^7.6.13",

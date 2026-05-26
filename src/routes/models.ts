@@ -13,6 +13,7 @@ import { downloadModel, getModelsFromOllama, removeOllamaModel } from "../reposi
 import { getRecommendedModelById, getUninstalledRecommendedModels } from "../repositories/recommendedModelRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
 import { requireAuth } from "../middleware/auth"
+import { requirePermission } from "../services/permissionService"
 
 const upload = multer()
 
@@ -53,7 +54,7 @@ export function modelsRouter(db: Database.Database) {
       ollamaError = "Could not reach Ollama: " + String(e)
     }
 
-    const theme = getActiveTheme(db)
+    const theme = getActiveTheme(db, user.id)
     const recommendedModels = getUninstalledRecommendedModels(db)
 
     res.render("models", {
@@ -242,11 +243,7 @@ export function modelsRouter(db: Database.Database) {
   })
 
   
-  router.post("/remove-ollama", requireAuth, upload.none(), async (req, res) => {
-    const user = res.locals.user!
-    if (!user.isAdmin && !user.canManageModels) {
-      return res.redirect("/models?toast=error&msg=" + encodeURIComponent("Permission denied"))
-    }
+  router.post("/remove-ollama", requireAuth, requirePermission("canRemoveAndDeleteModels"), upload.none(), async (req, res) => {
     const { modelName } = req.body as { modelName: string }
     if (!modelName) {
       return res.redirect("/models?toast=error&msg=" + encodeURIComponent("Model name required"))
@@ -262,12 +259,7 @@ export function modelsRouter(db: Database.Database) {
   })
 
   
-  router.get("/pull-stream/:modelName", requireAuth, async (req, res) => {
-    const user = res.locals.user!
-    if (!user.isAdmin && !user.canManageModels) {
-      res.status(403).end()
-      return
-    }
+  router.get("/pull-stream/:modelName", requireAuth, requirePermission("canAddOrInstallAModel"), async (req, res) => {
     const modelName = decodeURIComponent(String(req.params.modelName))
 
     res.setHeader("Content-Type", "text/event-stream")
@@ -301,11 +293,8 @@ export function modelsRouter(db: Database.Database) {
   })
 
   
-  router.post("/add-recommended/:id", requireAuth, upload.none(), async (req, res) => {
+  router.post("/add-recommended/:id", requireAuth, requirePermission("canAddOrInstallAModel"), upload.none(), async (req, res) => {
     const user = res.locals.user!
-    if (!user.isAdmin && !user.canManageModels) {
-      return res.redirect("/models?toast=error&msg=" + encodeURIComponent("Permission denied"))
-    }
     const rec = getRecommendedModelById(db, parseInt(String(req.params.id)))
     if (!rec) {
       return res.redirect("/models?toast=error&msg=" + encodeURIComponent("Recommended model not found"))

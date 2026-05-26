@@ -1,5 +1,5 @@
 import Database from "better-sqlite3"
-import { DBUser, DBLanguage, DBConfigTranslationLanguage } from "../types/dbTypes"
+import { DBUser, DBLanguage, DBConfigTranslationLanguage, DBUserConfigTranslationLanguage } from "../types/dbTypes"
 import { DefaultResponse } from "../types/modelTypes"
 import { createLog } from "./logRepository"
 import { userHasPermission } from "./userRepository"
@@ -21,7 +21,7 @@ export const addLanguage = (
   locale: string,
   flag: string | null,
 ): DefaultResponse => {
-  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageLanguages")
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageSettings")
   if (!perm) return { success: false, msg: "User does not have permission to manage languages" }
 
   const existing = db.prepare(`SELECT * FROM language WHERE iso639 = ? AND locale = ?`).get(iso639, locale) as
@@ -56,7 +56,7 @@ export const addConfigTranslationLanguage = (
   user: DBUser,
   languageId: number,
 ): DefaultResponse => {
-  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageLanguages")
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageSettings")
   if (!perm) return { success: false, msg: "User does not have permission to manage languages" }
 
   const language = getLanguageById(db, languageId)
@@ -73,6 +73,8 @@ export const addConfigTranslationLanguage = (
     highestOrder + 1,
   )
 
+  syncUserConfigTranslationLanguagesFromGlobal(db, user.id)
+
   createLog(db, "info", "config", null, "Added language to translation config", { languageId })
   return { success: true, msg: "Language added to translation config successfully" }
 }
@@ -83,7 +85,7 @@ export const reorderConfigTranslationLanguages = (
   languageId: number,
   positionChange: "up" | "down",
 ): DefaultResponse => {
-  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageConfig")
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageSettings")
   if (!perm) return { success: false, msg: "User does not have permission to manage config" }
 
   const languages = getConfigTranslationLanguages(db)
@@ -107,6 +109,8 @@ export const reorderConfigTranslationLanguages = (
     swap.languageId,
   )
 
+  syncUserConfigTranslationLanguagesFromGlobal(db, user.id)
+
   return { success: true, msg: "Language order updated successfully" }
 }
 
@@ -115,7 +119,7 @@ export const removeConfigTranslationLanguage = (
   user: DBUser,
   languageId: number,
 ): DefaultResponse => {
-  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageConfig")
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageSettings")
   if (!perm) return { success: false, msg: "User does not have permission to manage config" }
 
   const language = getLanguageById(db, languageId)
@@ -132,5 +136,116 @@ export const removeConfigTranslationLanguage = (
   }
 
   createLog(db, "info", "config", null, "Removed language from translation config", { languageId })
+
+  syncUserConfigTranslationLanguagesFromGlobal(db, user.id)
+
   return { success: true, msg: "Language removed from translation config successfully" }
+}
+
+export const getUserConfigTranslationLanguages = (
+  db: Database.Database,
+  userId: number,
+): DBUserConfigTranslationLanguage[] => {
+  return db
+    .prepare(`SELECT * FROM userConfigTranslationLanguage WHERE userId = ? ORDER BY orderNumber ASC`)
+    .all(userId) as DBUserConfigTranslationLanguage[]
+}
+
+export const addUserConfigTranslationLanguage = (
+  db: Database.Database,
+  userId: number,
+  languageId: number,
+): DefaultResponse => {
+  const language = getLanguageById(db, languageId)
+  if (!language) return { success: false, msg: "Language not found" }
+
+  const getCurrent = db
+    .prepare(`SELECT * FROM userConfigTranslationLanguage WHERE userId = ?`)
+    .all(userId) as DBUserConfigTranslationLanguage[]
+  if (getCurrent.find((ctl) => ctl.languageId === languageId)) {
+    return { success: false, msg: "Language is already in the user's translation list" }
+  }
+
+  const highestOrder = getCurrent.reduce((max, ctl) => (ctl.orderNumber > max ? ctl.orderNumber : max), 0)
+  db.prepare(`INSERT INTO userConfigTranslationLanguage (userId, languageId, orderNumber) VALUES (?, ?, ?)`).run(
+    userId,
+    languageId,
+    highestOrder + 1,
+  )
+
+  return { success: true, msg: "Language added to user's translation config successfully" }
+}
+
+export const reorderUserConfigTranslationLanguages = (
+  db: Database.Database,
+  userId: number,
+  languageId: number,
+  positionChange: "up" | "down",
+): DefaultResponse => {
+  const languages = getUserConfigTranslationLanguages(db, userId)
+  const index = languages.findIndex((ctl) => ctl.languageId === languageId)
+  if (index === -1) return { success: false, msg: "Language not found in user's translation config" }
+  if (positionChange === "up" && index === 0) return { success: false, msg: "Language is already at the top" }
+  if (positionChange === "down" && index === languages.length - 1) {
+    return { success: false, msg: "Language is already at the bottom" }
+  }
+
+  const swapWithIndex = positionChange === "up" ? index - 1 : index + 1
+  const current = languages[index]
+  const swap = languages[swapWithIndex]
+
+  db.prepare(`UPDATE userConfigTranslationLanguage SET orderNumber = ? WHERE userId = ? AND languageId = ?`).run(
+    swap.orderNumber,
+    userId,
+    current.languageId,
+  )
+  db.prepare(`UPDATE userConfigTranslationLanguage SET orderNumber = ? WHERE userId = ? AND languageId = ?`).run(
+    current.orderNumber,
+    userId,
+    swap.languageId,
+  )
+
+  return { success: true, msg: "Language order updated successfully" }
+}
+
+export const removeUserConfigTranslationLanguage = (
+  db: Database.Database,
+  userId: number,
+  languageId: number,
+): DefaultResponse => {
+  const language = getLanguageById(db, languageId)
+  if (!language) return { success: false, msg: "Language not found" }
+
+  const languages = getUserConfigTranslationLanguages(db, userId)
+  const entry = languages.find((ctl) => ctl.languageId === languageId)
+
+  db.prepare(`DELETE FROM userConfigTranslationLanguage WHERE userId = ? AND languageId = ?`).run(userId, languageId)
+  if (entry) {
+    db.prepare(
+      `UPDATE userConfigTranslationLanguage SET orderNumber = orderNumber - 1 WHERE userId = ? AND orderNumber > ?`,
+    ).run(userId, entry.orderNumber)
+  }
+
+  return { success: true, msg: "Language removed from user's translation config successfully" }
+}
+
+export const setConfigTranslationLanguages = (db: Database.Database, languageIds: number[]): void => {
+  db.prepare(`DELETE FROM configTranslationLanguage`).run()
+  languageIds.forEach((langId, idx) => {
+    db.prepare(`INSERT OR IGNORE INTO configTranslationLanguage (languageId, orderNumber) VALUES (?, ?)`).run(langId, idx + 1)
+  })
+}
+
+export const syncUserConfigTranslationLanguagesFromGlobal = (db: Database.Database, userId: number): void => {
+  const globalLangs = db
+    .prepare(`SELECT * FROM configTranslationLanguage ORDER BY orderNumber ASC`)
+    .all() as DBConfigTranslationLanguage[]
+  db.prepare(`DELETE FROM userConfigTranslationLanguage WHERE userId = ?`).run(userId)
+  for (const lang of globalLangs) {
+    db.prepare(`INSERT INTO userConfigTranslationLanguage (userId, languageId, orderNumber) VALUES (?, ?, ?)`).run(
+      userId,
+      lang.languageId,
+      lang.orderNumber,
+    )
+  }
 }

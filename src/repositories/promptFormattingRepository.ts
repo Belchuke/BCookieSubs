@@ -1,10 +1,10 @@
 import Database from "better-sqlite3"
 import { DBUser, DBLanguage } from "../types/dbTypes"
-import { NameFormatterResult } from "../types/modelTypes"
+import { NameFormatterResult, TheMovieDBRequestResult } from "../types/modelTypes"
 import { getConfig } from "./configRepository"
 import { getActiveModelsByRole } from "./modelRepository"
 import { sendPrompt } from "./ollamaRepository"
-import { getNameFormatterPromptVersion } from "./promptRepository"
+import { getNameFormatterPromptVersion, getTheMovieDbMatcherPromptVersion } from "./promptRepository"
 import { searchMediaItemInTheMovieDb } from "./movieDbRepository"
 import { createLog } from "./logRepository"
 import { userHasPermission } from "./userRepository"
@@ -103,8 +103,12 @@ export const getJudgeEvaluations = (
     LEFT JOIN subtitleChunk sc ON je.subtitleChunkId = sc.id
     LEFT JOIN subtitle s ON sc.subtitleId = s.id`
   if (modelId) {
-    const total = (db.prepare(`SELECT COUNT(*) as cnt FROM judgeEvaluation je WHERE je.modelId = ?`).get(modelId) as any).cnt as number
-    const rows = db.prepare(`${base} WHERE je.modelId = ? ORDER BY je.createdAt DESC LIMIT ? OFFSET ?`).all(modelId, limit, offset) as any[]
+    const total = (
+      db.prepare(`SELECT COUNT(*) as cnt FROM judgeEvaluation je WHERE je.modelId = ?`).get(modelId) as any
+    ).cnt as number
+    const rows = db
+      .prepare(`${base} WHERE je.modelId = ? ORDER BY je.createdAt DESC LIMIT ? OFFSET ?`)
+      .all(modelId, limit, offset) as any[]
     return { rows, total }
   }
   const total = (db.prepare(`SELECT COUNT(*) as cnt FROM judgeEvaluation je`).get() as any).cnt as number
@@ -122,7 +126,7 @@ export const getSubtitleItemMediaItemFromPrompt = async (
   const config = getConfig(db)
   if (!config.nameDetectionActive) return null
 
-  const permission = userHasPermission(db, user.id, "canAddSubtitles")
+  const permission = userHasPermission(db, user.id, "canAddSubtitleToTranslateDashboard")
   if (!permission.hasPermission) return null
 
   const models = getActiveModelsByRole(db, "nameFormatter")
@@ -153,6 +157,144 @@ export const getSubtitleItemMediaItemFromPrompt = async (
       "nameFormatter",
       null,
       `Name formatter failed for "${fileName}": ${String(error).slice(0, 200)}`,
+      { fileName, error: String(error) },
+    )
+    return null
+  }
+}
+
+export const formatTheMovieDbMatcherPrompt = (
+  promptText: string,
+  fileName: string,
+  candidates: TheMovieDBRequestResult[],
+): string => {
+  const candidateList = JSON.stringify(
+    candidates.map((c) => ({
+      id: c.id,
+      title: c.name,
+      original_title: c.originalTitle,
+      release_date: c.releaseDate,
+      media_type: "movie | tv",
+    })),
+  )
+  return promptText.replaceAll("//filename//", fileName).replaceAll("//TheMovieDBCandidate//", candidateList)
+}
+
+export const selectBestTheMovieDbMatch = async (
+  db: Database.Database,
+  user: DBUser,
+  fileName: string,
+  candidates: TheMovieDBRequestResult[],
+): Promise<TheMovieDBRequestResult | null> => {
+  if (!fileName || candidates.length === 0) return null
+
+  const config = getConfig(db)
+  if (!config.nameDetectionActive) return null
+
+  const permission = userHasPermission(db, user.id, "canAddSubtitleToTranslateDashboard")
+  if (!permission.hasPermission) return null
+
+  const models = getActiveModelsByRole(db, "nameFormatter")
+  if (models.length === 0) return null
+
+  const promptVersion = getTheMovieDbMatcherPromptVersion(db)
+  if (!promptVersion) return null
+
+  const finishedPrompt = formatTheMovieDbMatcherPrompt(promptVersion.promptText, fileName, candidates)
+
+  try {
+    const response = await sendPrompt(db, models[0], finishedPrompt)
+    const jsonMatch = response.message.content.match(/\{[\s\S]*\}/)
+
+    if (!jsonMatch) {
+      createLog(
+        db,
+        "warning",
+        "libraryScanner",
+        null,
+        `theMovieDBMatchingPrompt returned no JSON object for "${fileName}"`,
+        {
+          fileName,
+          candidateCount: candidates.length,
+          rawResponse: response.message.content.slice(0, 500),
+        },
+      )
+      return null
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]) as { winnerId?: number }
+
+    if (typeof parsed.winnerId !== "number") {
+      createLog(
+        db,
+        "warning",
+        "libraryScanner",
+        null,
+        `theMovieDBMatchingPrompt returned malformed winnerId for "${fileName}"`,
+        {
+          fileName,
+          candidateCount: candidates.length,
+          parsed,
+        },
+      )
+      return null
+    }
+
+    if (parsed.winnerId === -1) {
+      createLog(
+        db,
+        "info",
+        "libraryScanner",
+        null,
+        `theMovieDBMatchingPrompt indicated no good match for "${fileName}"`,
+        {
+          fileName,
+          candidateCount: candidates.length,
+        },
+      )
+      return null
+    }
+
+    const winner = candidates.find((c) => c.id === parsed.winnerId)
+    if (!winner) {
+      createLog(
+        db,
+        "warning",
+        "libraryScanner",
+        null,
+        `theMovieDBMatchingPrompt winnerId ${parsed.winnerId} not in candidate list for "${fileName}"`,
+        {
+          fileName,
+          winnerId: parsed.winnerId,
+          candidateCount: candidates.length,
+          candidateIds: candidates.map((c) => c.id),
+        },
+      )
+      return null
+    }
+
+    createLog(
+      db,
+      "info",
+      "libraryScanner",
+      null,
+      `theMovieDBMatchingPrompt executed for "${fileName}" with ${candidates.length} candidates — AI soft-picked ${winner.id} (${winner.name})`,
+      {
+        fileName,
+        candidateCount: candidates.length,
+        winnerId: winner.id,
+        winnerName: winner.name,
+      },
+    )
+
+    return winner
+  } catch (error) {
+    createLog(
+      db,
+      "warning",
+      "libraryScanner",
+      null,
+      `theMovieDBMatchingPrompt failed for "${fileName}": ${String(error).slice(0, 200)}`,
       { fileName, error: String(error) },
     )
     return null

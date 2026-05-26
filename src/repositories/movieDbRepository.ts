@@ -1,7 +1,7 @@
 import Database from "better-sqlite3"
 import { DBUser, DBSecret } from "../types/dbTypes"
 import { DefaultResponse, MovieDbResultFormat, TheMovieDBRequestResult } from "../types/modelTypes"
-import { ollamaApiSecretKey, theMovieDBSecretKey, openAIApiSecretKey, anthropicApiSecretKey } from "../setup"
+import { ollamaApiSecretKey, theMovieDBSecretKey, openAIApiSecretKey, anthropicApiSecretKey } from "../constants/keys"
 import { encryptKey, decryptKey } from "./shared"
 import { createLog } from "./logRepository"
 import { userHasPermission } from "./userRepository"
@@ -76,7 +76,6 @@ export const requestSearchTheMovieDb = async (
     if (year) {
       url += `&year=${year}`
     }
-    url += "&append_to_response=overview"
 
     const response = await fetch(url)
     if (!response.ok) {
@@ -85,37 +84,27 @@ export const requestSearchTheMovieDb = async (
 
     const data = (await response.json()) as MovieDbResultFormat
 
-    const results = await Promise.all(
-      data.results.map(async (item) => {
-        let posterBase64: string | null = null
-        let posterUrl: string = "https://image.tmdb.org/t/p/w600_and_h900_face/" + item.poster_path
+    const results = data.results.map((item) => {
+      const posterUrl: string = item.poster_path
+        ? "https://image.tmdb.org/t/p/w600_and_h900_face/" + item.poster_path
+        : ""
 
-        try {
-          const posterResponse = await fetch(posterUrl)
-          if (posterResponse.ok) {
-            const buffer = await posterResponse.arrayBuffer()
-            posterBase64 = `data:${posterResponse.headers.get("content-type")};base64,${Buffer.from(buffer).toString("base64")}`
-          }
-        } catch (error) {
-                  }
+      const genres = getTheMovieDbGenres
+        .filter((g) => item.genre_ids.includes(g.id))
+        .map((g) => g.name)
+        .join(", ")
 
-        const genres = getTheMovieDbGenres
-          .filter((g) => item.genre_ids.includes(g.id))
-          .map((g) => g.name)
-          .join(", ")
-
-        return {
-          id: item.id,
-          name: type === "movie" ? item.title : item.name,
-          originalTitle: type === "movie" ? item.original_title : item.original_name,
-          releaseDate: type === "movie" ? item.release_date : item.first_air_date,
-          posterBase64,
-          posterUrl,
-          genres,
-          isAnime: isAdmin(item.original_language as string, item.genre_ids),
-        } as TheMovieDBRequestResult
-      }),
-    )
+      return {
+        id: item.id,
+        name: type === "movie" ? item.title : item.name,
+        originalTitle: type === "movie" ? item.original_title : item.original_name,
+        releaseDate: type === "movie" ? item.release_date : item.first_air_date,
+        posterBase64: null,
+        posterUrl,
+        genres,
+        isAnime: isAdmin(item.original_language as string, item.genre_ids),
+      } as TheMovieDBRequestResult
+    })
     return { items: results, success: true, msg: null }
   } catch (error) {
     if (error instanceof Error) {
@@ -157,6 +146,51 @@ export const searchMediaItemInTheMovieDb = async (
   }
 }
 
+export const fetchTheMovieDbDetailsById = async (
+  db: Database.Database,
+  tmdbId: number,
+  type: "movie" | "series",
+): Promise<TheMovieDBRequestResult | null> => {
+  const config = getConfig(db)
+  if (!config.theMovieDbActive) return null
+
+  const secret = db.prepare(`SELECT * FROM secret WHERE secretName = ?`).get(theMovieDBSecretKey) as
+    | DBSecret
+    | undefined
+  if (!secret) return null
+
+  try {
+    const apiKey = decryptKey(secret.encryptedValue, secret.iv, secret.authTag)
+    const endpoint = type === "movie" ? "movie" : "tv"
+    const url = `https://api.themoviedb.org/3/${endpoint}/${tmdbId}?api_key=${apiKey}`
+
+    const response = await fetch(url)
+    if (!response.ok) return null
+
+    const item = (await response.json()) as any
+
+    const posterUrl: string = item.poster_path
+      ? "https://image.tmdb.org/t/p/w600_and_h900_face/" + item.poster_path
+      : ""
+    const genreList: { id: number; name: string }[] = item.genres ?? []
+    const genres = genreList.map((g) => g.name).join(", ")
+    const genreIds = genreList.map((g) => g.id)
+
+    return {
+      id: item.id,
+      name: type === "movie" ? item.title : item.name,
+      originalTitle: type === "movie" ? item.original_title : item.original_name,
+      releaseDate: type === "movie" ? item.release_date : item.first_air_date,
+      posterBase64: null,
+      posterUrl,
+      genres,
+      isAnime: isAdmin(item.original_language as string, genreIds),
+    } as TheMovieDBRequestResult
+  } catch {
+    return null
+  }
+}
+
 export const setOrUpdateSecret = (
   db: Database.Database,
   user: DBUser,
@@ -164,7 +198,7 @@ export const setOrUpdateSecret = (
   secretValue: string,
   deleteKey: boolean,
 ): DefaultResponse => {
-  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageConfig")
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageSecrets")
   if (!perm) return { success: false, msg: "User does not have permission to manage config" }
 
   if (secretName !== theMovieDBSecretKey && secretName !== ollamaApiSecretKey) {
@@ -214,7 +248,7 @@ export const syncSecretsFromEnv = (db: Database.Database): void => {
     const existing = db.prepare(`SELECT * FROM secret WHERE secretName = ?`).get(secretName) as DBSecret | undefined
 
     if (!existing) {
-            const enc = encryptKey(envValue)
+      const enc = encryptKey(envValue)
       db.prepare(
         `INSERT INTO secret (secretName, encryptedValue, iv, authTag, algorithm, setByEnv) VALUES (?, ?, ?, ?, 'aes-256-gcm', 1)`,
       ).run(secretName, enc.encryptedValue, enc.iv, enc.authTag)
@@ -223,15 +257,14 @@ export const syncSecretsFromEnv = (db: Database.Database): void => {
     }
 
     if (!existing.setByEnv) {
-            console.log(`[secrets] Skipped ${secretName} (user-managed)`)
+      console.log(`[secrets] Skipped ${secretName} (user-managed)`)
       continue
     }
 
-        try {
+    try {
       const current = decryptKey(existing.encryptedValue, existing.iv, existing.authTag)
       if (current === envValue) continue
-    } catch {
-          }
+    } catch {}
 
     const enc = encryptKey(envValue)
     db.prepare(

@@ -1,0 +1,86 @@
+export type PermissionCategory = 'dashboard' | 'models' | 'prompts' | 'statistics' | 'users' | 'library' | 'settings' | 'schedules' | 'logs'
+
+export type PermissionDefinition = {
+  key: PermissionKey
+  label: string
+  description: string
+  category: PermissionCategory
+}
+
+export const PERMISSION_KEYS = [
+  'canManageWorker',
+  'canAddSubtitleToTranslateDashboard',
+  'canAddSubtitleToTranslateFromLibrary',
+  'canChangeSubtitlePriority',
+  'canCancelTranslationJob',
+  'canDeleteTranslation',
+  'canViewLogsDashboard',
+  'canRestartTranslationChunk',
+  'canDownloadFinishedSubtitles',
+  'canViewFinishedTranslatedPage',
+  'canViewModelsPage',
+  'canAddOrInstallAModel',
+  'canEditModels',
+  'canManageModelRoles',
+  'canRemoveAndDeleteModels',
+  'canViewPromptsPage',
+  'canManagePrompts',
+  'canViewStatistics',
+  'canViewUsers',
+  'canEditPermissions',
+  'canChangeOtherUsersPassword',
+  'canManageRoles',
+  'canAddUser',
+  'canViewLibraryPathsPage',
+  'canChangeMatchForLibraryPaths',
+  'canAddPathForLibraryPaths',
+  'canBlackListALibraryPathItem',
+  'canEditLibraryPath',
+  'canDisableAndDeleteALibraryPath',
+  'canViewSettingsPage',
+  'canManageSettings',
+  'canManageSecrets',
+  'canViewSchedules',
+  'canManageSchedules',
+  'canViewLogs',
+] as const
+
+export type PermissionKey = typeof PERMISSION_KEYS[number]
+
+export const PERMISSIONS: PermissionDefinition[] = [
+  { key: 'canManageWorker', label: 'Manage Worker', description: 'Can start, stop, pause, or resume the translation worker from the dashboard.', category: 'dashboard' },
+  { key: 'canAddSubtitleToTranslateDashboard', label: 'Add Subtitle From Dashboard', description: 'Can add or upload subtitles for translation from the dashboard.', category: 'dashboard' },
+  { key: 'canAddSubtitleToTranslateFromLibrary', label: 'Add Subtitle From Library', description: 'Can add a library path item to be translated.', category: 'dashboard' },
+  { key: 'canChangeSubtitlePriority', label: 'Change Subtitle Priority', description: 'Can change the priority/order of subtitles waiting to be translated.', category: 'dashboard' },
+  { key: 'canCancelTranslationJob', label: 'Cancel Translation Job', description: 'Can cancel or delete a subtitle job entity from the dashboard.', category: 'dashboard' },
+  { key: 'canDeleteTranslation', label: 'Delete Translation', description: 'Can delete an entire subtitle translation entry.', category: 'dashboard' },
+  { key: 'canViewLogsDashboard', label: 'View Dashboard Logs', description: 'Can view logs shown on the dashboard.', category: 'dashboard' },
+  { key: 'canRestartTranslationChunk', label: 'Restart Translation Chunk', description: 'Can restart a failed or completed chunk of a subtitle job.', category: 'dashboard' },
+  { key: 'canDownloadFinishedSubtitles', label: 'Download Finished Subtitles', description: 'Can export/download finished subtitles to a computer or phone.', category: 'dashboard' },
+  { key: 'canViewFinishedTranslatedPage', label: 'View Finished Translated Page', description: 'Can navigate to the Translated page.', category: 'dashboard' },
+  { key: 'canViewModelsPage', label: 'View Models Page', description: 'Can navigate to the Models page.', category: 'models' },
+  { key: 'canAddOrInstallAModel', label: 'Add Or Install Model', description: 'Can add a model, add one from Available in Ollama, or install/add one from Recommended Models.', category: 'models' },
+  { key: 'canEditModels', label: 'Edit Models', description: 'Can edit model settings in the Configured Models section.', category: 'models' },
+  { key: 'canManageModelRoles', label: 'Manage Model Roles', description: 'Can change which roles a model has.', category: 'models' },
+  { key: 'canRemoveAndDeleteModels', label: 'Remove And Delete Models', description: 'Can remove or delete configured models.', category: 'models' },
+  { key: 'canViewPromptsPage', label: 'View Prompts Page', description: 'Can navigate to the Prompts page.', category: 'prompts' },
+  { key: 'canManagePrompts', label: 'Manage Prompts', description: 'Can add, disable, edit, or change prompts.', category: 'prompts' },
+  { key: 'canViewStatistics', label: 'View Statistics', description: 'Can view the Statistics page.', category: 'statistics' },
+  { key: 'canViewUsers', label: 'View Users', description: 'Can navigate to the Users page.', category: 'users' },
+  { key: 'canEditPermissions', label: 'Edit Permissions', description: 'Can edit permissions/roles for other users and self, but cannot grant permissions or roles above their own level.', category: 'users' },
+  { key: 'canChangeOtherUsersPassword', label: 'Change Other Users Password', description: "Can change another user's password if that user is not higher elevated.", category: 'users' },
+  { key: 'canManageRoles', label: 'Manage Roles', description: 'Can manage roles and their permissions.', category: 'users' },
+  { key: 'canAddUser', label: 'Add User', description: 'Can create a new user, but cannot assign roles above their own level.', category: 'users' },
+  { key: 'canViewLibraryPathsPage', label: 'View Library Paths Page', description: 'Can navigate to the Library Paths page.', category: 'library' },
+  { key: 'canChangeMatchForLibraryPaths', label: 'Change Library Path Match', description: 'Can change the media match for a library path item.', category: 'library' },
+  { key: 'canAddPathForLibraryPaths', label: 'Add Library Path', description: 'Can add a new library path.', category: 'library' },
+  { key: 'canBlackListALibraryPathItem', label: 'Blacklist Library Path Item', description: 'Can blacklist a library path item.', category: 'library' },
+  { key: 'canEditLibraryPath', label: 'Edit Library Path', description: 'Can edit a library path row.', category: 'library' },
+  { key: 'canDisableAndDeleteALibraryPath', label: 'Disable Or Delete Library Path', description: 'Can disable or delete a library path row.', category: 'library' },
+  { key: 'canViewSettingsPage', label: 'View Settings Page', description: 'Can navigate to the Settings page.', category: 'settings' },
+  { key: 'canManageSettings', label: 'Manage Settings', description: 'Can change settings in the General, Default Target Languages, and Theme sections.', category: 'settings' },
+  { key: 'canManageSecrets', label: 'Manage Secrets', description: 'Can view and manage the Secrets section, including show, edit, and delete.', category: 'settings' },
+  { key: 'canViewSchedules', label: 'View Schedules', description: 'Can navigate to the Schedules page when schedules are enabled.', category: 'schedules' },
+  { key: 'canManageSchedules', label: 'Manage Schedules', description: 'Can add, edit, and delete schedules.', category: 'schedules' },
+  { key: 'canViewLogs', label: 'View Logs', description: 'Can view the Logs page.', category: 'logs' },
+]

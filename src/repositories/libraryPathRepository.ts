@@ -33,7 +33,7 @@ export const createLibraryPath = (
   autoTranslate: boolean,
   autoExtract: boolean,
 ): { libraryPath: DBLibraryPath | null } & DefaultResponse => {
-  const { hasPermission } = userHasPermission(db, user.id, "canManageLibraryPath")
+  const { hasPermission } = userHasPermission(db, user.id, "canAddPathForLibraryPaths")
   if (!hasPermission) return { libraryPath: null, success: false, msg: "Permission denied" }
 
   if (!name.trim()) return { libraryPath: null, success: false, msg: "Name is required" }
@@ -73,7 +73,7 @@ export const updateLibraryPath = (
   autoTranslate: boolean,
   autoExtract: boolean,
 ): DefaultResponse => {
-  const { hasPermission } = userHasPermission(db, user.id, "canManageLibraryPath")
+  const { hasPermission } = userHasPermission(db, user.id, "canEditLibraryPath")
   if (!hasPermission) return { success: false, msg: "Permission denied" }
 
   if (!name.trim()) return { success: false, msg: "Name is required" }
@@ -99,7 +99,7 @@ export const updateLibraryPath = (
 }
 
 export const toggleLibraryPath = (db: Database.Database, user: DBUser, id: number): DefaultResponse => {
-  const { hasPermission } = userHasPermission(db, user.id, "canManageLibraryPath")
+  const { hasPermission } = userHasPermission(db, user.id, "canDisableAndDeleteALibraryPath")
   if (!hasPermission) return { success: false, msg: "Permission denied" }
 
   const lp = getLibraryPathById(db, id)
@@ -110,7 +110,7 @@ export const toggleLibraryPath = (db: Database.Database, user: DBUser, id: numbe
 }
 
 export const deleteLibraryPath = (db: Database.Database, user: DBUser, id: number): DefaultResponse => {
-  const { hasPermission } = userHasPermission(db, user.id, "canManageLibraryPath")
+  const { hasPermission } = userHasPermission(db, user.id, "canDisableAndDeleteALibraryPath")
   if (!hasPermission) return { success: false, msg: "Permission denied" }
 
   const lp = getLibraryPathById(db, id)
@@ -230,7 +230,7 @@ export const getLibraryPathItemCandidates = (
 })[] => {
   return db
     .prepare(
-      `SELECT lpc.*, mi.title as mediaTitle, mi.year as mediaYear, mi.posterBase64 as mediaPoster, mi.type as mediaType
+      `SELECT lpc.*, mi.title as mediaTitle, mi.year as mediaYear, mi.mediaItemPhotoPath as mediaPoster, mi.type as mediaType
         FROM libraryPathItemCandidate lpc
         LEFT JOIN mediaItem mi ON lpc.mediaItemId = mi.id
         WHERE lpc.libraryPathItemId = ?
@@ -265,9 +265,15 @@ export const deleteLibraryPathItemCandidates = (db: Database.Database, libraryPa
 }
 
 export const getLibraryPathsStuckInScanning = (db: Database.Database): DBLibraryPath[] => {
-    return db
-    .prepare(`SELECT * FROM libraryPath WHERE state = 'scanning' AND lastRunAt < datetime('now', '-10 minutes')`)
+  return db
+    .prepare(
+      `SELECT * FROM libraryPath WHERE state = 'scanning' AND initialScanCompleted = 1 AND lastRunAt < datetime('now', '-10 minutes')`,
+    )
     .all() as DBLibraryPath[]
+}
+
+export const setInitialScanCompleted = (db: Database.Database, id: number): void => {
+  db.prepare(`UPDATE libraryPath SET initialScanCompleted = 1, updatedAt = datetime('now') WHERE id = ?`).run(id)
 }
 
 export type LibraryItemSubtitleInfo = {
@@ -328,9 +334,7 @@ export const getLibraryPathItemsWithDetails = (db: Database.Database, libraryPat
 }
 
 export const isLibraryPathItemBlacklisted = (db: Database.Database, libraryPathItemId: number): boolean => {
-  const row = db
-    .prepare(`SELECT 1 FROM libraryPathItemBlacklist WHERE libraryPathItemId = ?`)
-    .get(libraryPathItemId)
+  const row = db.prepare(`SELECT 1 FROM libraryPathItemBlacklist WHERE libraryPathItemId = ?`).get(libraryPathItemId)
   return !!row
 }
 
@@ -339,9 +343,9 @@ export const getBlacklistEntryForItem = (
   libraryPathItemId: number,
 ): DBLibraryPathItemBlacklist | null => {
   return (
-    (db
-      .prepare(`SELECT * FROM libraryPathItemBlacklist WHERE libraryPathItemId = ?`)
-      .get(libraryPathItemId) as DBLibraryPathItemBlacklist | undefined) ?? null
+    (db.prepare(`SELECT * FROM libraryPathItemBlacklist WHERE libraryPathItemId = ?`).get(libraryPathItemId) as
+      | DBLibraryPathItemBlacklist
+      | undefined) ?? null
   )
 }
 
@@ -387,7 +391,7 @@ export const blacklistLibraryPathItem = (
   libraryPathItemId: number,
   reason: string | null,
 ): DefaultResponse => {
-  const { hasPermission } = userHasPermission(db, user.id, "canManageLibraryPath")
+  const { hasPermission } = userHasPermission(db, user.id, "canBlackListALibraryPathItem")
   if (!hasPermission) return { success: false, msg: "Permission denied" }
 
   const item = getLibraryPathItemById(db, libraryPathItemId)
@@ -397,7 +401,7 @@ export const blacklistLibraryPathItem = (
 
   const existing = getBlacklistEntryForItem(db, libraryPathItemId)
   if (existing) {
-        db.prepare(
+    db.prepare(
       `UPDATE libraryPathItemBlacklist
          SET reason = ?, blacklistedByUserId = ?, updatedAt = datetime('now')
        WHERE libraryPathItemId = ?`,
@@ -424,15 +428,13 @@ export const unblacklistLibraryPathItem = (
   user: DBUser,
   libraryPathItemId: number,
 ): DefaultResponse => {
-  const { hasPermission } = userHasPermission(db, user.id, "canManageLibraryPath")
+  const { hasPermission } = userHasPermission(db, user.id, "canBlackListALibraryPathItem")
   if (!hasPermission) return { success: false, msg: "Permission denied" }
 
   const item = getLibraryPathItemById(db, libraryPathItemId)
   if (!item) return { success: false, msg: "Library item not found" }
 
-  const result = db
-    .prepare(`DELETE FROM libraryPathItemBlacklist WHERE libraryPathItemId = ?`)
-    .run(libraryPathItemId)
+  const result = db.prepare(`DELETE FROM libraryPathItemBlacklist WHERE libraryPathItemId = ?`).run(libraryPathItemId)
 
   if (result.changes === 0) return { success: false, msg: "Item was not blacklisted" }
 

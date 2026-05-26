@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<%= locale %>">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard — BCookieSubs</title>
+  <title><%= __('dashboard.title') %> — BCookieSubs</title>
    <%-  include('theme-vars.ejs') %>
   <link rel="icon" type="image/png" href="/images/icon.png">
   <link rel="stylesheet" href="/static/css/all.min.css">
@@ -25,32 +25,32 @@
     <% } %>
 
     <div class="page-header">
-      <h1>Dashboard</h1>
+      <h1><%= __('dashboard.title') %></h1>
       <div style="display:flex;gap:.5rem;align-items:center">
-        <% if (user.isAdmin) { %>
-          <button id="worker-stop-btn" class="btn btn-warning" onclick="workerControl('pause')" style="<%= workerPaused ? 'display:none' : 'display:inline-flex' %>">⏸ Stop Worker</button>
-          <button id="worker-start-btn" class="btn btn-secondary" onclick="workerControl('resume')" style="<%= workerPaused ? 'display:inline-flex' : 'display:none' %>">▶ Start Worker</button>
+        <% if (can('canManageWorker')) { %>
+          <button id="worker-stop-btn" class="btn btn-warning" onclick="workerControl('pause')" style="<%= workerPaused ? 'display:none' : 'display:inline-flex' %>"><%= __('dashboard.stopWorker') %></button>
+          <button id="worker-start-btn" class="btn btn-secondary" onclick="workerControl('resume')" style="<%= workerPaused ? 'display:inline-flex' : 'display:none' %>"><%= __('dashboard.startWorker') %></button>
         <% } %>
-        <% if (user.isAdmin || user.canAddSubtitles) { %>
-          <button class="btn btn-primary" onclick="openModal('upload-modal')">+ Add Subtitle</button>
+        <% if (can('canAddSubtitleToTranslateDashboard')) { %>
+          <button class="btn btn-primary" onclick="openModal('upload-modal')"><%= __('dashboard.addSubtitle') %></button>
         <% } %>
       </div>
     </div>
 
     <div class="card" id="queue-card">
-      <div class="card-header"><h2>Translation Queue</h2></div>
+      <div class="card-header"><h2><%= __('dashboard.translationQueue') %></h2></div>
       <div id="queue-list">
-        <p class="empty-state" id="queue-empty">Loading…</p>
+        <p class="empty-state" id="queue-empty"><%= __('common.loading') %></p>
       </div>
     </div>
 
     <div class="card" style="margin-top:1.5rem">
       <div class="card-header">
-        <h2>Recent Logs</h2>
+        <h2><%= __('dashboard.recentLogs') %></h2>
         <small class="text-dim" id="log-count">—</small>
       </div>
       <div class="log-panel" id="log-panel">
-        <p class="text-dim" style="padding:.5rem">Loading…</p>
+        <p class="text-dim" style="padding:.5rem"><%= __('common.loading') %></p>
       </div>
     </div>
   </main>
@@ -59,25 +59,25 @@
 <div class="modal-overlay" id="upload-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal modal-xl">
     <div class="modal-header">
-      <h2>Add Subtitle — Step 1 of 2</h2>
+      <h2><%= __('dashboard.addSubtitleStep1') %></h2>
       <button class="btn btn-icon" onclick="closeModal('upload-modal')">✕</button>
     </div>
     <form id="upload-form-step1">
       <div class="field">
-        <label>SRT File</label>
+        <label><%= __('dashboard.srtFile') %></label>
         <div class="upload-zone" id="upload-zone" onclick="document.getElementById('up1-srtFile').click()">
           <input type="file" id="up1-srtFile" name="srtFile" accept=".srt" required style="display:none">
           <div class="upload-zone-content">
             <div class="upload-text">
-              <span id="click-to-upload-1" class="upload-text-main">Click to upload or drag and drop</span>
-              <span id="click-to-upload-2" class="upload-text-sub">SRT files only</span>
+              <span id="click-to-upload-1" class="upload-text-main"><%= __('dashboard.clickToUpload') %></span>
+              <span id="click-to-upload-2" class="upload-text-sub"><%= __('dashboard.srtOnly') %></span>
             </div>
             <div class="upload-filename" id="upload-filename"></div>
           </div>
         </div>
       </div>
       <div class="field">
-        <label for="up1-sourceLangId">Source Language</label>
+        <label for="up1-sourceLangId"><%= __('dashboard.sourceLanguage') %></label>
         <select id="up1-sourceLangId" name="sourceLangId" required>
           <% var englishFound = false; languages.forEach(function(l) { %>
             <option value="<%= l.id %>" <%= !englishFound && l.iso639 === 'en' ? 'selected' : '' %>><%= l.flag ? l.flag + ' ' : '' %><%= l.name %></option>
@@ -86,8 +86,8 @@
         </select>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('upload-modal')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Next →</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('upload-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-primary" formnovalidate><%= __('common.next') %> →</button>
       </div>
     </form>
   </div>
@@ -96,7 +96,7 @@
 <div class="modal-overlay" id="upload-modal-step2" onclick="closeModalOnOverlay(event)">
   <div class="modal modal-xl">
     <div class="modal-header">
-      <h2>Add Subtitle — Step 2 of 2</h2>
+      <h2><%= __('dashboard.addSubtitleStep2') %></h2>
       <button class="btn btn-icon" onclick="closeModal('upload-modal-step2')">✕</button>
     </div>
     <form id="upload-form-step2">
@@ -108,46 +108,46 @@
       <input type="hidden" id="up2-genres" name="genres" value="">
       <input type="hidden" id="up2-posterUrl" name="posterUrl" value="">
 
-      
+
       <div id="up2-tmdb-selector" style="display:none" class="field">
-        <label for="up2-tmdb-select">TMDB match</label>
+        <label for="up2-tmdb-select"><%= __('dashboard.tmdbMatch') %></label>
         <select id="up2-tmdb-select"></select>
       </div>
 
       <div class="upload-step2-body" style="display:flex;gap:1.5rem;align-items:stretch">
         <div style="flex:1;min-width:0">
           <div class="field">
-            <label for="up2-name">Title</label>
+            <label for="up2-name"><%= __('dashboard.mediaTitle') %></label>
             <input type="text" id="up2-name" name="mediaTitle" required placeholder="e.g. The Dark Knight">
           </div>
           <div class="field-row">
             <div class="field">
-              <label for="up2-type">Type</label>
+              <label for="up2-type"><%= __('dashboard.type') %></label>
               <select id="up2-type" name="mediaType" onchange="toggleSeriesFields(this.value)">
-                <option value="movie">Movie</option>
-                <option value="series">Series</option>
-                <option value="unknown">Unknown</option>
+                <option value="movie"><%= __('dashboard.movie') %></option>
+                <option value="series"><%= __('dashboard.series') %></option>
+                <option value="unknown"><%= __('dashboard.unknown') %></option>
               </select>
             </div>
             <div class="field" style="max-width:7rem">
-              <label for="up2-year">Year</label>
+              <label for="up2-year"><%= __('dashboard.year') %></label>
               <input type="number" id="up2-year" name="mediaYear" min="1900" max="2100" placeholder="2024">
             </div>
             <div class="field" id="up2-season-field" style="display:none">
-              <label for="up2-season">Season</label>
+              <label for="up2-season"><%= __('dashboard.season') %></label>
               <input type="number" id="up2-season" name="season" min="1"  placeholder="1">
             </div>
             <div class="field" id="up2-episode-field" style="display:none">
-              <label for="up2-episode">Episode</label>
+              <label for="up2-episode"><%= __('dashboard.episode') %></label>
               <input type="number" id="up2-episode" name="episode" min="1" placeholder="1">
             </div>
           </div>
           <div class="field">
-            <label>Target Language(s)</label>
+            <label><%= __('dashboard.targetLanguages') %></label>
             <div id="up2-lang-chips" style="display:flex;flex-wrap:wrap;gap:.25rem;min-height:1.5rem;margin-bottom:.4rem"></div>
             <div class="checkbox-group" id="up2-lang-group" style="max-height:90px">
               <% languages.forEach(function(l) { %>
-                <% var isDefault = configLangs.some(function(cl){ return cl.languageId === l.id }) %>
+                <% var isDefault = userConfigLangs.some(function(cl){ return cl.languageId === l.id }) %>
                 <label class="checkbox-label">
                   <input type="checkbox" name="targetLangIds" value="<%= l.id %>" <%= isDefault ? 'checked' : '' %>>
                   <%= l.flag ? l.flag + ' ' : '' %><%= l.name %>
@@ -156,20 +156,20 @@
             </div>
           </div>
           <div class="field">
-            <label for="up2-chunkSize">Chunk Size Override <span class="text-dim">(blank = default <%= config.defaultChunkSize %>)</span></label>
+            <label for="up2-chunkSize"><%= __('dashboard.chunkSizeOverride') %> <span class="text-dim">(blank = default <%= config.defaultChunkSize %>)</span></label>
             <input type="number" id="up2-chunkSize" name="chunkSetting" min="1" max="200" placeholder="<%= config.defaultChunkSize %>">
           </div>
         </div>
 
-        
+
         <div id="up2-poster-wrap" style="display:none;flex-shrink:0;width:250px">
           <img id="up2-poster" src="" alt="Poster" style="width:100%;height:100%;object-fit:cover;border-radius:var(--radius);box-shadow:0 2px 12px rgba(0,0,0,.4)">
         </div>
       </div>
 
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('upload-modal-step2');openModal('upload-modal')">← Back</button>
-        <button type="submit" class="btn btn-primary">Add to Queue</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('upload-modal-step2');openModal('upload-modal')">← <%= __('common.back') %></button>
+        <button type="submit" class="btn btn-primary"><%= __('dashboard.addToQueue') %></button>
       </div>
     </form>
   </div>
@@ -178,18 +178,68 @@
 <div class="modal-overlay" id="inspect-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal modal-wide">
     <div class="modal-header">
-      <h2 id="inspect-title">Job Details</h2>
+      <h2 id="inspect-title"><%= __('dashboard.jobDetails') %></h2>
       <button class="btn btn-icon" onclick="closeModal('inspect-modal')">✕</button>
     </div>
-    <div id="inspect-body" class="inspect-body">Loading…</div>
+    <div id="inspect-body" class="inspect-body"><%= __('common.loading') %></div>
   </div>
 </div>
 
 <script>
   var LANGUAGE_MAP = <%- JSON.stringify(Object.fromEntries(languages.map(function(l){ return [l.id, l] }))) %>;
-  var CAN_STOP = <%- JSON.stringify(user.isAdmin || user.canStopSubtitles) %>;
-  var CAN_DELETE = <%- JSON.stringify(user.isAdmin || user.canDeleteSubtitles) %>;
-  var SHOW_POSTERS = <%- config.showPosters ? 'true' : 'false' %>;
+  var CAN_STOP = <%- JSON.stringify(can('canCancelTranslationJob')) %>;
+  var CAN_DELETE = <%- JSON.stringify(can('canDeleteTranslation')) %>;
+  var SHOW_POSTERS = <%- showPosters ? 'true' : 'false' %>;
+  var DASHBOARD_NO_JOBS = '<%= __("dashboard.noSubtitleJobs") %>';
+  var APP_STRINGS = {
+    pleaseSelectSrt:      '<%= __("dashboard.pleaseSelectSrt") %>',
+    pleaseSelectLang:     '<%= __("dashboard.pleaseSelectLang") %>',
+    analyzing:            '<%= __("dashboard.analyzing") %>',
+    nextBtn:              '<%= __("dashboard.nextBtn") %>',
+    errorAnalyzing:       '<%= __("dashboard.errorAnalyzing") %>',
+    noFileSelected:       '<%= __("dashboard.noFileSelected") %>',
+    adding:               '<%= __("dashboard.adding") %>',
+    addToQueue:           '<%= __("dashboard.addToQueue") %>',
+    errorGeneric:         '<%= __("dashboard.errorGeneric") %>',
+    progressCompleted:    '<%= __("dashboard.progressCompleted") %>',
+    progressFailed:       '<%= __("dashboard.progressFailed") %>',
+    progressRemaining:    '<%= __("dashboard.progressRemaining") %>',
+    cancel:               '<%= __("common.cancel") %>',
+    delete:               '<%= __("common.delete") %>',
+    hide:                 '<%= __("common.hide") %>',
+    inspect:              '<%= __("common.inspect") %>',
+    reset:                '<%= __("common.reset") %>',
+    moveUp:               '<%= __("common.moveUp") %>',
+    moveDown:             '<%= __("common.moveDown") %>',
+    dragToReorder:        '<%= __("common.dragToReorder") %>',
+    loading:              '<%= __("common.loading") %>',
+    actions:              '<%= __("common.actions") %>',
+    statusDone:           '<%= __("dashboard.statusDone") %>',
+    statusCancelled:      '<%= __("dashboard.statusCancelled") %>',
+    statusProcessing:     '<%= __("dashboard.statusProcessing") %>',
+    episodeSingular:      '<%= __("dashboard.episodeSingular") %>',
+    episodePlural:        '<%= __("dashboard.episodePlural") %>',
+    logLast:              '<%= __("dashboard.logLast") %>',
+    logEntries:           '<%= __("dashboard.logEntries") %>',
+    noLogEntries:         '<%= __("dashboard.noLogEntries") %>',
+    inspectNum:           '<%= __("dashboard.inspectNum") %>',
+    inspectStatus:        '<%= __("dashboard.inspectStatus") %>',
+    inspectStartedAt:     '<%= __("dashboard.inspectStartedAt") %>',
+    inspectFinishedAt:    '<%= __("dashboard.inspectFinishedAt") %>',
+    inspectDuration:      '<%= __("dashboard.inspectDuration") %>',
+    inspectReset:         '<%= __("dashboard.inspectReset") %>',
+    noChunkData:          '<%= __("dashboard.noChunkData") %>',
+    failedToLoad:         '<%= __("dashboard.failedToLoad") %>',
+    retryFailed:          '<%= __("dashboard.retryFailed") %>',
+    resetFailed:          '<%= __("dashboard.resetFailed") %>',
+    inspectStatusQueued:     '<%= __("dashboard.inspectStatusQueued") %>',
+    inspectStatusRunning:    '<%= __("dashboard.inspectStatusRunning") %>',
+    inspectStatusDone:       '<%= __("dashboard.inspectStatusDone") %>',
+    inspectStatusFailed:     '<%= __("dashboard.inspectStatusFailed") %>',
+    inspectStatusCancelled:  '<%= __("dashboard.inspectStatusCancelled") %>',
+    inspectStatusRetrying:   '<%= __("dashboard.inspectStatusRetrying") %>',
+    inspectStatusWaiting:    '<%= __("dashboard.inspectStatusWaiting") %>'
+  };
 
   function toggleSeriesFields(val) {
     document.getElementById("up2-season-field").style.display = val === "series" ? "" : "none"
@@ -201,7 +251,7 @@
     if (!el) return
     var checked = Array.from(document.querySelectorAll('#up2-lang-group input[type="checkbox"]:checked'))
     if (checked.length === 0) {
-      el.innerHTML = '<span style="color:var(--text-dim);font-size:.78rem">None selected</span>'
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:.78rem"><%= __('dashboard.noneSelected') %></span>'
       return
     }
     el.innerHTML = checked.map(function(cb) {
@@ -217,7 +267,6 @@
     updateLangChips()
   })();
 
-  // Drag and drop file upload
   ;(function() {
     var zone = document.getElementById('upload-zone');
     var fileInput = document.getElementById('up1-srtFile');

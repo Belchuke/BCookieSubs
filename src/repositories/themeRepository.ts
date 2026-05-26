@@ -1,8 +1,15 @@
 import Database from "better-sqlite3"
 import { DBUser, DBTheme } from "../types/dbTypes"
 import { DefaultResponse } from "../types/modelTypes"
+import { userHasPermission } from "../services/permissionService"
 
-export const getActiveTheme = (db: Database.Database): DBTheme => {
+export const getActiveTheme = (db: Database.Database, userId?: number): DBTheme => {
+  if (userId) {
+    const theme = db
+      .prepare(`SELECT t.* FROM theme t INNER JOIN user u ON t.id = u.selectedThemeId WHERE u.id = ?`)
+      .get(userId) as DBTheme | undefined
+    if (theme) return theme
+  }
   return db.prepare(`SELECT t.* FROM theme t INNER JOIN config c ON t.id = c.selectedThemeId`).get() as DBTheme
 }
 
@@ -11,7 +18,8 @@ export const getThemes = (db: Database.Database): DBTheme[] => {
 }
 
 export const setSelectedTheme = (db: Database.Database, user: DBUser, themeId: number): DefaultResponse => {
-  if (!user.isAdmin) return { success: false, msg: "Admin required" }
+  if (!userHasPermission(db, user.id, "canManageSettings").hasPermission)
+    return { success: false, msg: "Permission denied" }
   const theme = db.prepare(`SELECT id FROM theme WHERE id = ?`).get(themeId) as { id: number } | undefined
   if (!theme) return { success: false, msg: "Theme not found" }
   db.prepare(`UPDATE config SET selectedThemeId = ?, updatedAt = datetime('now') WHERE id = 1`).run(themeId)
@@ -42,7 +50,8 @@ export const createTheme = (
     infoDim: string
   },
 ): { theme: DBTheme | null } & DefaultResponse => {
-  if (!user.isAdmin) return { theme: null, success: false, msg: "Admin required" }
+  if (!userHasPermission(db, user.id, "canManageSettings").hasPermission)
+    return { theme: null, success: false, msg: "Permission denied" }
   try {
     const result = db
       .prepare(
@@ -81,7 +90,8 @@ export const createTheme = (
 }
 
 export const deleteTheme = (db: Database.Database, user: DBUser, themeId: number): DefaultResponse => {
-  if (!user.isAdmin) return { success: false, msg: "Admin required" }
+  if (!userHasPermission(db, user.id, "canManageSettings").hasPermission)
+    return { success: false, msg: "Permission denied" }
   const theme = db.prepare(`SELECT id, isPublic FROM theme WHERE id = ?`).get(themeId) as
     | { id: number; isPublic: number }
     | undefined

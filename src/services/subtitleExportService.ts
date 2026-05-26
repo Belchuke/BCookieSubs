@@ -1,6 +1,5 @@
-
-const CREDIT_TEXT = "Translated by BCookieSubs"
-const CREDIT_DURATION_MS = 3000
+import { CREDIT_TEXT } from "../constants/keys"
+import { CREDIT_DURATION_MS } from "../constants/timer"
 
 function srtToMs(ts: string): number {
   const [hms, ms] = ts.split(",")
@@ -26,11 +25,11 @@ export function addCreditToSrt(srt: string): string {
 
   const firstStartMs = parseFirstStartMs(srt)
 
-    let creditEndMs = CREDIT_DURATION_MS
+  let creditEndMs = CREDIT_DURATION_MS
   if (firstStartMs !== null) {
     const safeEnd = firstStartMs - 100
     if (safeEnd <= 0) {
-            return shiftSrtIds(srt)
+      return shiftSrtIds(srt)
     }
     creditEndMs = Math.min(CREDIT_DURATION_MS, safeEnd)
   }
@@ -40,7 +39,7 @@ export function addCreditToSrt(srt: string): string {
 }
 
 function shiftSrtIds(srt: string): string {
-    return srt.replace(/^(\d+)(\r?\n\d{2}:\d{2}:\d{2},\d{3}\s*-->)/gm, (_, id, rest) => {
+  return srt.replace(/^(\d+)(\r?\n\d{2}:\d{2}:\d{2},\d{3}\s*-->)/gm, (_, id, rest) => {
     return `${parseInt(id) + 1}${rest}`
   })
 }

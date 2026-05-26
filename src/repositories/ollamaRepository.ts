@@ -1,7 +1,7 @@
 import Database from "better-sqlite3"
 import axios from "axios"
 import { DBModel } from "../types/dbTypes"
-import { ollamaApiSecretKey, openAIApiSecretKey, anthropicApiSecretKey } from "../setup"
+import { ollamaApiSecretKey, openAIApiSecretKey, anthropicApiSecretKey } from "../constants/keys"
 import { Ollama, ModelResponse } from "ollama"
 import { getSecretByName } from "./secretRepository"
 
@@ -126,7 +126,7 @@ export async function sendPrompt(
       return { message: { content: res.data.content[0].text } }
     }
 
-        const response = await ollama.chat({
+    const response = await ollama.chat({
       model: model.modelName,
       messages: [{ role: "user", content: prompt }],
       keep_alive: model.closeAfterUse ? 0 : undefined,

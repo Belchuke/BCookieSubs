@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= __('libraryrequests.title') %> — BCookieSubs</title>
+  <%- include('theme-vars.ejs') %>
+  <link rel="icon" type="image/png" href="/images/icon.png">
+  <link rel="stylesheet" href="/static/css/all.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="mobile-topbar">
+    <button class="hamburger-btn" id="hamburgerBtn" type="button" aria-label="Open menu">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+    <span class="mobile-topbar-title">BCookieSubs</span>
+  </header>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+<div class="app-shell">
+  <%- include('partials/sidebar') %>
+  <main class="main-content">
+    <% if (locals.toast && locals.msg) { %>
+      <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
+    <% } %>
+
+    <div class="page-header">
+      <h1><%= __('libraryrequests.title') %></h1>
+    </div>
+
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;align-items:flex-end">
+      <div class="field" style="margin-bottom:0;flex:1;min-width:160px;max-width:420px">
+        <input type="search" id="lr-search" placeholder="<%= __('libraryrequests.searchPlaceholder') %>">
+      </div>
+      <div class="field" style="margin-bottom:0;min-width:140px">
+        <select id="lr-genre-filter">
+          <option value=""><%= __('libraryrequests.allGenres') %></option>
+          <% allGenres.forEach(function(g) { %>
+            <option value="<%= g %>"><%= g %></option>
+          <% }) %>
+        </select>
+      </div>
+    </div>
+
+    <div class="tabs" style="display:flex;gap:.5rem;margin-bottom:1rem;border-bottom:1px solid var(--border)">
+      <button type="button" id="lr-tab-btn-movie" class="tab-btn active" onclick="lrSwitchTab('movie')">
+        <%= __('libraryrequests.movies') %><% if (movieGroups.length > 0) { %> <span class="badge badge-neutral" style="font-size:.7rem"><%= movieGroups.length %></span><% } %>
+      </button>
+      <button type="button" id="lr-tab-btn-series" class="tab-btn" onclick="lrSwitchTab('series')">
+        <%= __('libraryrequests.series') %><% if (seriesGroups.length > 0) { %> <span class="badge badge-neutral" style="font-size:.7rem"><%= seriesGroups.length %></span><% } %>
+      </button>
+    </div>
+
+    <div id="lr-tab-movie">
+      <% if (movieGroups.length === 0) { %>
+        <div class="card">
+          <p class="empty-state"><%= __('libraryrequests.noMovies') %></p>
+        </div>
+      <% } else { %>
+        <div class="lr-grid">
+          <% movieGroups.forEach(function(group) { %>
+            <% var searchText = ((group.title || '') + ' ' + group.items.map(function(i){ return i.fileName || ''; }).join(' ')).toLowerCase(); %>
+            <div class="lr-card" data-group-key="<%= group.key %>"
+                 data-search="<%= searchText %>"
+                 data-genre="<%= (group.genres || '').toLowerCase() %>">
+              <div class="lr-card-poster">
+                <% if (showPosters && group.posterPath) { %>
+                  <img src="/media-photos/<%= group.posterPath %>" alt="<%= group.title %>">
+                <% } else { %>
+                  <div class="lr-card-placeholder"><i class="fa-solid fa-film"></i></div>
+                <% } %>
+              </div>
+              <div class="lr-card-body">
+                <div>
+                  <div class="lr-card-title" title="<%= group.title %>"><%= group.title %></div>
+                  <div class="lr-card-meta">
+                    <% if (group.year) { %><span>(<%= group.year %>) · </span><% } %>
+                    <span class="lr-card-genres"><%= group.genres || '' %></span>
+                  </div>
+                </div>
+                <div class="lr-card-items <%= group.items.length > 2 ? 'scroll' : '' %>">
+                  <% group.items.forEach(function(it) { %>
+                    <div class="lr-card-item">
+                      <span class="lr-card-item-filename" title="<%= it.fileName %>"><%= it.fileName %></span>
+                      <form method="POST" action="/library-paths/item/<%= it.itemId %>/translate" style="display:inline;flex-shrink:0">
+                        <button type="submit" class="btn btn-primary" style="padding:.25rem .5rem;font-size:.75rem"><%= __('libraryrequests.translate') %></button>
+                      </form>
+                    </div>
+                  <% }) %>
+                </div>
+              </div>
+            </div>
+          <% }) %>
+        </div>
+      <% } %>
+    </div>
+
+    <div id="lr-tab-series" style="display:none">
+      <% if (seriesGroups.length === 0) { %>
+        <div class="card">
+          <p class="empty-state"><%= __('libraryrequests.noSeries') %></p>
+        </div>
+      <% } else { %>
+        <div class="lr-grid">
+          <% seriesGroups.forEach(function(group) { %>
+            <% var searchText = ((group.title || '') + ' ' + group.items.map(function(i){ return i.fileName || ''; }).join(' ')).toLowerCase(); %>
+            <%
+              var _sm = {}
+              group.items.forEach(function(it) {
+                var sk = (it.season !== null && it.season !== undefined) ? String(it.season) : '__'
+                if (!_sm[sk]) _sm[sk] = []
+                _sm[sk].push(it)
+              })
+              var _skeys = Object.keys(_sm).sort(function(a,b) {
+                if (a === '__') return 1; if (b === '__') return -1
+                return parseInt(a) - parseInt(b)
+              })
+            %>
+            <div class="lr-card" data-group-key="<%= group.key %>"
+                 data-search="<%= searchText %>"
+                 data-genre="<%= (group.genres || '').toLowerCase() %>">
+              <div class="lr-card-poster">
+                <% if (showPosters && group.posterPath) { %>
+                  <img src="/media-photos/<%= group.posterPath %>" alt="<%= group.title %>">
+                <% } else { %>
+                  <div class="lr-card-placeholder"><i class="fa-solid fa-tv"></i></div>
+                <% } %>
+              </div>
+              <div class="lr-card-body">
+                <div class="lr-card-title" title="<%= group.title %>"><%= group.title %></div>
+                <div class="lr-card-meta">
+                  <% if (group.year) { %><span>(<%= group.year %>) · </span><% } %>
+                  <span class="lr-card-genres"><%= group.genres || '' %></span>
+                </div>
+                <div class="lr-season-list">
+                  <%# Panel A — season overview (default visible) %>
+                  <div class="lr-seasons-overview">
+                    <% _skeys.forEach(function(sk) { %>
+                      <% var _si = _sm[sk] %>
+                      <% var _slabel = sk === '__' ? __('libraryrequests.unknownSeason') : __('libraryrequests.season') + parseInt(sk) %>
+                      <div class="lr-season-row" data-season-key="<%= sk %>">
+                        <span class="lr-season-arrow">&#9658;</span>
+                        <span class="lr-season-label"><%= _slabel %></span>
+                        <span class="badge badge-neutral" style="font-size:.7rem"><%= _si.length %> <%= __('libraryrequests.episodeCount') %><%= _si.length !== 1 ? 's' : '' %></span>
+                      </div>
+                    <% }) %>
+                  </div>
+                  <%# Panel B — per-season episode view (hidden until season clicked) %>
+                  <% _skeys.forEach(function(sk) { %>
+                    <% var _si = _sm[sk] %>
+                    <% var _slabel = sk === '__' ? 'Unknown Season' : 'Season ' + parseInt(sk) %>
+                    <div class="lr-season-panel" data-season-key="<%= sk %>" style="display:none">
+                      <div class="lr-season-back" data-season-key="<%= sk %>">
+                        <span class="lr-season-arrow" style="color:var(--accent)">&#9660;</span>
+                        <span class="lr-season-label"><%= _slabel %></span>
+                        <span class="badge badge-neutral" style="font-size:.7rem"><%= _si.length %> <%= __('libraryrequests.episodeCount') %><%= _si.length !== 1 ? 's' : '' %></span>
+                      </div>
+                      <div class="lr-season-items">
+                        <% _si.forEach(function(it) { %>
+                          <div class="lr-card-item">
+                            <% if (it.season !== null && it.episode !== null) { %>
+                              <span class="badge badge-neutral" style="font-size:.7rem;flex-shrink:0">S<%= String(it.season).padStart(2,'0') %>E<%= String(it.episode).padStart(2,'0') %></span>
+                            <% } %>
+                            <span class="lr-card-item-filename" title="<%= it.fileName %>"><%= it.fileName %></span>
+                            <form method="POST" action="/library-paths/item/<%= it.itemId %>/translate" style="display:inline;flex-shrink:0">
+                              <button type="submit" class="btn btn-primary" style="padding:.25rem .5rem;font-size:.75rem"><%= __('libraryrequests.translate') %></button>
+                            </form>
+                          </div>
+                        <% }) %>
+                      </div>
+                    </div>
+                  <% }) %>
+                </div>
+              </div>
+            </div>
+          <% }) %>
+        </div>
+      <% } %>
+    </div>
+  </main>
+</div>
+
+<script src="/app.js"></script>
+<script>
+
+  function lrSwitchTab(tab) {
+    document.getElementById('lr-tab-movie').style.display = tab === 'movie' ? '' : 'none'
+    document.getElementById('lr-tab-series').style.display = tab === 'series' ? '' : 'none'
+    document.getElementById('lr-tab-btn-movie').classList.toggle('active', tab === 'movie')
+    document.getElementById('lr-tab-btn-series').classList.toggle('active', tab === 'series')
+  }
+
+
+  document.addEventListener('click', function(e) {
+    var row = e.target.closest('.lr-season-row')
+    if (row) {
+      var list = row.closest('.lr-season-list')
+      var sk = row.dataset.seasonKey
+      list.querySelector('.lr-seasons-overview').style.display = 'none'
+      list.querySelectorAll('.lr-season-panel').forEach(function(p) { p.style.display = 'none' })
+      var panel = list.querySelector('.lr-season-panel[data-season-key="' + sk + '"]')
+      if (panel) panel.style.display = ''
+      return
+    }
+    var back = e.target.closest('.lr-season-back')
+    if (back) {
+      var list = back.closest('.lr-season-list')
+      list.querySelectorAll('.lr-season-panel').forEach(function(p) { p.style.display = 'none' })
+      list.querySelector('.lr-seasons-overview').style.display = ''
+    }
+  })
+
+
+  var _lrSearchTimer = null
+
+  function lrApplyFilters() {
+    var q = (document.getElementById('lr-search').value || '').trim().toLowerCase()
+    var genreEl = document.getElementById('lr-genre-filter')
+    var genre = genreEl ? genreEl.value.toLowerCase() : ''
+    var activeTab = document.getElementById('lr-tab-btn-movie').classList.contains('active') ? 'movie' : 'series'
+    var container = document.getElementById('lr-tab-' + activeTab)
+    if (!container) return
+    container.querySelectorAll('.lr-card').forEach(function(el) {
+      var text = el.getAttribute('data-search') || ''
+      var elGenre = el.getAttribute('data-genre') || ''
+      var matchQ = !q || text.includes(q)
+      var matchGenre = !genre || elGenre.includes(genre)
+      el.style.display = (matchQ && matchGenre) ? '' : 'none'
+    })
+  }
+
+  var lrSearchEl = document.getElementById('lr-search')
+  if (lrSearchEl) {
+    lrSearchEl.addEventListener('input', function() {
+      clearTimeout(_lrSearchTimer)
+      _lrSearchTimer = setTimeout(lrApplyFilters, 300)
+    })
+  }
+
+  var lrGenreEl = document.getElementById('lr-genre-filter')
+  if (lrGenreEl) {
+    lrGenreEl.addEventListener('change', lrApplyFilters)
+  }
+
+  document.addEventListener('submit', function(e) {
+    var form = e.target
+    if (!form || form.tagName !== 'FORM') return
+    var action = form.action || ''
+    var translateMatch = action.match(/\/library-paths\/item\/(\d+)\/translate$/)
+    if (translateMatch) {
+      e.preventDefault()
+      var card = form.closest('.lr-card')
+      fetch(action + '?json=1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: ''
+      })
+        .then(function(r) { if (redirectIfUnauthorized(r)) return null; return r.json() })
+        .then(function(data) {
+          if (!data) return
+          if (data.success) {
+            var itemRow = form.closest('.lr-card-item')
+            if (itemRow) itemRow.style.display = 'none'
+
+            var seasonPanel = form.closest('.lr-season-panel')
+            if (seasonPanel) {
+              var panelItems = seasonPanel.querySelectorAll('.lr-card-item')
+              var panelHasVisible = false
+              for (var si = 0; si < panelItems.length; si++) {
+                if (panelItems[si].style.display !== 'none') { panelHasVisible = true; break }
+              }
+              if (!panelHasVisible) {
+                var list = seasonPanel.closest('.lr-season-list')
+                var sk = seasonPanel.dataset.seasonKey
+                var overviewRow = list && list.querySelector('.lr-season-row[data-season-key="' + sk + '"]')
+                if (overviewRow) overviewRow.style.display = 'none'
+                seasonPanel.style.display = 'none'
+                var overview = list && list.querySelector('.lr-seasons-overview')
+                if (overview) overview.style.display = ''
+              }
+            }
+            if (card) {
+              var visibleItems = card.querySelectorAll('.lr-card-item')
+              var hasVisible = false
+              for (var i = 0; i < visibleItems.length; i++) {
+                if (visibleItems[i].style.display !== 'none') { hasVisible = true; break }
+              }
+              if (!hasVisible) card.style.display = 'none'
+            }
+            var toast = document.createElement('div')
+            toast.className = 'toast toast-success'
+            toast.textContent = data.msg || '<%= __('common.queued') %>';
+            document.body.appendChild(toast)
+            setTimeout(function() { toast.remove() }, 3000)
+          } else {
+            var toast = document.createElement('div')
+            toast.className = 'toast toast-error'
+            toast.textContent = data.msg || '<%= __('common.failed') %>';
+            document.body.appendChild(toast)
+            setTimeout(function() { toast.remove() }, 3000)
+          }
+        })
+        .catch(function() {
+          var toast = document.createElement('div')
+          toast.className = 'toast toast-error'
+          toast.textContent = 'Request failed'
+          document.body.appendChild(toast)
+          setTimeout(function() { toast.remove() }, 3000)
+        })
+    }
+  })
+</script>
+</body>
+</html>

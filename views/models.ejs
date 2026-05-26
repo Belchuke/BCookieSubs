@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<%= locale %>">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Models — BCookieSubs</title>
+  <title><%= __('models.title') %> — BCookieSubs</title>
    <%-  include('theme-vars.ejs') %>
   <link rel="icon" type="image/png" href="/images/icon.png">
   <link rel="stylesheet" href="/static/css/all.min.css">
@@ -25,35 +25,35 @@
     <% } %>
 
     <div class="page-header">
-      <h1>Models</h1>
-      <% if (user.isAdmin || user.canManageModels) { %>
-        <button class="btn btn-primary" onclick="openAddModal()">+ Add Model</button>
+      <h1><%= __('models.title') %></h1>
+      <% if (can('canAddOrInstallAModel')) { %>
+        <button class="btn btn-primary" onclick="openAddModal()"><%= __('models.addModel') %></button>
       <% } %>
     </div>
 
     <% if (ollamaRunning === false) { %>
-      <div class="alert alert-error" style="margin-bottom:1.5rem">Ollama is not running. Start Ollama to add local models.</div>
+      <div class="alert alert-error" style="margin-bottom:1.5rem"><%= __('models.ollamaNotRunning') %></div>
     <% } else if (ollamaError) { %>
       <div class="alert alert-warning" style="margin-bottom:1.5rem"><%= ollamaError %></div>
     <% } %>
 
     
     <div class="card">
-      <div class="card-header"><h2>Configured Models</h2></div>
+      <div class="card-header"><h2><%= __('models.configuredModels') %></h2></div>
       <% if (models.length === 0) { %>
-        <p class="empty-state">No models configured yet.</p>
+        <p class="empty-state"><%= __('models.noModelsConfigured') %></p>
       <% } else { %>
         
         <div class="table-wrap models-table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Model ID</th>
-                <th>Provider</th>
-                <th>Roles</th>
-                <th>Status</th>
-                <% if (user.isAdmin || user.canManageModels) { %><th>Actions</th><% } %>
+                <th><%= __('models.name') %></th>
+                <th><%= __('models.modelId') %></th>
+                <th><%= __('models.provider') %></th>
+                <th><%= __('models.rolesHeader') %></th>
+                <th><%= __('models.status') %></th>
+                <% if (can('canEditModels') || can('canManageModelRoles') || can('canRemoveAndDeleteModels')) { %><th><%= __('common.actions') %></th><% } %>
               </tr>
             </thead>
             <tbody>
@@ -80,32 +80,38 @@
                   </td>
                   <td>
                     <% if (roleNames.length === 0) { %><span class="text-dim">—</span><% } %>
-                    <% if (roleNames.includes('translation')) { %><span class="badge badge-info" style="margin-right:.25rem">Translation</span><% } %>
-                    <% if (roleNames.includes('judge')) { %><span class="badge badge-warning" style="margin-right:.25rem">Judge</span><% } %>
-                    <% if (roleNames.includes('fallbackJudge')) { %><span class="badge badge-warning" style="margin-right:.25rem;opacity:.7">Fallback Judge</span><% } %>
-                    <% if (roleNames.includes('nameFormatter')) { %><span class="badge badge-neutral">Name Formatter</span><% } %>
+                    <% if (roleNames.includes('translation')) { %><span class="badge badge-info" style="margin-right:.25rem"><%= __('models.roleTranslation') %></span><% } %>
+                    <% if (roleNames.includes('judge')) { %><span class="badge badge-warning" style="margin-right:.25rem"><%= __('models.roleJudge') %></span><% } %>
+                    <% if (roleNames.includes('fallbackJudge')) { %><span class="badge badge-warning" style="margin-right:.25rem;opacity:.7"><%= __('models.roleFallbackJudge') %></span><% } %>
+                    <% if (roleNames.includes('nameFormatter')) { %><span class="badge badge-neutral"><%= __('models.roleNameFormatter') %></span><% } %>
                   </td>
                   <td>
                     <span class="badge <%= m.active ? 'badge-success' : 'badge-neutral' %>">
-                      <%= m.active ? 'Active' : 'Inactive' %>
+                      <%= m.active ? __('status.active') : __('status.inactive') %>
                     </span>
                   </td>
-                  <% if (user.isAdmin || user.canManageModels) { %>
+                  <% if (can('canEditModels') || can('canManageModelRoles') || can('canRemoveAndDeleteModels')) { %>
                   <td class="actions">
+                    <% if (can('canEditModels')) { %>
                     <button class="btn btn-sm btn-secondary"
                             id="edit-btn-<%= m.id %>"
                             data-model="<%- JSON.stringify(m).replace(/"/g, '&quot;') %>">
-                      Edit
+                      <%= __('common.edit') %>
                     </button>
+                    <% } %>
+                    <% if (can('canManageModelRoles')) { %>
                     <button class="btn btn-sm btn-secondary"
                             id="role-btn-<%= m.id %>"
                             data-model="<%- JSON.stringify(m).replace(/"/g, '&quot;') %>">
-                      Roles
+                      <%= __('models.roles') %>
                     </button>
+                    <% } %>
+                    <% if (can('canRemoveAndDeleteModels')) { %>
                     <form method="POST" action="/models/delete/<%= m.id %>" style="display:inline"
-                          onsubmit="return confirm('Remove model <%= m.name.replace(/'/g, '\\\'') %>?')">
-                      <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+                          onsubmit="return confirm('<%= __('models.removeModel') %><%= m.name.replace(/'/g, '\\\'') %>?')">
+                      <button type="submit" class="btn btn-sm btn-danger"><%= __('common.remove') %></button>
                     </form>
+                    <% } %>
                   </td>
                   <% } %>
                 </tr>
@@ -123,35 +129,41 @@
                 <div>
                   <strong><%= m.name %></strong>
                   <span class="badge <%= m.active ? 'badge-success' : 'badge-neutral' %>" style="margin-left:.4rem">
-                    <%= m.active ? 'Active' : 'Inactive' %>
+                    <%= m.active ? __('status.active') : __('status.inactive') %>
                   </span>
                 </div>
                 <span class="text-dim" style="font-size:.8rem"><%= provider %></span>
               </div>
               <div class="model-card-name text-dim"><code><%= m.modelName %></code><% if (m.parameterSize) { %> · <%= m.parameterSize %><% } %></div>
               <div class="model-card-roles" style="margin:1rem 0;display:flex;flex-wrap:wrap;gap:.25rem">
-                <% if (roleNames.length === 0) { %><span class="text-dim" style="font-size:.82rem">No roles</span><% } %>
-                <% if (roleNames.includes('translation')) { %><span class="badge badge-info">Translation</span><% } %>
-                <% if (roleNames.includes('judge')) { %><span class="badge badge-warning">Judge</span><% } %>
-                <% if (roleNames.includes('fallbackJudge')) { %><span class="badge badge-warning" style="opacity:.7">Fallback Judge</span><% } %>
-                <% if (roleNames.includes('nameFormatter')) { %><span class="badge badge-neutral">Name Formatter</span><% } %>
+                <% if (roleNames.length === 0) { %><span class="text-dim" style="font-size:.82rem"><%= __('common.noRole') %></span><% } %>
+                <% if (roleNames.includes('translation')) { %><span class="badge badge-info"><%= __('models.roleTranslation') %></span><% } %>
+                <% if (roleNames.includes('judge')) { %><span class="badge badge-warning"><%= __('models.roleJudge') %></span><% } %>
+                <% if (roleNames.includes('fallbackJudge')) { %><span class="badge badge-warning" style="opacity:.7"><%= __('models.roleFallbackJudge') %></span><% } %>
+                <% if (roleNames.includes('nameFormatter')) { %><span class="badge badge-neutral"><%= __('models.roleNameFormatter') %></span><% } %>
               </div>
-              <% if (user.isAdmin || user.canManageModels) { %>
+              <% if (can('canEditModels') || can('canManageModelRoles') || can('canRemoveAndDeleteModels')) { %>
               <div class="actions">
+                <% if (can('canEditModels')) { %>
                 <button class="btn btn-sm btn-secondary"
                         id="edit-btn-m-<%= m.id %>"
                         data-model="<%- JSON.stringify(m).replace(/"/g, '&quot;') %>">
-                  Edit
+                  <%= __('common.edit') %>
                 </button>
+                <% } %>
+                <% if (can('canManageModelRoles')) { %>
                 <button class="btn btn-sm btn-secondary"
                         id="role-btn-m-<%= m.id %>"
                         data-model="<%- JSON.stringify(m).replace(/"/g, '&quot;') %>">
-                  Roles
+                  <%= __('models.roles') %>
                 </button>
+                <% } %>
+                <% if (can('canRemoveAndDeleteModels')) { %>
                 <form method="POST" action="/models/delete/<%= m.id %>" style="display:inline"
-                      onsubmit="return confirm('Remove model <%= m.name.replace(/'/g, '\\\'') %>?')">
-                  <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+                      onsubmit="return confirm('<%= __('models.removeModel') %><%= m.name.replace(/'/g, '\\\'') %>?')">
+                  <button type="submit" class="btn btn-sm btn-danger"><%= __('common.remove') %></button>
                 </form>
+                <% } %>
               </div>
               <% } %>
             </div>
@@ -163,13 +175,13 @@
     <% if (ollamaModels.length > 0) { %>
     <div class="card" style="margin-top:1.5rem">
       <div class="card-header">
-        <h2>Available in Ollama</h2>
-        <small class="text-dim"><%= ollamaModels.length %> model(s) found</small>
+        <h2><%= __('models.ollamaAvailable') %></h2>
+        <small class="text-dim"><%= ollamaModels.length %> <%= __('models.modelCountFound') %></small>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Model</th><th>Size</th><th>Parameters</th><th>Updated At</th><% if (user.isAdmin || user.canManageModels) { %><th style="text-align: center;">Actions</th><% } %></tr>
+            <tr><th><%= __('models.colModel') %></th><th><%= __('models.colSize') %></th><th><%= __('models.colParams') %></th><th><%= __('models.colUpdated') %></th><% if (can('canAddOrInstallAModel') || can('canRemoveAndDeleteModels')) { %><th style="text-align: center;"><%= __('common.actions') %></th><% } %></tr>
           </thead>
           <tbody>
             <% ollamaModels.forEach(function(m) { %>
@@ -179,22 +191,26 @@
                 <td class="text-dim"><%= m.size ? (m.size / 1e9).toFixed(1) + ' GB' : '—' %></td>
                 <td class="text-dim"><%= m.parameterSize || '—' %></td>
                 <td class="text-dim"><%= m.modifiedAt %></td>
-                <% if (user.isAdmin || user.canManageModels) { %>
+                <% if (can('canAddOrInstallAModel') || can('canRemoveAndDeleteModels')) { %>
                 <td style="text-align: center; padding-right: 1rem;">
                   <% if (alreadyAdded) { %>
                     <span class="badge badge-success">Added</span>
                   <% } else { %>
                     <div style="display:flex;gap:.35rem;justify-content:center;flex-wrap:wrap">
+                      <% if (can('canAddOrInstallAModel')) { %>
                       <button class="btn btn-sm btn-primary"
                               data-ollama-model="<%= m.model %>">
                         + Add
                       </button>
+                      <% } %>
+                      <% if (can('canRemoveAndDeleteModels')) { %>
                       <form method="POST" action="/models/remove-ollama" style="display:inline"
                             class="ollama-remove-form">
                         <input type="hidden" name="modelName" value="<%= m.model %>">
                         <button type="submit" class="btn btn-sm btn-danger"
-                                data-model-name="<%= m.model %>">Remove</button>
+                                data-model-name="<%= m.model %>"><%= __('common.remove') %></button>
                       </form>
+                      <% } %>
                     </div>
                   <% } %>
                 </td>
@@ -210,18 +226,18 @@
     <% if (recommendedModels && recommendedModels.length > 0) { %>
     <div class="card" style="margin-top:1.5rem">
       <div class="card-header">
-        <h2>Recommended Models</h2>
-        <small class="text-dim"><%= recommendedModels.length %> model(s)</small>
+        <h2><%= __('models.recommendedTitle') %></h2>
+        <small class="text-dim"><%= recommendedModels.length %> <%= __('common.modelCount') %></small>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Provider</th>
-              <th>Roles</th>
-              <th>Score</th>
-              <% if (user.isAdmin || user.canManageModels) { %><th style="text-align:center">Actions</th><% } %>
+              <th><%= __('models.name') %></th>
+              <th><%= __('common.provider') %></th>
+              <th><%= __('models.rolesHeader') %></th>
+              <th><%= __('models.colScore') %></th>
+              <% if (can('canAddOrInstallAModel')) { %><th style="text-align:center"><%= __('common.actions') %></th><% } %>
             </tr>
           </thead>
           <tbody>
@@ -230,7 +246,7 @@
                 <td>
                   <code><%= r.name %></code>
                   <% if (r.requireOllamaSubscription) { %>
-                    <span class="badge badge-warning" style="margin-left:.35rem">Subscription</span>
+                    <span class="badge badge-warning" style="margin-left:.35rem"><%= __('setup.step4.subscription') %></span>
                   <% } %>
                 </td>
                 <td>
@@ -242,19 +258,12 @@
                 </td>
                 <td class="text-dim" style="font-size:.82rem"><%= r.roles || '—' %></td>
                 <td><span class="badge badge-neutral"><%= r.score %></span></td>
-                <% if (user.isAdmin || user.canManageModels) { %>
+                <% if (can('canAddOrInstallAModel')) { %>
                 <td style="text-align:center">
-                  <% if (r.provider === 'ollama cloud' || r.provider === 'chatgpt' || r.provider === 'claude') { %>
-                    <form method="POST" action="/models/add-recommended/<%= r.id %>" style="display:inline">
-                      <button type="submit" class="btn btn-sm btn-primary">+ Add</button>
-                    </form>
-                  <% } else { %>
-                    <button class="btn btn-sm btn-primary"
-                            data-ollama-model="<%= r.name %>"
-                            data-recommended-id="<%= r.id %>">
-                      + Install
-                    </button>
-                  <% } %>
+                  <button class="btn btn-sm btn-primary"
+                          data-recommended-model="<%- JSON.stringify({id:r.id,name:r.name,provider:r.provider,baseUrl:r.baseUrl,roles:r.roles}).replace(/"/g,'&quot;') %>">
+                    + Add
+                  </button>
                 </td>
                 <% } %>
               </tr>
@@ -268,36 +277,36 @@
   </main>
 </div>
 
-<% if (user.isAdmin || user.canManageModels) { %>
+<% if (can('canAddOrInstallAModel') || can('canEditModels') || can('canManageModelRoles') || can('canRemoveAndDeleteModels')) { %>
 
 <div class="modal-overlay" id="add-manual-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal">
     <div class="modal-header">
-      <h2 id="add-modal-title">Add Model</h2>
+      <h2 id="add-modal-title"><%= __('models.addModelTitle') %></h2>
       <button class="btn btn-icon" onclick="closeModal('add-manual-modal')">✕</button>
     </div>
     <form method="POST" id="add-model-form" action="/models/add">
       <input type="hidden" id="add-from-ollama" name="_fromOllama" value="0">
 
       <div class="field">
-        <label for="add-provider">Provider</label>
+        <label for="add-provider"><%= __('common.provider') %></label>
         <select id="add-provider" name="provider" onchange="onAddProviderChange()">
-          <option value="ollama">Ollama (local)</option>
-          <option value="ollama cloud">Ollama Cloud</option>
-          <option value="chatgpt">ChatGPT (OpenAI)</option>
-          <option value="claude">Claude (Anthropic)</option>
-          <option value="custom">Custom</option>
+          <option value="ollama"><%= __('models.providerOllamaLocal') %></option>
+          <option value="ollama cloud"><%= __('models.providerOllamaCloud') %></option>
+          <option value="chatgpt"><%= __('models.providerChatGPTFull') %></option>
+          <option value="claude"><%= __('models.providerClaudeFull') %></option>
+          <option value="custom"><%= __('models.providerCustom') %></option>
         </select>
       </div>
 
       <div class="field">
-        <label for="add-modelName" id="add-modelName-label">Model Name</label>
+        <label for="add-modelName" id="add-modelName-label"><%= __('models.name') %></label>
         <input type="text" id="add-modelName" name="modelName" placeholder="e.g. llama3.1:8b" required>
         <small id="add-modelName-hint" class="text-dim"></small>
       </div>
 
       <div class="field" id="add-baseUrl-field" style="display:none">
-        <label for="add-baseUrl">Base URL</label>
+        <label for="add-baseUrl"><%= __('models.baseUrl') %></label>
         <input type="text" id="add-baseUrl" name="baseUrl" placeholder="https://your-host:11434">
       </div>
 
@@ -306,29 +315,29 @@
       </div>
 
       <div class="field">
-        <label for="add-name">Display Name <span class="hint">(leave blank to use model name)</span></label>
+        <label for="add-name"><%= __('models.displayName') %> <span class="hint"><%= __('models.displayNameBlankHint') %></span></label>
         <input type="text" id="add-name" name="name" placeholder="My Model">
       </div>
 
       <div class="field">
-        <label>Roles</label>
+        <label><%= __('models.roles') %></label>
         <div class="checkbox-group" style="max-height:none">
-          <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="translation" checked> Translation</label>
-          <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="judge"> Judge</label>
-          <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="fallbackJudge"> Fallback Judge</label>
-          <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="nameFormatter"> Name Formatter</label>
+          <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="translation" checked> <%= __('models.roleTranslation') %></label>
+          <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="judge"> <%= __('models.roleJudge') %></label>
+          <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="fallbackJudge"> <%= __('models.roleFallbackJudge') %></label>
+          <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="nameFormatter"> <%= __('models.roleNameFormatter') %></label>
         </div>
       </div>
 
       <div class="field field-checkbox" id="add-closeAfterUse-field">
         <input type="hidden" id="add-closeAfterUse-hidden" name="closeAfterUse" value="0" disabled>
         <input type="checkbox" id="add-closeAfterUse" name="closeAfterUse" value="1" checked onchange="document.getElementById('add-closeAfterUse-hidden').disabled = this.checked">
-        <label for="add-closeAfterUse">Unload after use <span class="hint">(Ollama only)</span></label>
+        <label for="add-closeAfterUse"><%= __('models.unloadAfterUse') %> <span class="hint"><%= __('models.ollamaOnlyHint') %></span></label>
       </div>
 
       <div class="field field-checkbox">
         <input type="checkbox" id="add-active" name="active" value="1" checked>
-        <label for="add-active">Active</label>
+        <label for="add-active"><%= __('status.active') %></label>
       </div>
 
       
@@ -343,8 +352,8 @@
       </div>
 
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" id="add-cancel-btn" onclick="closeModal('add-manual-modal')">Cancel</button>
-        <button type="submit" class="btn btn-primary" id="add-submit-btn">Add Model</button>
+        <button type="button" class="btn btn-secondary" id="add-cancel-btn" onclick="closeModal('add-manual-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-primary" id="add-submit-btn"><%= __('models.addModelTitle') %></button>
       </div>
     </form>
   </div>
@@ -353,24 +362,24 @@
 <div class="modal-overlay" id="edit-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal">
     <div class="modal-header">
-      <h2>Edit Model</h2>
+      <h2><%= __('models.editModelTitle') %></h2>
       <button class="btn btn-icon" onclick="closeModal('edit-modal')">✕</button>
     </div>
     <form method="POST" id="edit-form" action="">
 
       <div class="field">
-        <label for="edit-provider">Provider</label>
+        <label for="edit-provider"><%= __('common.provider') %></label>
         <select id="edit-provider" name="provider" onchange="onEditProviderChange()">
-          <option value="ollama">Ollama (local)</option>
-          <option value="ollama cloud">Ollama Cloud</option>
-          <option value="chatgpt">ChatGPT (OpenAI)</option>
-          <option value="claude">Claude (Anthropic)</option>
-          <option value="custom">Custom</option>
+          <option value="ollama"><%= __('models.providerOllamaLocal') %></option>
+          <option value="ollama cloud"><%= __('models.providerOllamaCloud') %></option>
+          <option value="chatgpt"><%= __('models.providerChatGPTFull') %></option>
+          <option value="claude"><%= __('models.providerClaudeFull') %></option>
+          <option value="custom"><%= __('models.providerCustom') %></option>
         </select>
       </div>
 
       <div class="field" id="edit-baseUrl-field" style="display:none">
-        <label for="edit-baseUrl">Base URL</label>
+        <label for="edit-baseUrl"><%= __('models.baseUrl') %></label>
         <input type="text" id="edit-baseUrl" name="baseUrl" placeholder="https://your-host:11434">
       </div>
 
@@ -379,23 +388,23 @@
       </div>
 
       <div class="field">
-        <label for="edit-name">Display Name</label>
+        <label for="edit-name"><%= __('models.displayName') %></label>
         <input type="text" id="edit-name" name="name" required>
       </div>
 
       <div class="field field-checkbox" id="edit-closeAfterUse-field">
         <input type="checkbox" id="edit-closeAfterUse" name="closeAfterUse" value="1">
-        <label for="edit-closeAfterUse">Unload after use <span class="hint">(Ollama only)</span></label>
+        <label for="edit-closeAfterUse"><%= __('models.unloadAfterUse') %> <span class="hint"><%= __('models.ollamaOnlyHint') %></span></label>
       </div>
 
       <div class="field field-checkbox">
         <input type="checkbox" id="edit-active" name="active" value="1">
-        <label for="edit-active">Active</label>
+        <label for="edit-active"><%= __('status.active') %></label>
       </div>
 
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('edit-modal')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save Changes</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('edit-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-primary"><%= __('common.save') %></button>
       </div>
     </form>
   </div>
@@ -404,7 +413,7 @@
 <div class="modal-overlay" id="role-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal">
     <div class="modal-header">
-      <h2>Manage Roles — <span id="role-modal-name"></span></h2>
+      <h2><%= __('models.manageRoles') %> — <span id="role-modal-name"></span></h2>
       <button class="btn btn-icon" onclick="closeModal('role-modal')">✕</button>
     </div>
     <div id="role-modal-body" style="padding:.25rem 0 .5rem"></div>
@@ -415,7 +424,7 @@
 <div id="ollama-models-data" style="display:none" data-models="<%= JSON.stringify(ollamaModels.map(function(m){ return m.model })) %>"></div>
 
 <script src="/app.js"></script>
-<% if (user.isAdmin || user.canManageModels) { %>
+<% if (can('canAddOrInstallAModel') || can('canEditModels') || can('canManageModelRoles') || can('canRemoveAndDeleteModels')) { %>
 <script>
   var INSTALLED_OLLAMA_MODELS = JSON.parse(document.getElementById('ollama-models-data').dataset.models || '[]');
 
@@ -481,7 +490,7 @@
   function startPull(modelName, form) {
     pullInProgress = true;
     document.getElementById('pull-progress-wrap').style.display = '';
-    document.getElementById('pull-status-text').textContent = 'Installing ' + modelName + '…';
+    document.getElementById('pull-status-text').textContent = '<%= __("models.installing") %>' + ' ' + modelName + '…';
     document.getElementById('pull-progress-bar').style.width = '0%';
     document.getElementById('pull-progress-label').textContent = '';
     document.getElementById('add-submit-btn').disabled = true;
@@ -503,7 +512,7 @@
       if (data.done) {
         es.close();
         pullInProgress = false;
-        document.getElementById('pull-status-text').textContent = 'Installed! Adding model…';
+        document.getElementById('pull-status-text').textContent = '<%= __("models.installedAdding") %>';
         document.getElementById('pull-progress-bar').style.width = '100%';
         document.getElementById('add-submit-btn').disabled = false;
         document.getElementById('add-cancel-btn').disabled = false;
@@ -523,7 +532,7 @@
     es.onerror = function() {
       es.close();
       pullInProgress = false;
-      document.getElementById('pull-status-text').textContent = 'Connection lost during install.';
+      document.getElementById('pull-status-text').textContent = '<%= __("models.installErrorConnection") %>';
       document.getElementById('pull-progress-bar').style.background = 'var(--error)';
       document.getElementById('add-submit-btn').disabled = false;
       document.getElementById('add-cancel-btn').disabled = false;
@@ -531,7 +540,7 @@
   }
 
   function openAddModal() {
-    document.getElementById('add-modal-title').textContent = 'Add Model';
+    document.getElementById('add-modal-title').textContent = '<%= __("models.addModelTitle") %>';
     document.getElementById('add-model-form').action = '/models/add';
     document.getElementById('add-from-ollama').value = '0';
     document.getElementById('add-modelName').value = '';
@@ -569,10 +578,10 @@
       var m = JSON.parse(btn.dataset.model);
       document.getElementById('role-modal-name').textContent = m.name;
       var allRoles = [
-        { key: 'translation', label: 'Translation', cls: 'badge-info' },
-        { key: 'judge', label: 'Judge', cls: 'badge-warning' },
-        { key: 'fallbackJudge', label: 'Fallback Judge', cls: 'badge-warning' },
-        { key: 'nameFormatter', label: 'Name Formatter', cls: 'badge-neutral' }
+        { key: 'translation', label: '<%= __("models.roleTranslation") %>', cls: 'badge-info' },
+        { key: 'judge', label: '<%= __("models.roleJudge") %>', cls: 'badge-warning' },
+        { key: 'fallbackJudge', label: '<%= __("models.roleFallbackJudge") %>', cls: 'badge-warning' },
+        { key: 'nameFormatter', label: '<%= __("models.roleNameFormatter") %>', cls: 'badge-neutral' }
       ];
       var currentRoles = (m.roles || []).map(function(r) { return r.role; });
       var html = '<div style="display:flex;flex-direction:column;gap:.6rem;padding:.25rem 0">';
@@ -585,7 +594,7 @@
         html += '<input type="hidden" name="role" value="' + role.key + '">';
         html += '<input type="hidden" name="action" value="' + action + '">';
         html += '<button type="submit" class="btn btn-sm ' + (hasRole ? 'btn-danger' : 'btn-primary') + '">';
-        html += hasRole ? 'Remove' : 'Add';
+        html += hasRole ? '<%= __("common.remove") %>' : '<%= __("common.add") %>';
         html += '</button></form></div>';
       });
       html += '</div>';
@@ -594,32 +603,24 @@
     });
   });
 
-  // ── Quick-add from Ollama list (also used by recommended Install buttons) ────
+  // ── Quick-add from Ollama list ────────────────────────────────────────────
   document.querySelectorAll('[data-ollama-model]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var modelName = btn.dataset.ollamaModel;
-      var recId = btn.dataset.recommendedId || '';
       var isCloud = modelName.indexOf('-cloud') !== -1 || modelName.indexOf(':cloud') !== -1;
       var provider = isCloud ? 'ollama cloud' : 'ollama';
-      document.getElementById('add-modal-title').textContent = 'Add Model from Ollama';
+      document.getElementById('add-modal-title').textContent = '<%= __("models.addOllamaModel") %>';
       document.getElementById('add-model-form').action = '/models/sync';
       document.getElementById('add-from-ollama').value = '1';
       document.getElementById('add-modelName').value = modelName;
       document.getElementById('add-name').value = '';
+      document.getElementById('add-baseUrl').value = '';
       document.getElementById('add-closeAfterUse').checked = true;
       document.getElementById('add-closeAfterUse-hidden').disabled = true;
       document.getElementById('add-active').checked = true;
       document.getElementById('add-provider').value = provider;
-      // Inject recommendedModelId if coming from recommended section
       var recInput = document.getElementById('add-recommended-id');
-      if (!recInput) {
-        recInput = document.createElement('input');
-        recInput.type = 'hidden';
-        recInput.name = 'recommendedModelId';
-        recInput.id = 'add-recommended-id';
-        document.getElementById('add-model-form').appendChild(recInput);
-      }
-      recInput.value = recId;
+      if (recInput) recInput.remove();
       document.querySelectorAll('.add-role-check').forEach(function(cb) {
         cb.checked = cb.value === 'translation';
       });
@@ -627,6 +628,47 @@
       var cfg = PROVIDER_HINTS[provider] || PROVIDER_HINTS['ollama'];
       var buInput = document.getElementById('add-baseUrl');
       if (buInput) buInput.value = cfg.defaultBaseUrl || '';
+      openModal('add-manual-modal');
+    });
+  });
+
+  // ── Recommended model add buttons ─────────────────────────────────────────
+  document.querySelectorAll('[data-recommended-model]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var rec = JSON.parse(btn.dataset.recommendedModel);
+      var provider = rec.provider || 'ollama';
+      var isOllama = provider === 'ollama' || provider === 'ollama cloud';
+      document.getElementById('add-modal-title').textContent = '<%= __("models.addModelTitle") %>';
+      document.getElementById('add-model-form').action = isOllama ? '/models/sync' : '/models/add';
+      document.getElementById('add-from-ollama').value = isOllama ? '1' : '0';
+      document.getElementById('add-modelName').value = rec.name || '';
+      document.getElementById('add-name').value = '';
+      document.getElementById('add-baseUrl').value = rec.baseUrl || '';
+      document.getElementById('add-closeAfterUse').checked = true;
+      document.getElementById('add-closeAfterUse-hidden').disabled = true;
+      document.getElementById('add-active').checked = true;
+      document.getElementById('add-provider').value = provider;
+      var recInput = document.getElementById('add-recommended-id');
+      if (isOllama) {
+        if (!recInput) {
+          recInput = document.createElement('input');
+          recInput.type = 'hidden';
+          recInput.name = 'recommendedModelId';
+          recInput.id = 'add-recommended-id';
+          document.getElementById('add-model-form').appendChild(recInput);
+        }
+        recInput.value = rec.id || '';
+      } else if (recInput) {
+        recInput.remove();
+      }
+      var recRoles = (rec.roles || '').split(',').map(function(r) { return r.trim(); });
+      document.querySelectorAll('.add-role-check').forEach(function(cb) {
+        cb.checked = recRoles.indexOf(cb.value) !== -1;
+      });
+      applyProviderUI('add', provider);
+      var cfg = PROVIDER_HINTS[provider] || PROVIDER_HINTS['ollama'];
+      var buInput = document.getElementById('add-baseUrl');
+      if (buInput && cfg.defaultBaseUrl && !rec.baseUrl) buInput.value = cfg.defaultBaseUrl || '';
       openModal('add-manual-modal');
     });
   });

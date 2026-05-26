@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<%= locale %>">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Users — BCookieSubs</title>
+  <title><%= __('users.title') %> — BCookieSubs</title>
    <%-  include('theme-vars.ejs') %>
   <link rel="icon" type="image/png" href="/images/icon.png">
   <link rel="stylesheet" href="/static/css/all.min.css">
@@ -25,8 +25,10 @@
     <% } %>
 
     <div class="page-header">
-      <h1>Users</h1>
-      <button class="btn btn-primary" onclick="openModal('add-modal')">+ Create User</button>
+      <h1><%= __('users.title') %></h1>
+      <% if (can('canAddUser')) { %>
+        <button class="btn btn-primary" onclick="openModal('add-modal')"><%= __('users.createUser') %></button>
+      <% } %>
     </div>
 
     <% if (error) { %>
@@ -35,48 +37,63 @@
 
     <div class="card">
       <% if (users.length === 0) { %>
-        <p class="empty-state">No users found.</p>
+        <p class="empty-state"><%= __('users.noUsersFound') %></p>
       <% } else { %>
-      
+
       <div class="table-wrap users-table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Username</th>
-              <th>Role</th>
-              <th>Created</th>
-              <th style="text-align: end; padding-left: 1rem;">Actions</th>
+              <th><%= __('users.username') %></th>
+              <th><%= __('users.roles') %></th>
+              <th><%= __('users.created') %></th>
+              <th style="text-align: end; padding-left: 1rem;"><%= __('users.actions') %></th>
             </tr>
           </thead>
           <tbody>
             <% users.forEach(function(u) { %>
+              <%
+                var _highestRole = u.roles && u.roles.length > 0
+                  ? u.roles.reduce(function(best, r) { return r.level > best.level ? r : best }, u.roles[0])
+                  : null
+              %>
               <tr>
                 <td>
                   <strong><%= u.username %></strong>
                   <% if (u.id === user.id) { %>
-                    <span class="badge badge-info" style="margin-left:.5rem">You</span>
+                    <span class="badge badge-info" style="margin-left:.5rem"><%= __('common.you') %></span>
                   <% } %>
                 </td>
                 <td>
-                  <span class="badge <%= u.isAdmin ? 'badge-warning' : 'badge-neutral' %>">
-                    <%= u.isAdmin ? 'Admin' : 'User' %>
-                  </span>
+                  <% if (!u.roles || u.roles.length === 0) { %>
+                    <span class="text-dim">—</span>
+                  <% } else { %>
+                    <% u.roles.slice().sort(function(a,b){ return b.level - a.level }).forEach(function(r) { %>
+                      <span class="badge badge-neutral" style="margin-right:.2rem"><%= r.name %></span>
+                    <% }) %>
+                  <% } %>
                 </td>
                 <td class="text-dim"><%= u.createdAt.split(' ')[0] %></td>
                 <td class="actions" style="justify-content: end;">
-                  <button class="btn btn-sm btn-secondary user-edit-btn"
-                          data-user="<%- JSON.stringify(u).replace(/"/g, '&quot;') %>">
-                    Edit Permissions
-                  </button>
-                  <button class="btn btn-sm btn-secondary user-pw-btn"
-                          data-id="<%= u.id %>"
-                          data-username="<%= u.username.replace(/'/g, '&#39;') %>">
-                    Change Password
-                  </button>
-                  <% if (u.id !== user.id) { %>
+                  <% if (can('canManageRoles') && u.id !== user.id) { %>
+                    <button class="btn btn-sm btn-secondary user-edit-btn"
+                            data-user-id="<%= u.id %>"
+                            data-username="<%= u.username.replace(/'/g, '&#39;') %>"
+                            data-role-ids="<%- JSON.stringify((u.roles || []).map(function(r){ return r.id })) %>">
+                      <%= __('users.editRoles') %>
+                    </button>
+                  <% } %>
+                  <% if (can('canChangeOtherUsersPassword') && u.id !== user.id) { %>
+                    <button class="btn btn-sm btn-secondary user-pw-btn"
+                            data-id="<%= u.id %>"
+                            data-username="<%= u.username.replace(/'/g, '&#39;') %>">
+                      <%= __('users.changePassword') %>
+                    </button>
+                  <% } %>
+                  <% if (can('canAddUser') && u.id !== user.id) { %>
                     <form method="POST" action="/users/delete/<%= u.id %>" style="display:inline"
                           onsubmit="return confirm('Delete user <%= u.username.replace(/'/g, '\\\'') %>?')">
-                      <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                      <button type="submit" class="btn btn-sm btn-danger"><%= __('common.delete') %></button>
                     </form>
                   <% } %>
                 </td>
@@ -85,36 +102,49 @@
           </tbody>
         </table>
       </div>
-      
+
       <div class="user-cards">
         <% users.forEach(function(u) { %>
+          <%
+            var _highestRole = u.roles && u.roles.length > 0
+              ? u.roles.reduce(function(best, r) { return r.level > best.level ? r : best }, u.roles[0])
+              : null
+          %>
           <div class="user-card">
             <div class="user-card-header">
               <div>
                 <strong><%= u.username %></strong>
                 <% if (u.id === user.id) { %>
-                  <span class="badge badge-info" style="margin-left:.4rem">You</span>
+                  <span class="badge badge-info" style="margin-left:.4rem"><%= __('common.you') %></span>
                 <% } %>
               </div>
-              <span class="badge <%= u.isAdmin ? 'badge-warning' : 'badge-neutral' %>">
-                <%= u.isAdmin ? 'Admin' : 'User' %>
-              </span>
+              <% if (_highestRole) { %>
+                <span class="badge badge-neutral"><%= _highestRole.name %></span>
+              <% } else { %>
+                <span class="badge badge-neutral"><%= __('common.noRole') %></span>
+              <% } %>
             </div>
             <div class="text-dim" style="font-size:.8rem;margin-bottom:.6rem">Created <%= u.createdAt.split(' ')[0] %></div>
             <div class="actions">
-              <button class="btn btn-sm btn-secondary user-edit-btn"
-                      data-user="<%- JSON.stringify(u).replace(/"/g, '&quot;') %>">
-                Edit Permissions
-              </button>
-              <button class="btn btn-sm btn-secondary user-pw-btn"
-                      data-id="<%= u.id %>"
-                      data-username="<%= u.username.replace(/'/g, '&#39;') %>">
-                Change Password
-              </button>
-              <% if (u.id !== user.id) { %>
+              <% if (can('canManageRoles') && u.id !== user.id) { %>
+                <button class="btn btn-sm btn-secondary user-edit-btn"
+                        data-user-id="<%= u.id %>"
+                        data-username="<%= u.username.replace(/'/g, '&#39;') %>"
+                        data-role-ids="<%- JSON.stringify((u.roles || []).map(function(r){ return r.id })) %>">
+                  <%= __('users.editRoles') %>
+                </button>
+              <% } %>
+              <% if (can('canChangeOtherUsersPassword') && u.id !== user.id) { %>
+                <button class="btn btn-sm btn-secondary user-pw-btn"
+                        data-id="<%= u.id %>"
+                        data-username="<%= u.username.replace(/'/g, '&#39;') %>">
+                  <%= __('users.changePassword') %>
+                </button>
+              <% } %>
+              <% if (can('canAddUser') && u.id !== user.id) { %>
                 <form method="POST" action="/users/delete/<%= u.id %>" style="display:inline"
                       onsubmit="return confirm('Delete user <%= u.username.replace(/'/g, '\\\'') %>?')">
-                  <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                  <button type="submit" class="btn btn-sm btn-danger"><%= __('common.delete') %></button>
                 </form>
               <% } %>
             </div>
@@ -123,141 +153,259 @@
       </div>
       <% } %>
     </div>
-    <div class="card" style="margin-top:1.5rem">
-      <div class="card-header"><h2>Permission Reference</h2></div>
-      <%
-        var _perms = [
-          { key: 'isAdmin',            label: 'Admin',                desc: 'Full access to all pages and actions. Overrides all other permissions.' },
-          { key: 'canManageUsers',     label: 'Manage Users',         desc: 'Create, edit, and delete users and manage their permissions.' },
-          { key: 'canViewModels',      label: 'View Models',          desc: 'View configured models and their roles.' },
-          { key: 'canManageModels',    label: 'Manage Models',        desc: 'Add, edit, remove, and configure AI models.' },
-          { key: 'canViewPrompts',     label: 'View Prompts',         desc: 'View prompt templates and prompt versions.' },
-          { key: 'canManagePrompts',   label: 'Manage Prompts',       desc: 'Create, edit, activate, and manage prompt templates.' },
-          { key: 'canManageLanguages', label: 'Manage Languages',     desc: 'Add or manage supported subtitle languages.' },
-          { key: 'canManageConfig',    label: 'Manage Config',        desc: 'View and update application configuration and settings.' },
-          { key: 'canAddSubtitles',    label: 'Add Subtitles',        desc: 'Upload, add, or queue subtitles for translation.' },
-          { key: 'canStopSubtitles',   label: 'Stop Subtitles',       desc: 'Stop, cancel, or pause subtitle translation jobs.' },
-          { key: 'canDeleteSubtitles', label: 'Delete Subtitles',     desc: 'Delete subtitles, jobs, or related translation data.' },
-          { key: 'canViewLogs',        label: 'View Logs',            desc: 'View application logs.' },
-          { key: 'canManageSchedules', label: 'Manage Schedules',     desc: 'Create and manage translation schedule windows.' },
-          { key: 'pauseWorker',        label: 'Pause Worker',         desc: 'Start, stop, pause, or resume the translation worker.' },
-          { key: 'downloadSubtitles',  label: 'Download Subtitles',   desc: 'Download and export translated subtitles. Also grants access to the Translated page.' },
-          { key: 'canViewStats',       label: 'View Stats',           desc: 'View translation, model, and prompt statistics.' },
-          { key: 'canManageLibraryPath',        label: 'Manage Library Paths',     desc: 'Manage library path scanning settings and tracked media.' },
-          { key: 'canManageRootLibraryPath',    label: 'Manage Root Library Path', desc: 'Can configure the root folder used to restrict library path browsing.' },
-          { key: 'canManageSecret',             label: 'Manage Secrets',           desc: 'View and manage secret and API key settings.' },
-        ]
-      %>
-      <div class="perm-ref-grid">
-        <% _perms.forEach(function(p) { %>
-          <div class="perm-ref-row">
-            <span class="badge badge-neutral perm-ref-key"><%= p.label %></span>
-            <span class="text-dim perm-ref-desc"><%= p.desc %></span>
-          </div>
-        <% }) %>
-      </div>
+
+    <!-- Roles section -->
+    <div class="page-header" style="margin-top:2rem">
+      <h2 style="font-size:1.2rem;font-weight:600"><%= __('users.rolesTitle') %></h2>
+      <% if (can('canManageRoles')) { %>
+        <button class="btn btn-primary" onclick="openModal('create-role-modal')"><%= __('users.createRole') %></button>
+      <% } %>
+    </div>
+
+    <div class="card">
+      <% if (rolesWithPermissions.length === 0) { %>
+        <p class="empty-state"><%= __('users.noRolesDefined') %></p>
+      <% } else { %>
+        <div style="display:flex;flex-direction:column;gap:.75rem">
+          <% rolesWithPermissions.forEach(function(r) { %>
+            <%
+              var BUILT_IN = ['User','SuperUser','MasterUser','Admin','Owner']
+              var isBuiltIn = BUILT_IN.indexOf(r.name) !== -1
+            %>
+            <div class="role-row" id="role-row-<%= r.id %>" style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.75rem 1rem">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:.75rem">
+                <div style="display:flex;align-items:center;gap:.6rem;min-width:0">
+                  <span class="badge badge-neutral" style="flex-shrink:0"><%= r.name %></span>
+                  <span class="text-dim" style="font-size:.8rem;flex-shrink:0"><%= __('common.level') %> <%= r.level %></span>
+                  <% if (isBuiltIn) { %>
+                    <span class="badge badge-info" style="flex-shrink:0;font-size:.7rem"><%= __('common.builtIn') %></span>
+                  <% } %>
+                  <% if (r.description) { %>
+                    <span class="text-dim" style="font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><%= r.description %></span>
+                  <% } %>
+                </div>
+                <div style="display:flex;gap:.4rem;align-items:center;flex-shrink:0">
+                  <button class="btn btn-sm btn-secondary role-toggle-btn" data-role-id="<%= r.id %>" title="Show/hide permissions">
+                    <i class="fa-solid fa-chevron-down"></i>
+                  </button>
+                  <% if (can('canManageRoles')) { %>
+                    <button class="btn btn-sm btn-secondary role-edit-btn"
+                            data-role='<%- JSON.stringify({id: r.id, name: r.name, level: r.level, description: r.description || "", permissionKeys: r.permissionKeys}).replace(/'/g,"&#39;") %>'>
+                      <%= __('common.edit') %>
+                    </button>
+                    <% if (!isBuiltIn) { %>
+                      <form method="POST" action="/users/roles/delete/<%= r.id %>" style="display:inline"
+                            onsubmit="return confirm('Delete role <%= r.name %>?')">
+                        <button type="submit" class="btn btn-sm btn-danger"><%= __('common.delete') %></button>
+                      </form>
+                    <% } %>
+                  <% } %>
+                </div>
+              </div>
+
+              <!-- Permission list (collapsed by default) -->
+              <div class="role-perms-panel" id="role-perms-<%= r.id %>" style="display:none;margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border)">
+                <% if (r.permissionKeys.length === 0) { %>
+                  <span class="text-dim" style="font-size:.82rem"><%= __('users.noPermissionsAssigned') %></span>
+                <% } else { %>
+                  <%
+                    var cats = {}
+                    r.permissionKeys.forEach(function(key) {
+                      var def = permissions.find(function(p){ return p.key === key })
+                      if (!def) return
+                      if (!cats[def.category]) cats[def.category] = []
+                      cats[def.category].push(def)
+                    })
+                  %>
+                  <div style="display:flex;flex-wrap:wrap;gap:1rem">
+                    <% Object.keys(cats).forEach(function(cat) { %>
+                      <div style="min-width:160px">
+                        <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin-bottom:.35rem"><%= cat %></div>
+                        <div style="display:flex;flex-direction:column;gap:.2rem">
+                          <% cats[cat].forEach(function(p) { %>
+                            <span style="font-size:.8rem;color:var(--text)" title="<%= p.description %>"><i class="fa-solid fa-check" style="font-size:.65rem;color:var(--success);margin-right:.3rem"></i><%= p.label %></span>
+                          <% }) %>
+                        </div>
+                      </div>
+                    <% }) %>
+                  </div>
+                <% } %>
+              </div>
+            </div>
+          <% }) %>
+        </div>
+      <% } %>
     </div>
   </main>
 </div>
 
+<!-- Create User modal -->
+<% if (can('canAddUser')) { %>
 <div class="modal-overlay" id="add-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal">
     <div class="modal-header">
-      <h2>Create User</h2>
+      <h2><%= __('users.createUserModal') %></h2>
       <button class="btn btn-icon" onclick="closeModal('add-modal')">✕</button>
     </div>
     <form method="POST" action="/users/create" id="create-user-form">
       <div id="create-user-error" class="alert alert-error" style="display:none;margin-bottom:.75rem"></div>
       <div class="field">
-        <label for="cu-username">Username</label>
+        <label for="cu-username"><%= __('users.username') %></label>
         <input type="text" id="cu-username" name="username" required>
       </div>
       <div class="field">
-        <label for="cu-password">Password <span class="hint">(min 8 chars)</span></label>
+        <label for="cu-password"><%= __('users.password') %> <span class="hint"><%= __('users.passwordHint') %></span></label>
         <input type="password" id="cu-password" name="password" required minlength="8">
       </div>
       <div class="field">
-        <label for="cu-password2">Confirm Password</label>
+        <label for="cu-password2"><%= __('users.confirmPassword') %></label>
         <input type="password" id="cu-password2" name="password2" required>
       </div>
-      <div class="field field-checkbox">
-        <input type="checkbox" id="cu-isAdmin" name="isAdmin" value="1"
-               onchange="togglePermFields(this.checked, 'cu-perms')">
-        <label for="cu-isAdmin">Administrator (all permissions)</label>
+      <div class="field">
+        <label for="cu-roleId"><%= __('users.role') %></label>
+        <select id="cu-roleId" name="roleId" required>
+          <% roles.forEach(function(r) { %>
+            <option value="<%= r.id %>"><%= r.name %> (<%= __('common.level') %> <%= r.level %>)</option>
+          <% }) %>
+        </select>
       </div>
-      <div id="cu-perms">
-        <div class="field">
-          <label>Permissions</label>
-          <div class="checkbox-group" style="max-height:none">
-            <% permissionKeys.forEach(function(key) { %>
-              <label class="checkbox-label">
-                <input type="checkbox" name="<%= key %>" value="1">
-                <%= key.replace(/([A-Z])/g, ' $1').replace(/^./, function(s){ return s.toUpperCase() }) %>
-              </label>
-            <% }) %>
-          </div>
-        </div>
+      <div class="field">
+        <label for="cu-language"><%= __('account.language') %></label>
+        <select id="cu-language" name="language">
+          <option value="system" selected><%= __('account.systemDefault') %></option>
+          <% supportedLocales.forEach(function(lc) { %>
+            <option value="<%= lc %>"><%= localeFlags[lc] %> <%= localeLabels[lc] %></option>
+          <% }) %>
+        </select>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Create User</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-primary"><%= __('users.createUserModal') %></button>
       </div>
     </form>
   </div>
 </div>
+<% } %>
 
+<!-- Edit User Roles modal -->
+<% if (can('canManageRoles')) { %>
 <div class="modal-overlay" id="edit-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal">
     <div class="modal-header">
-      <h2>Edit Permissions — <span id="edit-username"></span></h2>
+      <h2><%= __('users.editRolesModal') %> <span id="edit-username"></span></h2>
       <button class="btn btn-icon" onclick="closeModal('edit-modal')">✕</button>
     </div>
     <form method="POST" id="edit-form" action="">
-      <div class="field field-checkbox">
-        <input type="checkbox" id="edit-isAdmin" name="isAdmin" value="1"
-               onchange="togglePermFields(this.checked, 'edit-perms')">
-        <label for="edit-isAdmin">Administrator (all permissions)</label>
-      </div>
-      <div id="edit-perms">
-        <div class="field">
-          <label>Permissions</label>
-          <div class="checkbox-group" style="max-height:none" id="edit-perm-checks">
-            <% permissionKeys.forEach(function(key) { %>
-              <label class="checkbox-label">
-                <input type="checkbox" name="<%= key %>" value="1" data-perm="<%= key %>">
-                <%= key.replace(/([A-Z])/g, ' $1').replace(/^./, function(s){ return s.toUpperCase() }) %>
-              </label>
-            <% }) %>
-          </div>
+      <div class="field">
+        <label><%= __('users.roles') %></label>
+        <div class="checkbox-group" style="max-height:none">
+          <% roles.forEach(function(r) { %>
+            <label class="checkbox-label">
+              <input type="checkbox" name="roleIds" value="<%= r.id %>" data-role-id="<%= r.id %>">
+              <%= r.name %> <span class="text-dim" style="font-size:.8rem">(<%= __('common.level') %> <%= r.level %>)</span>
+            </label>
+          <% }) %>
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('edit-modal')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('edit-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-primary"><%= __('users.saveRoles') %></button>
       </div>
     </form>
   </div>
 </div>
 
+<!-- Create Role modal -->
+<div class="modal-overlay" id="create-role-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h2><%= __('users.createRoleModal') %></h2>
+      <button class="btn btn-icon" onclick="closeModal('create-role-modal')">✕</button>
+    </div>
+    <form method="POST" action="/users/roles/create">
+      <div class="field-row">
+        <div class="field" style="flex:2">
+          <label><%= __('users.roleName') %></label>
+          <input type="text" name="name" required placeholder="e.g. Translator">
+        </div>
+        <div class="field" style="flex:1">
+          <label><%= __('users.level') %></label>
+          <input type="number" name="level" min="1" required placeholder="e.g. 15">
+        </div>
+      </div>
+      <div class="field">
+        <label><%= __('users.descriptionOptional') %></label>
+        <input type="text" name="description" placeholder="Short description of this role">
+      </div>
+      <div class="field">
+        <label><%= __('users.permissions') %></label>
+        <%- include('partials/permission-checkboxes', { permissions: permissions, checkedKeys: [] }) %>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('create-role-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-primary"><%= __('users.createRoleModal') %></button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Edit Role modal -->
+<div class="modal-overlay" id="edit-role-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h2><%= __('users.editRoleModal') %> <span id="edit-role-name"></span></h2>
+      <button class="btn btn-icon" onclick="closeModal('edit-role-modal')">✕</button>
+    </div>
+    <form method="POST" id="edit-role-form" action="">
+      <div class="field-row">
+        <div class="field" style="flex:2">
+          <label><%= __('users.roleName') %></label>
+          <input type="text" id="er-name" name="name" required>
+        </div>
+        <div class="field" style="flex:1">
+          <label><%= __('users.level') %></label>
+          <input type="number" id="er-level" name="level" min="1" required>
+        </div>
+      </div>
+      <div class="field">
+        <label><%= __('users.descriptionOptional') %></label>
+        <input type="text" id="er-description" name="description">
+      </div>
+      <div class="field">
+        <label><%= __('users.permissions') %></label>
+        <div id="edit-role-perms">
+          <%- include('partials/permission-checkboxes', { permissions: permissions, checkedKeys: [] }) %>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('edit-role-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-primary"><%= __('users.saveRole') %></button>
+      </div>
+    </form>
+  </div>
+</div>
+<% } %>
+
+<!-- Change Password modal -->
 <div class="modal-overlay" id="pw-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal">
     <div class="modal-header">
-      <h2>Change Password — <span id="pw-username"></span></h2>
+      <h2><%= __('users.changePasswordModal') %> <span id="pw-username"></span></h2>
       <button class="btn btn-icon" onclick="closeModal('pw-modal')">✕</button>
     </div>
     <form method="POST" id="pw-form" action="">
       <div id="pw-error" class="alert alert-error" style="display:none;margin-bottom:.75rem"></div>
       <div class="field">
-        <label for="pw-password">New Password <span class="hint">(min 8 chars)</span></label>
+        <label for="pw-password"><%= __('users.newPassword') %> <span class="hint"><%= __('users.passwordHint') %></span></label>
         <input type="password" id="pw-password" name="password" required minlength="8">
       </div>
       <div class="field">
-        <label for="pw-password2">Confirm Password</label>
+        <label for="pw-password2"><%= __('users.confirmPassword') %></label>
         <input type="password" id="pw-password2" name="password2" required>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('pw-modal')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Update Password</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('pw-modal')"><%= __('common.cancel') %></button>
+        <button type="submit" class="btn btn-primary"><%= __('users.updatePassword') %></button>
       </div>
     </form>
   </div>
@@ -265,31 +413,85 @@
 
 <script src="/app.js"></script>
 <script>
+  var ALL_PERMISSIONS = <%- JSON.stringify(permissions.map(function(p){ return { key: p.key, label: p.label, description: p.description, category: p.category } })) %>;
+
   document.querySelectorAll('.user-edit-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      var u = JSON.parse(btn.dataset.user);
-      document.getElementById('edit-username').textContent = u.username;
-      document.getElementById('edit-form').action = '/users/update/' + u.id;
-      document.getElementById('edit-isAdmin').checked = !!u.isAdmin;
-      document.querySelectorAll('#edit-perm-checks [data-perm]').forEach(function(el) {
-        el.checked = !!u[el.dataset.perm];
+      var userId = btn.dataset.userId;
+      var username = btn.dataset.username;
+      var currentRoleIds = JSON.parse(btn.dataset.roleIds || '[]');
+      document.getElementById('edit-username').textContent = username;
+      document.getElementById('edit-form').action = '/users/update-roles/' + userId;
+      document.querySelectorAll('#edit-form [data-role-id]').forEach(function(el) {
+        el.checked = currentRoleIds.indexOf(parseInt(el.dataset.roleId)) !== -1;
       });
-      togglePermFields(!!u.isAdmin, 'edit-perms');
       openModal('edit-modal');
     });
   });
 
   document.querySelectorAll('.user-pw-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      openPasswordModal(parseInt(btn.dataset.id), btn.dataset.username);
+      document.getElementById('pw-username').textContent = btn.dataset.username;
+      document.getElementById('pw-form').action = '/users/change-password/' + btn.dataset.id;
+      document.getElementById('pw-password').value = '';
+      document.getElementById('pw-password2').value = '';
+      document.getElementById('pw-error').style.display = 'none';
+      openModal('pw-modal');
     });
   });
 
-  function togglePermFields(isAdmin, containerId) {
-    var el = document.getElementById(containerId);
-    if (!el) return;
-    el.style.opacity = isAdmin ? '0.4' : '1';
-    el.style.pointerEvents = isAdmin ? 'none' : '';
+  document.querySelectorAll('.role-toggle-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var roleId = btn.dataset.roleId;
+      var panel = document.getElementById('role-perms-' + roleId);
+      var icon = btn.querySelector('i');
+      if (panel.style.display === 'none') {
+        panel.style.display = '';
+        icon.classList.replace('fa-chevron-down', 'fa-chevron-up');
+      } else {
+        panel.style.display = 'none';
+        icon.classList.replace('fa-chevron-up', 'fa-chevron-down');
+      }
+    });
+  });
+
+  document.querySelectorAll('.role-edit-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var role = JSON.parse(btn.dataset.role);
+      document.getElementById('edit-role-name').textContent = role.name;
+      document.getElementById('edit-role-form').action = '/users/roles/update/' + role.id;
+      document.getElementById('er-name').value = role.name;
+      document.getElementById('er-level').value = role.level;
+      document.getElementById('er-description').value = role.description || '';
+
+      var container = document.getElementById('edit-role-perms');
+      container.innerHTML = buildPermissionCheckboxes(role.permissionKeys || []);
+      openModal('edit-role-modal');
+    });
+  });
+
+  function buildPermissionCheckboxes(checkedKeys) {
+    var cats = {};
+    ALL_PERMISSIONS.forEach(function(p) {
+      if (!cats[p.category]) cats[p.category] = [];
+      cats[p.category].push(p);
+    });
+    var html = '<div style="display:flex;flex-direction:column;gap:.75rem">';
+    Object.keys(cats).forEach(function(cat) {
+      html += '<div>';
+      html += '<div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin-bottom:.35rem">' + esc(cat) + '</div>';
+      html += '<div class="checkbox-group" style="max-height:none">';
+      cats[cat].forEach(function(p) {
+        var checked = checkedKeys.indexOf(p.key) !== -1 ? ' checked' : '';
+        html += '<label class="checkbox-label" title="' + esc(p.description) + '">';
+        html += '<input type="checkbox" name="permissionKeys" value="' + esc(p.key) + '"' + checked + '>';
+        html += ' ' + esc(p.label);
+        html += '</label>';
+      });
+      html += '</div></div>';
+    });
+    html += '</div>';
+    return html;
   }
 
   function validatePasswords(form, errorId) {
@@ -309,12 +511,43 @@
   }
 
   document.getElementById('pw-form').addEventListener('submit', function(e) {
-    if (!validatePasswords(this, 'pw-error')) e.preventDefault();
+    if (!validatePasswords(this, 'pw-error')) {
+      e.preventDefault();
+      return;
+    }
+    var submitBtn = this.querySelector('button[type="submit"]');
+    var cancelBtn = this.querySelector('button[type="button"]');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Updating…'; }
+    if (cancelBtn) cancelBtn.disabled = true;
   });
 
-  document.getElementById('create-user-form').addEventListener('submit', function(e) {
-    if (!validatePasswords(this, 'create-user-error')) e.preventDefault();
-  });
+  var createForm = document.getElementById('create-user-form');
+  if (createForm) {
+    createForm.addEventListener('submit', function(e) {
+      if (!validatePasswords(this, 'create-user-error')) {
+        e.preventDefault();
+        return;
+      }
+      var submitBtn = this.querySelector('button[type="submit"]');
+      var cancelBtn = this.querySelector('button[type="button"]');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Creating…'; }
+      if (cancelBtn) cancelBtn.disabled = true;
+    });
+  }
+
+  var editForm = document.getElementById('edit-form');
+  if (editForm) {
+    editForm.addEventListener('submit', function(e) {
+      var submitBtn = this.querySelector('button[type="submit"]');
+      var cancelBtn = this.querySelector('button[type="button"]');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving…'; }
+      if (cancelBtn) cancelBtn.disabled = true;
+    });
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
 </script>
 </body>
 </html>

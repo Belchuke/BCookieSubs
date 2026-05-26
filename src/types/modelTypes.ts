@@ -1,4 +1,7 @@
-import { DBModelRole, DBUser } from "./dbTypes"
+import { DBModelRole, DBRole, DBUser } from "./dbTypes"
+import { PermissionKey } from "../constants/permissions"
+
+export type { PermissionKey }
 
 export type DefaultResponse = {
   success: boolean
@@ -12,28 +15,11 @@ export type ValidateSessionResult = DefaultResponse & {
 export type ParsedChunkRow = { id: string; text: string }
 export type ParsedChunk = { rows: ParsedChunkRow[]; xml: string }
 
-export const UserPermissions = {
-  canManageUsers: "canManageUsers",
-  canViewModels: "canViewModels",
-  canManageModels: "canManageModels",
-  canViewPrompts: "canViewPrompts",
-  canManagePrompts: "canManagePrompts",
-  canManageLanguages: "canManageLanguages",
-  canManageConfig: "canManageConfig",
-  canAddSubtitles: "canAddSubtitles",
-  canStopSubtitles: "canStopSubtitles",
-  canDeleteSubtitles: "canDeleteSubtitles",
-  canViewLogs: "canViewLogs",
-  canManageSchedules: "canManageSchedules",
-  pauseWorker: "pauseWorker",
-  downloadSubtitles: "downloadSubtitles",
-  canViewStats: "canViewStats",
-  canManageSecret: "canManageSecret",
-  canManageLibraryPath: "canManageLibraryPath",
-  canManageRootLibraryPath: "canManageRootLibraryPath",
-} as const
-
-export type UserPermission = (typeof UserPermissions)[keyof typeof UserPermissions]
+export type UserWithRoles = DBUser & {
+  roles: DBRole[]
+  highestRole: DBRole | null
+  highestLevel: number
+}
 
 export type OllamaModel = {
   model: string
@@ -118,7 +104,6 @@ export type MovieDbResponse = {
   id: number
   original_language: string | null
   original_name?: string
-  overview?: string | null
   original_title?: string
   poster_path: string | null
   release_date?: string
@@ -126,7 +111,6 @@ export type MovieDbResponse = {
   title?: string
   name?: string
   video?: boolean
-  isAdmin?: boolean
   genre_ids: number[]
 }
 
@@ -149,9 +133,19 @@ export type FinishedSubtitle = {
   sourceLang: string
   season: number | null
   episode: number | null
-  posterBase64: string | null
+  mediaItemPhotoPath: string | null
   year: number | null
   translatedText: string
   finishedAt: string | null
   earliestChunkStartedAt: string | null
+}
+
+export type TmdbMovieDetails = {
+  genres: TmdbGenre[]
+  id: number
+}
+
+export type TmdbGenre = {
+  id: number
+  name: string
 }

@@ -1,8 +1,5 @@
-
 import * as crypto from "crypto"
 import { ParsedChunk, ParsedChunkRow } from "../types/modelTypes"
-
-export const BCRYPT_ROUNDS = 12
 
 export const hashToken = (token: string): string => {
   return crypto.createHash("sha256").update(token).digest("hex")
@@ -78,7 +75,7 @@ export const parseLLMResponse = (response: string): ParsedChunk | null => {
 
   if (rows.length === 0) return null
 
-    const normalizedOriginal = outsideTagsRemoved.replace(/\s+/g, "")
+  const normalizedOriginal = outsideTagsRemoved.replace(/\s+/g, "")
   const normalizedReconstructed = reconstructed.replace(/\s+/g, "")
   if (normalizedOriginal !== normalizedReconstructed) {
     return null
@@ -131,4 +128,8 @@ export const srtFormatterForModel = (chunk: { id: string; text: string }[]): str
 
 export const getFileHash = (content: string): string => {
   return crypto.createHash("sha256").update(content).digest("hex")
+}
+
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }

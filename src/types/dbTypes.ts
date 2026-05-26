@@ -2,30 +2,46 @@ export type DBUser = {
   id: number
   username: string
   passwordHash: string | null
-  isAdmin: boolean
-
-  canManageUsers: boolean
-  canViewModels: boolean
-  canManageModels: boolean
-  canViewPrompts: boolean
-  canManagePrompts: boolean
-  canManageLanguages: boolean
-  canManageConfig: boolean
-  canAddSubtitles: boolean
-  canStopSubtitles: boolean
-  canDeleteSubtitles: boolean
-  canManageSchedules: boolean
-  canViewLogs: boolean
-  pauseWorker: boolean
-  downloadSubtitles: boolean
-  canViewStats: boolean
-  canManageSecret: boolean
-  canManageLibraryPath: boolean
-  canManageRootLibraryPath: boolean
-
+  hasSeenTutorial: boolean
+  selectedThemeId: number
+  showPosters: number
+  language: string | null
   createdAt: string
   updatedAt: string
   deletedAt: string | null
+}
+
+export type DBRole = {
+  id: number
+  name: string
+  level: number
+  description: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBPermission = {
+  id: number
+  key: string
+  label: string
+  description: string
+  category: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBRolePermission = {
+  id: number
+  roleId: number
+  permissionId: number
+  createdAt: string
+}
+
+export type DBUserRole = {
+  id: number
+  userId: number
+  roleId: number
+  createdAt: string
 }
 
 export type DBUserSession = {
@@ -179,12 +195,22 @@ export type DBConfig = {
   sessionTimeoutMinutes: number
   selectedThemeId: number
   rootLibraryPath: string | null
+  defaultLanguage: string
   createdAt: string
   updatedAt: string
 }
 
 export type DBConfigTranslationLanguage = {
   id: number
+  languageId: number
+  orderNumber: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type DBUserConfigTranslationLanguage = {
+  id: number
+  userId: number
   languageId: number
   orderNumber: number
   createdAt: string
@@ -228,7 +254,7 @@ export type DBMediaItem = {
   theMovieDbId: string | null
   isAnime: boolean | null
   genres: string | null
-  posterBase64: string | null
+  mediaItemPhotoPath: string | null
   createdAt: string
   updatedAt: string
 }
@@ -345,6 +371,7 @@ export type DBLibraryPath = {
   lastRunAt: string | null
   state: "idle" | "scanning" | "error"
   type: "movie" | "series"
+  initialScanCompleted: boolean
   createdAt: string
   updatedAt: string
 }

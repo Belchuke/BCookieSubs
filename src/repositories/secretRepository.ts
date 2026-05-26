@@ -1,7 +1,7 @@
 import Database from "better-sqlite3"
 import { DBUser, DBSecret } from "../types/dbTypes"
 import { DefaultResponse, secretResponse } from "../types/modelTypes"
-import { apiKey, ollamaApiSecretKey, theMovieDBSecretKey, openAIApiSecretKey, anthropicApiSecretKey } from "../setup"
+import { ollamaApiSecretKey, theMovieDBSecretKey, openAIApiSecretKey, anthropicApiSecretKey } from "../constants/keys"
 import { decryptKey } from "./shared"
 import { userHasPermission } from "./userRepository"
 
@@ -21,8 +21,8 @@ export const getSecrets = (
   db: Database.Database,
   user: DBUser,
 ): { secrets: secretResponse[] | null } & DefaultResponse => {
-  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageConfig")
-  if (!perm) return { success: false, msg: "User does not have permission to manage config", secrets: null }
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageSecrets")
+  if (!perm) return { success: false, msg: "Permission denied", secrets: null }
 
   const secrets = db.prepare(`SELECT * FROM secret`).all() as DBSecret[]
   const decryptedSecrets = secrets.map((s) => {
@@ -58,11 +58,6 @@ export const getListOfSecretsToAdd = () => {
       secretName: anthropicApiSecretKey,
       displayName: "Anthropic API Key",
       description: "API key for Anthropic (Claude) models",
-    },
-    {
-      secretName: apiKey,
-      displayName: "API Key",
-      description: "API key for authenticating to this subtitle management system (used by external tools/scripts)",
     },
   ]
 }

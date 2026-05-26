@@ -1,161 +1,127 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<%= locale %>">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Setup — Configure Models</title>
+  <title>Setup — Default Languages</title>
   <%-  include('../theme-vars.ejs') %>
   <link rel="icon" type="image/png" href="/images/icon.png">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<div class="setup-page">
+<div class="setup-page" style="max-width:680px">
   <div class="setup-steps">
     <span class="step done">✓</span>
     <span class="step-line done"></span>
     <span class="step done">✓</span>
     <span class="step-line done"></span>
     <span class="step active">3</span>
+    <span class="step-line"></span>
+    <span class="step">4</span>
+    <span class="step-line"></span>
+    <span class="step">5</span>
   </div>
-  <h1>Configure Model Roles</h1>
-  <p class="page-subtitle">Assign roles to your installed models. At least one model must have the <strong>Translation</strong> role to continue.</p>
+  <h1><%= __('setup.step3.title') %></h1>
+  <p class="page-subtitle"><%= __('setup.step3.subtitle') %></p>
 
   <% if (locals.error) { %>
     <div class="alert alert-error"><%= error %></div>
   <% } %>
-  <% if (locals.toast === 'success') { %>
-    <div class="alert alert-success"><%= msg %></div>
-  <% } %>
-  <% if (locals.ollamaError) { %>
-    <div class="alert alert-warning"><%= ollamaError %></div>
-  <% } %>
 
-  <div class="two-col">
-    
-    <div class="card">
-      <div class="card-header">
-        <h2>Available in Ollama</h2>
-        <small class="text-dim"><%= ollamaModels.length %> model(s)</small>
-      </div>
-      <% if (ollamaModels.length === 0) { %>
-        <p class="empty-state">No models found in Ollama.</p>
-      <% } else { %>
-        <div class="model-list">
-          <% ollamaModels.forEach(function(m) { %>
-            <% var alreadyAdded = dbModels.some(function(d) { return d.modelName === m.model }) %>
-            <% if (alreadyAdded) { %>
-              <div class="model-row">
-                <code class="model-name"><%= m.model %></code>
-                <span class="badge badge-success">Added</span>
-              </div>
-            <% } else { %>
-              <form method="POST" action="/setup/3/add" class="model-row" style="flex-wrap:wrap;gap:.5rem">
-                <input type="hidden" name="provider" value="ollama">
-                <code class="model-name" style="flex:1"><%= m.model %></code>
-                <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
-                  <label class="checkbox-label" style="font-size:.8rem">
-                    <input type="checkbox" name="roles" value="translation" checked> Translation
-                  </label>
-                  <label class="checkbox-label" style="font-size:.8rem">
-                    <input type="checkbox" name="roles" value="judge"> Judge
-                  </label>
-                  <label class="checkbox-label" style="font-size:.8rem">
-                    <input type="checkbox" name="roles" value="nameFormatter"> Name Fmt
-                  </label>
-                  <input type="hidden" name="modelName" value="<%= m.model %>">
-                  <button type="submit" class="btn btn-sm btn-primary">+ Add</button>
-                </div>
-              </form>
-            <% } %>
-          <% }) %>
-        </div>
-      <% } %>
+  <div class="card" style="margin-bottom:1.5rem">
+    <div class="card-header">
+      <h2><%= __('setup.step3.selectedLangs') %></h2>
+      <small class="text-dim" id="selected-count"><%= __('setup.step3.selectedCount').replace('{{count}}', 0) %></small>
     </div>
 
-    
-    <div class="card">
-      <div class="card-header">
-        <h2>Configured Models</h2>
-        <small class="text-dim"><%= dbModels.length %> model(s)</small>
-      </div>
-      <% if (dbModels.length === 0) { %>
-        <p class="empty-state">No models added yet. Install models from the left panel or add manually below.</p>
-      <% } else { %>
-        <div class="model-list">
-          <% dbModels.forEach(function(m) { %>
-            <div class="model-row" style="flex-wrap:wrap;gap:.5rem;align-items:flex-start">
-              <div class="model-info" style="min-width:120px;flex:1">
-                <span class="model-display-name"><%= m.name %></span>
-                <code class="model-name text-dim"><%= m.modelName %></code>
-              </div>
-              <div style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">
-                <% var roleNames = (m.roles || []).map(function(r){ return r.role }) %>
-                <%
-                  var roleDefs = [
-                    { key: 'translation', label: 'Translation', cls: 'badge-info' },
-                    { key: 'judge', label: 'Judge', cls: 'badge-warning' },
-                    { key: 'nameFormatter', label: 'Name', cls: 'badge-success' }
-                  ]
-                %>
-                <% roleDefs.forEach(function(rd) { %>
-                  <% var hasRole = roleNames.includes(rd.key) %>
-                  <form method="POST" action="/setup/3/role/<%= m.id %>" style="display:inline">
-                    <input type="hidden" name="role" value="<%= rd.key %>">
-                    <input type="hidden" name="action" value="<%= hasRole ? 'remove' : 'add' %>">
-                    <button type="submit" class="btn btn-sm <%= hasRole ? 'btn-primary' : 'btn-secondary' %>"
-                            style="font-size:.75rem;padding:.2rem .5rem">
-                      <% if (hasRole) { %>✓ <% } %><%= rd.label %>
-                    </button>
-                  </form>
-                <% }) %>
-              </div>
-            </div>
+    <div id="selected-list" style="display:flex;flex-direction:column;gap:0"></div>
+
+    <p id="empty-msg" class="empty-state"><%= __('setup.step3.empty') %></p>
+
+    <div style="display:flex;gap:.5rem;align-items:flex-end;padding:.75rem 0 0;margin-top:.5rem" id="add-row">
+      <div class="field" style="flex:1;margin:0">
+        <label for="lang-select"><%= __('setup.step3.addLang') %></label>
+        <select id="lang-select">
+          <% languages.forEach(function(l) { %>
+            <option value="<%= l.id %>" data-name="<%= l.name %>" data-flag="<%= l.flag || '' %>">
+              <%= l.flag ? l.flag + ' ' : '' %><%= l.name %>
+            </option>
           <% }) %>
-        </div>
-      <% } %>
+        </select>
+      </div>
+      <button type="button" class="btn btn-primary" id="add-lang-btn">Add</button>
     </div>
   </div>
 
-  
-  <div class="card" style="margin-top:1.5rem">
-    <div class="card-header"><h2>Add Model Manually</h2></div>
-    <form method="POST" action="/setup/3/add" style="padding:.75rem 1rem">
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.75rem;align-items:end">
-        <div class="field" style="margin:0">
-          <label>Provider</label>
-          <select name="provider">
-            <option value="ollama">Ollama (local)</option>
-            <option value="ollama cloud">Ollama Cloud</option>
-            <option value="chatgpt">ChatGPT</option>
-            <option value="claude">Claude</option>
-            <option value="custom">Custom</option>
-          </select>
-        </div>
-        <div class="field" style="margin:0">
-          <label>Model Name</label>
-          <input type="text" name="modelName" placeholder="e.g. llama3.1:8b" required>
-        </div>
-        <div class="field" style="margin:0">
-          <label>Display Name <span class="hint">(optional)</span></label>
-          <input type="text" name="name" placeholder="My Model">
-        </div>
-      </div>
-      <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-top:.75rem">
-        <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-          <label class="checkbox-label" style="font-size:.85rem"><input type="checkbox" name="roles" value="translation" checked> Translation</label>
-          <label class="checkbox-label" style="font-size:.85rem"><input type="checkbox" name="roles" value="judge"> Judge</label>
-          <label class="checkbox-label" style="font-size:.85rem"><input type="checkbox" name="roles" value="nameFormatter"> Name Formatter</label>
-        </div>
-        <button type="submit" class="btn btn-primary" style="margin-left:auto">+ Add</button>
-      </div>
-    </form>
-  </div>
-
-  <div class="setup-actions">
-    <form method="POST" action="/setup/3/next">
-      <button type="submit" class="btn btn-primary">Finish Setup →</button>
-    </form>
-  </div>
+  <form method="POST" action="/setup/3/next" id="lang-form">
+    <div id="hidden-inputs"></div>
+    <div class="setup-actions">
+      <button type="submit" class="btn btn-primary" id="continue-btn" disabled title="<%= __('setup.step3.minOneError') %>">
+        <%= __('setup.step3.submit') %> →
+      </button>
+    </div>
+  </form>
 </div>
+
+<script>
+  var selected = []; // [{id, name, flag}]
+
+  var selectedList = document.getElementById('selected-list');
+  var emptyMsg = document.getElementById('empty-msg');
+  var selectedCount = document.getElementById('selected-count');
+  var hiddenInputs = document.getElementById('hidden-inputs');
+  var continueBtn = document.getElementById('continue-btn');
+  var langSelect = document.getElementById('lang-select');
+
+  function render() {
+    selectedList.innerHTML = '';
+    hiddenInputs.innerHTML = '';
+
+    emptyMsg.style.display = selected.length === 0 ? '' : 'none';
+    selectedCount.textContent = selected.length + ' selected';
+    continueBtn.disabled = selected.length === 0;
+    if (selected.length > 0) continueBtn.removeAttribute('title');
+    else continueBtn.setAttribute('title', 'Add at least one language');
+
+    selected.forEach(function(lang, idx) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border)';
+
+      row.innerHTML =
+        '<span class="text-dim" style="width:1.5rem;text-align:right;font-size:.8rem">' + (idx + 1) + '.</span>' +
+        '<span style="flex:1">' + escHtml((lang.flag ? lang.flag + ' ' : '') + lang.name) + '</span>' +
+        '<button type="button" class="btn btn-sm btn-danger" data-idx="' + idx + '">✕</button>';
+        
+      selectedList.appendChild(row);
+
+      var inp = document.createElement('input');
+      inp.type = 'hidden';
+      inp.name = 'languageId';
+      inp.value = lang.id;
+      hiddenInputs.appendChild(inp);
+    });
+
+    selectedList.querySelectorAll('[data-idx]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        selected.splice(parseInt(btn.dataset.idx), 1);
+        render();
+      });
+    });
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  document.getElementById('add-lang-btn').addEventListener('click', function() {
+    var opt = langSelect.options[langSelect.selectedIndex];
+    var id = parseInt(opt.value);
+    if (selected.some(function(l){ return l.id === id })) return;
+    selected.push({ id: id, name: opt.dataset.name, flag: opt.dataset.flag });
+    render();
+  });
+
+  render();
+</script>
 </body>
 </html>

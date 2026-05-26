@@ -1,15 +1,17 @@
 import { Router } from "express"
 import multer from "multer"
+import path from "path"
 import Database from "better-sqlite3"
 import { getConfig, getLogs } from "../repositories/configRepository"
-import { getConfigTranslationLanguages, getLanguages } from "../repositories/languageRepository"
-import { createMediaItem, getMediaItemById } from "../repositories/mediaRepository"
+import { getConfigTranslationLanguages, getLanguages, getUserConfigTranslationLanguages } from "../repositories/languageRepository"
+import { createMediaItem, getMediaItemById, MEDIA_PHOTOS_DIR } from "../repositories/mediaRepository"
 import { getSubtitleItemMediaItemFromPrompt } from "../repositories/promptFormattingRepository"
-import { cancelSubtitle, cancelSubtitleJob, createSubtitleTask, getChunksByJobId, getDashboardData, getExportFileName, getSubtitleById, getSubtitleJobById, getSubtitleJobsBySubtitleId, hideSubtitle, moveSeriesInQueue, moveSubtitleInQueue, reorderSubtitles, retryFailedChunk, softDeleteSubtitle } from "../repositories/subtitleRepository"
+import { cancelSubtitle, cancelSubtitleJob, createSubtitleTask, getChunksByJobId, getDashboardData, getExportFileName, getSubtitleById, getSubtitleJobById, getSubtitleJobsBySubtitleId, hideSubtitle, moveSeriesInQueue, moveSubtitleInQueue, reorderSubtitles, resetChunk, retryFailedChunk, softDeleteSubtitle } from "../repositories/subtitleRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
 import { requireAuth } from "../middleware/auth"
+import { requirePermission } from "../services/permissionService"
 import { NameFormatterResult } from "../types/modelTypes"
-import { pauseWorker, resumeWorker, isWorkerPaused } from "../task"
+import { pauseWorker, resumeWorker, isWorkerPaused } from "../tasks/translateTask"
 import { addCreditToSrt } from "../services/subtitleExportService"
 
 const upload = multer({ storage: multer.memoryStorage() })
@@ -22,20 +24,19 @@ export function dashboardRouter(db: Database.Database) {
     const config = getConfig(db)
     const languages = getLanguages(db)
     const configLangs = getConfigTranslationLanguages(db)
-    const { subtitles, jobs, mediaItems, languageMap } = getDashboardData(db)
-    const theme = getActiveTheme(db)
+    const theme = getActiveTheme(db, res.locals.user!.id)
+    const user = res.locals.user!
+    const userConfigLangs = getUserConfigTranslationLanguages(db, user.id)
 
     res.render("dashboard", {
-      user: res.locals.user,
+      user,
       activeNav: "dashboard",
       config,
       languages,
       configLangs,
-      subtitles,
-      jobs,
-      mediaItems,
-      languageMap,
+      userConfigLangs,
       workerPaused: isWorkerPaused(),
+      showPosters: config.showPosters && user.showPosters !== 0,
       toast: req.query.toast ?? null,
       msg: req.query.msg ?? null,
       theme,
@@ -45,26 +46,22 @@ export function dashboardRouter(db: Database.Database) {
   
   router.get("/poll", requireAuth, (_req, res) => {
     try {
-      const { subtitles, jobs, mediaItems, languageMap } = getDashboardData(db)
+      const { subtitles, languageMap } = getDashboardData(db)
       const { logs } = getLogs(db, res.locals.user!, 20)
-      res.json({ subtitles, jobs, mediaItems, languageMap, logs: logs ?? [], workerPaused: isWorkerPaused() })
+      res.json({ subtitles, languageMap, logs: logs ?? [], workerPaused: isWorkerPaused() })
     } catch (e) {
       res.status(500).json({ error: String(e) })
     }
   })
 
   
-  router.post("/worker/pause", requireAuth, (_req, res) => {
-    const u = res.locals.user!
-    if (!u.isAdmin && !u.pauseWorker) return res.status(403).json({ success: false, msg: "Permission denied" })
-    pauseWorker(db, u.username)
+  router.post("/worker/pause", requireAuth, requirePermission("canManageWorker"), (_req, res) => {
+    pauseWorker(db, res.locals.user!.username)
     res.json({ success: true, workerPaused: true })
   })
 
-  router.post("/worker/resume", requireAuth, (_req, res) => {
-    const u = res.locals.user!
-    if (!u.isAdmin && !u.pauseWorker) return res.status(403).json({ success: false, msg: "Permission denied" })
-    resumeWorker(db, u.username)
+  router.post("/worker/resume", requireAuth, requirePermission("canManageWorker"), (_req, res) => {
+    resumeWorker(db, res.locals.user!.username)
     res.json({ success: true, workerPaused: false })
   })
 
@@ -104,7 +101,7 @@ export function dashboardRouter(db: Database.Database) {
       mediaType,
       mediaYear,
       theMovieDbId,
-      posterBase64,
+      posterUrl,
       originalTitle,
       isAnime,
       genres,
@@ -119,7 +116,7 @@ export function dashboardRouter(db: Database.Database) {
       mediaType?: string
       mediaYear?: string
       theMovieDbId?: string
-      posterBase64?: string
+      posterUrl?: string
       originalTitle?: string
       isAnime?: string
       genres?: string
@@ -161,7 +158,7 @@ export function dashboardRouter(db: Database.Database) {
     } else if (mediaTitle) {
       const type = (mediaType as "movie" | "series" | "unknown") || "unknown"
       const year = mediaYear ? parseInt(mediaYear) : null
-      const result = createMediaItem(
+      const result = await createMediaItem(
         db,
         res.locals.user!,
         mediaTitle,
@@ -171,7 +168,7 @@ export function dashboardRouter(db: Database.Database) {
         isAnime === "1",
         genres || null,
         theMovieDbId || null,
-        posterBase64 || null,
+        posterUrl || null,
       )
       if (result.success && result.mediaItem) {
         resolvedMediaItemId = result.mediaItem.id
@@ -269,12 +266,9 @@ export function dashboardRouter(db: Database.Database) {
   
   router.get("/poster/:mediaItemId", requireAuth, (req, res) => {
     const mediaItem = getMediaItemById(db, parseInt(String(req.params.mediaItemId)))
-    if (!mediaItem?.posterBase64) return res.status(404).end()
-    const match = mediaItem.posterBase64.match(/^data:([^;]+);base64,(.+)$/)
-    if (!match) return res.status(404).end()
-    res.setHeader("Content-Type", match[1])
+    if (!mediaItem?.mediaItemPhotoPath) return res.status(404).end()
     res.setHeader("Cache-Control", "public, max-age=86400")
-    res.send(Buffer.from(match[2], "base64"))
+    res.sendFile(path.join(MEDIA_PHOTOS_DIR, mediaItem.mediaItemPhotoPath))
   })
 
   
@@ -340,10 +334,7 @@ export function dashboardRouter(db: Database.Database) {
   router.post("/reset-chunk/:chunkId", requireAuth, (req, res) => {
     try {
       const chunkId = parseInt(String(req.params.chunkId))
-      db.prepare(`DELETE FROM subtitleChunkCandidate WHERE subtitleChunkId = ?`).run(chunkId)
-      db.prepare(
-        `UPDATE subtitleChunk SET status = 'queued', retryCount = 0, startedAt = NULL, finishedAt = NULL, errorMessage = NULL, selectedCandidateId = NULL, updatedAt = datetime('now') WHERE id = ?`,
-      ).run(chunkId)
+      resetChunk(db, chunkId)
       res.json({ success: true })
     } catch (e) {
       res.status(500).json({ error: String(e) })
@@ -351,9 +342,7 @@ export function dashboardRouter(db: Database.Database) {
   })
 
   
-  router.get("/download/:jobId", requireAuth, (req, res) => {
-    const u = res.locals.user!
-    if (!u.isAdmin && !u.downloadSubtitles) return res.status(403).send("Permission denied")
+  router.get("/download/:jobId", requireAuth, requirePermission("canDownloadFinishedSubtitles"), (req, res) => {
     const job = getSubtitleJobById(db, parseInt(String(req.params.jobId)))
     if (!job || !job.translatedText) {
       return res.status(404).send("Translated file not available")

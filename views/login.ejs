@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<%= locale %>">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login — BCookieSubs</title>
+  <title><%= __('login.title') %> — BCookieSubs</title>
    <%-  include('theme-vars.ejs') %>
   <link rel="icon" type="image/png" href="/images/icon.png">
   <link rel="stylesheet" href="/style.css">
@@ -22,14 +22,14 @@
 
     <form method="POST" action="/login<%= typeof req !== 'undefined' && req.query.next ? '?next=' + encodeURIComponent(req.query.next) : '' %>">
       <div class="field">
-        <label for="username">Username</label>
+        <label for="username"><%= __('login.username') %></label>
         <input type="text" id="username" name="username" autocomplete="username" autofocus required>
       </div>
       <div class="field">
-        <label for="password">Password</label>
+        <label for="password"><%= __('login.password') %></label>
         <input type="password" id="password" name="password" autocomplete="current-password" required>
       </div>
-      <button type="submit" class="btn btn-primary btn-full">Sign in</button>
+      <button type="submit" class="btn btn-primary btn-full"><%= __('login.signIn') %></button>
     </form>
   </div>
 </body>

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Setup — Configure Models</title>
+  <%-  include('../theme-vars.ejs') %>
+  <link rel="icon" type="image/png" href="/images/icon.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="setup-page">
+  <div class="setup-steps">
+    <span class="step done">✓</span>
+    <span class="step-line done"></span>
+    <span class="step done">✓</span>
+    <span class="step-line done"></span>
+    <span class="step done">✓</span>
+    <span class="step-line done"></span>
+    <span class="step done">✓</span>
+    <span class="step-line done"></span>
+    <span class="step active">5</span>
+  </div>
+  <h1><%= __('setup.step5.title') %></h1>
+  <p class="page-subtitle"><%= __('setup.step5.subtitle') %></p>
+
+  <% if (locals.error) { %>
+    <div class="alert alert-error"><%= error %></div>
+  <% } %>
+  <% if (locals.toast === 'success') { %>
+    <div class="alert alert-success"><%= msg %></div>
+  <% } %>
+  <% if (locals.ollamaError) { %>
+    <div class="alert alert-warning"><%= ollamaError %></div>
+  <% } %>
+
+  <div class="two-col">
+
+    <div class="card">
+      <div class="card-header">
+        <h2><%= __('setup.step5.ollamaAvailableTitle') %></h2>
+        <small class="text-dim"><%= ollamaModels.length %> <%= __('common.modelCount') %></small>
+      </div>
+      <% if (ollamaModels.length === 0) { %>
+        <p class="empty-state"><%= __('setup.step5.ollamaEmpty') %></p>
+      <% } else { %>
+        <div class="model-list">
+          <% ollamaModels.forEach(function(m) { %>
+            <% var alreadyAdded = dbModels.some(function(d) { return d.modelName === m.model }) %>
+            <% if (alreadyAdded) { %>
+              <div class="model-row">
+                <code class="model-name"><%= m.model %></code>
+                <span class="badge badge-success">Added</span>
+              </div>
+            <% } else { %>
+              <form method="POST" action="/setup/5/add" class="model-row" style="flex-wrap:wrap;gap:.5rem">
+                <input type="hidden" name="provider" value="ollama">
+                <code class="model-name" style="flex:1"><%= m.model %></code>
+                <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
+                  <label class="checkbox-label" style="font-size:.8rem">
+                    <input type="checkbox" name="roles" value="translation" checked> Translation
+                  </label>
+                  <label class="checkbox-label" style="font-size:.8rem">
+                    <input type="checkbox" name="roles" value="judge"> Judge
+                  </label>
+                  <label class="checkbox-label" style="font-size:.8rem">
+                    <input type="checkbox" name="roles" value="nameFormatter"> Name Fmt
+                  </label>
+                  <input type="hidden" name="modelName" value="<%= m.model %>">
+                  <button type="submit" class="btn btn-sm btn-primary">+ Add</button>
+                </div>
+              </form>
+            <% } %>
+          <% }) %>
+        </div>
+      <% } %>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2><%= __('setup.step5.configuredModelsTitle') %></h2>
+        <small class="text-dim"><%= dbModels.length %> <%= __('common.modelCount') %></small>
+      </div>
+      <% if (dbModels.length === 0) { %>
+        <p class="empty-state"><%= __('setup.step5.configuredEmpty') %></p>
+      <% } else { %>
+        <div class="model-list">
+          <% dbModels.forEach(function(m) { %>
+            <div class="model-row" style="flex-wrap:wrap;gap:.5rem;align-items:flex-start">
+              <div class="model-info" style="min-width:120px;flex:1">
+                <span class="model-display-name"><%= m.name %></span>
+                <code class="model-name text-dim"><%= m.modelName %></code>
+              </div>
+              <div style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">
+                <% var roleNames = (m.roles || []).map(function(r){ return r.role }) %>
+                <%
+                  var roleDefs = [
+                    { key: 'translation', label: 'Translation', cls: 'badge-info' },
+                    { key: 'judge', label: 'Judge', cls: 'badge-warning' },
+                    { key: 'nameFormatter', label: 'Name', cls: 'badge-success' }
+                  ]
+                %>
+                <% roleDefs.forEach(function(rd) { %>
+                  <% var hasRole = roleNames.includes(rd.key) %>
+                  <form method="POST" action="/setup/5/role/<%= m.id %>" style="display:inline">
+                    <input type="hidden" name="role" value="<%= rd.key %>">
+                    <input type="hidden" name="action" value="<%= hasRole ? 'remove' : 'add' %>">
+                    <button type="submit" class="btn btn-sm <%= hasRole ? 'btn-primary' : 'btn-secondary' %>"
+                            style="font-size:.75rem;padding:.2rem .5rem">
+                      <% if (hasRole) { %>✓ <% } %><%= rd.label %>
+                    </button>
+                  </form>
+                <% }) %>
+              </div>
+            </div>
+          <% }) %>
+        </div>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:1.5rem">
+    <div class="card-header"><h2><%= __('setup.step5.manualAddTitle') %></h2></div>
+    <form method="POST" action="/setup/5/add" style="padding:.75rem 1rem">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.75rem;align-items:end">
+        <div class="field" style="margin:0">
+          <label><%= __('common.provider') %></label>
+          <select name="provider">
+            <option value="ollama">Ollama (local)</option>
+            <option value="ollama cloud">Ollama Cloud</option>
+            <option value="chatgpt">ChatGPT</option>
+            <option value="claude">Claude</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div class="field" style="margin:0">
+          <label><%= __('setup.step5.modelName') %></label>
+          <input type="text" name="modelName" placeholder="e.g. llama3.1:8b" required>
+        </div>
+        <div class="field" style="margin:0">
+          <label><%= __('setup.step5.displayName') %> <span class="hint"><%= __('setup.step5.displayNameHint') %></span></label>
+          <input type="text" name="name" placeholder="My Model">
+        </div>
+      </div>
+      <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-top:.75rem">
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+          <label class="checkbox-label" style="font-size:.85rem"><input type="checkbox" name="roles" value="translation" checked> Translation</label>
+          <label class="checkbox-label" style="font-size:.85rem"><input type="checkbox" name="roles" value="judge"> Judge</label>
+          <label class="checkbox-label" style="font-size:.85rem"><input type="checkbox" name="roles" value="nameFormatter"> Name Formatter</label>
+        </div>
+        <button type="submit" class="btn btn-primary" style="margin-left:auto">+ Add</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="setup-actions">
+    <form method="POST" action="/setup/5/next">
+      <button type="submit" class="btn btn-primary"><%= __('setup.step5.finishSubmit') %></button>
+    </form>
+  </div>
+</div>
+</body>
+</html>

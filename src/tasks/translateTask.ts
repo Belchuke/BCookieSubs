@@ -1,23 +1,23 @@
 import Database from "better-sqlite3"
 import SrtParser2 from "srt-parser-2"
-import { getConfig } from "./repositories/configRepository"
-import { getLanguageById } from "./repositories/languageRepository"
-import { createLog, deleteLogsJob } from "./repositories/logRepository"
-import { getMediaItemById } from "./repositories/mediaRepository"
-import { getActiveModelsByRole } from "./repositories/modelRepository"
-import { sendPrompt } from "./repositories/ollamaRepository"
+import { getConfig } from "../repositories/configRepository"
+import { getLanguageById } from "../repositories/languageRepository"
+import { createLog, deleteLogsJob } from "../repositories/logRepository"
+import { getMediaItemById } from "../repositories/mediaRepository"
+import { getActiveModelsByRole } from "../repositories/modelRepository"
+import { sendPrompt } from "../repositories/ollamaRepository"
 import {
   formatJudgePrompt,
   formatTranslationPrompt,
   insertJudgeEvaluation,
-} from "./repositories/promptFormattingRepository"
+} from "../repositories/promptFormattingRepository"
 import {
   createOrUpdatePromptStat,
   getJudgePromptVersion,
   getTranslationPromptVersions,
-} from "./repositories/promptRepository"
-import { getShouldRunNowBySchedule } from "./repositories/scheduleRepository"
-import { parseLLMResponse, srtFormatterForModel, validateChunkIntegrity } from "./repositories/shared"
+} from "../repositories/promptRepository"
+import { getShouldRunNowBySchedule } from "../repositories/scheduleRepository"
+import { parseLLMResponse, sleep, srtFormatterForModel, validateChunkIntegrity } from "../repositories/shared"
 import {
   assembleAndFinishSubtitleJob,
   createChunkCandidate,
@@ -34,16 +34,9 @@ import {
   updateSubtitleJobProgress,
   updateSubtitleJobStatus,
   updateSubtitleStatus,
-} from "./repositories/subtitleRepository"
-import { DBModel, DBSubtitleChunk, DBSubtitleJob, DBSubtitle, DBLanguage } from "./types/dbTypes"
-
-const TASK_INTERVAL_MS = 2000
-const IDLE_INTERVAL_MS = 5000
-const MODEL_REQUEST_TIMEOUT_MS = 300_000
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
+} from "../repositories/subtitleRepository"
+import { DBModel, DBSubtitleChunk, DBSubtitleJob, DBSubtitle, DBLanguage } from "../types/dbTypes"
+import { IDLE_INTERVAL_MS, MODEL_REQUEST_TIMEOUT_MS, TASK_INTERVAL_MS } from "../constants/timer"
 
 type TranslationErrorCode = "timeout" | "cancelled" | "rate_limited" | "model_error" | "validation_error"
 
@@ -348,6 +341,21 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
 
   for (const model of translationModels) {
     if (workerPaused) return
+
+    const modelStillActive = db.prepare(`SELECT id FROM model WHERE id = ? AND deletedAt IS NULL`).get(model.id)
+    if (!modelStillActive) {
+      createLog(
+        db,
+        "warning",
+        "chunk",
+        chunk.id,
+        `Translation candidate skipped because model was deleted during processing: modelId=${model.id}, chunkId=${chunk.id}`,
+        { modelId: model.id, modelName: model.name, chunkId: chunk.id, jobId: chunk.subtitleJobId },
+      )
+      console.log(`[worker] Skipping deleted model ${model.name} (id=${model.id}) for chunk ${chunk.id}`)
+      continue
+    }
+
     for (const promptVersion of translationPromptVersions) {
       let candidateAttempts = 0
 
@@ -656,39 +664,59 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
 
   const durationMs = new Date().getTime() - startTime.getTime()
 
-  markCandidateSelected(db, winnerCandidate.candidateId)
-  setSelectedCandidateForChunk(
-    db,
-    chunk.id,
-    winnerCandidate.candidateId,
-    winnerCandidate.judgeModelId,
-    winnerCandidate.judgeReason,
-    durationMs,
-  )
-  if (winnerCandidate.judgePromptText) {
-    insertJudgeEvaluation(
+  try {
+    markCandidateSelected(db, winnerCandidate.candidateId)
+    setSelectedCandidateForChunk(
       db,
       chunk.id,
-      winnerCandidate.judgeModelId,
-      winnerCandidate.judgePromptText,
       winnerCandidate.candidateId,
+      winnerCandidate.judgeModelId,
       winnerCandidate.judgeReason,
+      durationMs,
     )
-  }
+    if (winnerCandidate.judgePromptText) {
+      insertJudgeEvaluation(
+        db,
+        chunk.id,
+        winnerCandidate.judgeModelId,
+        winnerCandidate.judgePromptText,
+        winnerCandidate.candidateId,
+        winnerCandidate.judgeReason,
+      )
+    }
 
-  const winner = validCandidates.find((c) => c.candidateId === winnerCandidate.candidateId)
-  if (winner) {
-    createOrUpdatePromptStat(
+    const winner = validCandidates.find((c) => c.candidateId === winnerCandidate.candidateId)
+    if (winner) {
+      const winnerModelExists = db.prepare(`SELECT id FROM model WHERE id = ?`).get(winner.modelId)
+      if (winnerModelExists) {
+        createOrUpdatePromptStat(
+          db,
+          winner.promptId,
+          winner.promptVersionId,
+          winner.modelId,
+          targetLang.id,
+          false,
+          false,
+          false,
+          true,
+        )
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    createLog(
       db,
-      winner.promptId,
-      winner.promptVersionId,
-      winner.modelId,
-      targetLang.id,
-      false,
-      false,
-      false,
-      true,
+      "warning",
+      "chunk",
+      chunk.id,
+      `Chunk ${chunk.chunkIndex + 1} finalization skipped due to error (likely deleted model): ${msg.slice(0, 200)}`,
+      {
+        chunkId: chunk.id,
+        jobId: job.id,
+        error: msg,
+      },
     )
+    console.warn(`[worker] Chunk ${chunk.id} finalization error (possibly deleted model): ${msg.slice(0, 200)}`)
   }
 
   createLog(

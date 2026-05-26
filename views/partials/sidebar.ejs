@@ -11,90 +11,100 @@
 
   <ul class="sidebar-nav">
     <li class="<%= activeNav === 'dashboard' ? 'active' : '' %>">
-      <a href="/dashboard" title="Dashboard">
-        <i class="fa-solid fa-gauge"></i>
-        <span class="sidebar-label">Dashboard</span>
+      <a href="/dashboard" title="<%= __('nav.home') %>">
+        <i class="fa-solid fa-house"></i>
+        <span class="sidebar-label"><%= __('nav.home') %></span>
+      </a>
+    </li>
+    <li class="<%= activeNav === 'library-requests' ? 'active' : '' %>">
+      <a href="/library-requests" title="<%= __('nav.libraryRequest') %>">
+        <i class="fa-solid fa-clapperboard"></i>
+        <span class="sidebar-label"><%= __('nav.libraryRequest') %></span>
       </a>
     </li>
     <li class="<%= activeNav === 'translated' ? 'active' : '' %>">
-      <a href="/translated" title="Translated">
+      <a href="/translated" title="<%= __('nav.translated') %>">
         <i class="fa-solid fa-download"></i>
-        <span class="sidebar-label">Translated</span>
+        <span class="sidebar-label"><%= __('nav.translated') %></span>
       </a>
     </li>
-    <% if (user.isAdmin || user.canViewModels) { %>
+    <% if (can('canViewModelsPage')) { %>
     <li class="<%= activeNav === 'models' ? 'active' : '' %>">
-      <a href="/models" title="Models">
+      <a href="/models" title="<%= __('nav.models') %>">
         <i class="fa-solid fa-robot"></i>
-        <span class="sidebar-label">Models</span>
+        <span class="sidebar-label"><%= __('nav.models') %></span>
       </a>
     </li>
     <% } %>
-    <% if (user.isAdmin || user.canViewPrompts) { %>
+    <% if (can('canViewPromptsPage')) { %>
     <li class="<%= activeNav === 'prompts' ? 'active' : '' %>">
-      <a href="/prompts" title="Prompts">
+      <a href="/prompts" title="<%= __('nav.prompts') %>">
         <i class="fa-solid fa-message"></i>
-        <span class="sidebar-label">Prompts</span>
+        <span class="sidebar-label"><%= __('nav.prompts') %></span>
       </a>
     </li>
     <% } %>
+    <% if (can('canViewStatistics')) { %>
     <li class="<%= activeNav === 'stats' ? 'active' : '' %>">
-      <a href="/stats" title="Stats">
-        <i class="fa-solid fa-chart-bar"></i>
-        <span class="sidebar-label">Stats</span>
+      <a href="/stats" title="<%= __('nav.statistics') %>">
+        <i class="fa-solid fa-chart-line"></i>
+        <span class="sidebar-label"><%= __('nav.statistics') %></span>
       </a>
     </li>
-    <% if (user.isAdmin || user.canManageUsers) { %>
+    <% } %>
+    <% if (can('canViewUsers')) { %>
     <li class="<%= activeNav === 'users' ? 'active' : '' %>">
-      <a href="/users" title="Users">
+      <a href="/users" title="<%= __('nav.users') %>">
         <i class="fa-solid fa-users"></i>
-        <span class="sidebar-label">Users</span>
+        <span class="sidebar-label"><%= __('nav.users') %></span>
       </a>
     </li>
     <% } %>
-    <% if (locals.appConfig && locals.appConfig.scanLibraryPaths && (user.isAdmin || user.canManageLibraryPath)) { %>
+    <% if (locals.appConfig && locals.appConfig.scanLibraryPaths && can('canViewLibraryPathsPage')) { %>
     <li class="<%= activeNav === 'library-paths' ? 'active' : '' %>">
-      <a href="/library-paths" title="Library Paths">
+      <a href="/library-paths" title="<%= __('nav.libraryScan') %>">
         <i class="fa-solid fa-folder-open"></i>
-        <span class="sidebar-label">Library Paths</span>
+        <span class="sidebar-label"><%= __('nav.libraryScan') %></span>
       </a>
     </li>
     <% } %>
-    <% if (user.isAdmin || user.canManageConfig) { %>
+    <% if (can('canViewSettingsPage')) { %>
     <li class="<%= activeNav === 'config' ? 'active' : '' %>">
-      <a href="/config" title="Settings">
+      <a href="/config" title="<%= __('nav.settings') %>">
         <i class="fa-solid fa-gear"></i>
-        <span class="sidebar-label">Settings</span>
+        <span class="sidebar-label"><%= __('nav.settings') %></span>
       </a>
     </li>
     <% } %>
-    <% if ((user.isAdmin || user.canManageSchedules) && locals.appConfig && locals.appConfig.scheduleConfigured) { %>
+    <% if (can('canViewSchedules') && locals.appConfig && locals.appConfig.scheduleConfigured) { %>
     <li class="<%= activeNav === 'schedules' ? 'active' : '' %>">
-      <a href="/schedules" title="Schedules">
+      <a href="/schedules" title="<%= __('nav.schedules') %>">
         <i class="fa-solid fa-calendar-days"></i>
-        <span class="sidebar-label">Schedules</span>
+        <span class="sidebar-label"><%= __('nav.schedules') %></span>
       </a>
     </li>
     <% } %>
-    <% if (user.isAdmin || user.canViewLogs) { %>
+    <% if (can('canViewLogs')) { %>
     <li class="<%= activeNav === 'logs' ? 'active' : '' %>">
-      <a href="/logs" title="Logs">
+      <a href="/logs" title="<%= __('nav.logs') %>">
         <i class="fa-solid fa-list"></i>
-        <span class="sidebar-label">Logs</span>
+        <span class="sidebar-label"><%= __('nav.logs') %></span>
       </a>
     </li>
     <% } %>
+    <li class="<%= activeNav === 'account' ? 'active' : '' %>">
+      <a href="/account" title="<%= __('nav.account') %>">
+        <i class="fa-solid fa-house-user"></i>
+        <span class="sidebar-label"><%= __('nav.account') %></span>
+      </a>
+    </li>
   </ul>
 
   <div class="sidebar-footer">
-    <div class="sidebar-user" title="<%= user.username %>">
-      <i class="fa-solid fa-circle-user"></i>
-      <span class="sidebar-label sidebar-username"><%= user.username %></span>
-    </div>
     <form method="POST" action="/logout">
-      <button type="submit" class="sidebar-logout-btn" title="Sign out">
+      <button type="submit" class="sidebar-logout-btn" title="<%= __('nav.signOut') %>">
         <i class="fa-solid fa-right-from-bracket"></i>
-        <span class="sidebar-label">Sign out</span>
+        <span class="sidebar-label"><%= __('nav.signOut') %></span>
       </button>
     </form>
   </div>

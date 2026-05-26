@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<%= locale %>">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Config — BCookieSubs</title>
+  <title><%= __('config.title') %> — BCookieSubs</title>
    <%-  include('theme-vars.ejs') %>
   <link rel="icon" type="image/png" href="/images/icon.png">
   <link rel="stylesheet" href="/static/css/all.min.css">
@@ -24,60 +24,60 @@
       <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
     <% } %>
 
-    <div class="page-header"><h1>Configuration</h1></div>
+    <div class="page-header"><h1><%= __('config.title') %></h1></div>
 
     <div class="config-layout">
-      
+
       <div style="display:flex;flex-direction:column;gap:1.5rem">
 
-        
+
         <div class="card">
-          <div class="card-header"><h2>General</h2></div>
+          <div class="card-header"><h2><%= __('config.general') %></h2></div>
           <form method="POST" action="/config">
             <div class="field">
-              <label for="defaultChunkSize">Default Chunk Size <span class="hint">(lines per batch)</span> <i class="fa-solid fa-circle-info setting-info" data-tip="How many subtitle lines are grouped into one translation chunk by default."></i></label>
+              <label for="defaultChunkSize"><%= __('config.defaultChunkSize') %> <span class="hint"><%= __('config.chunkSizeHint') %></span> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipDefaultChunkSize') %>"></i></label>
               <input type="number" id="defaultChunkSize" name="defaultChunkSize" value="<%= config.defaultChunkSize %>" min="1" max="200" required>
             </div>
             <div class="field">
-              <label for="maxRetriesPerChunk">Max Retries Per Chunk <i class="fa-solid fa-circle-info setting-info" data-tip="How many times the worker retries a failed chunk or judge step before marking it failed."></i></label>
+              <label for="maxRetriesPerChunk"><%= __('config.maxRetriesPerChunk') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipMaxRetries') %>"></i></label>
               <input type="number" id="maxRetriesPerChunk" name="maxRetriesPerChunk" value="<%= config.maxRetriesPerChunk %>" min="0" max="20" required>
             </div>
             <div class="field">
-              <label for="sessionTimeoutMinutes">Session Timeout <span class="hint">(minutes)</span> <i class="fa-solid fa-circle-info setting-info" data-tip="How long a user session remains valid before requiring login again."></i></label>
+              <label for="sessionTimeoutMinutes"><%= __('config.sessionTimeout') %> <span class="hint"><%= __('config.sessionTimeoutHint') %></span> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipSessionTimeout') %>"></i></label>
               <input type="number" id="sessionTimeoutMinutes" name="sessionTimeoutMinutes" value="<%= config.sessionTimeoutMinutes %>" min="5" required>
             </div>
             <div class="field field-checkbox">
               <input type="checkbox" id="finishSingleSubtitleFirst" name="finishSingleSubtitleFirst" value="1" <%= config.finishSingleSubtitleFirst ? 'checked' : '' %>>
-              <label for="finishSingleSubtitleFirst">Finish one subtitle Job before starting the next <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, all chunks for one target language are completed before moving to the next target language."></i></label>
+              <label for="finishSingleSubtitleFirst"><%= __('config.finishSingleSubtitleFirst') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipFinishOneFirst') %>"></i></label>
             </div>
             <div class="field field-checkbox">
               <input type="checkbox" id="nameDetectionActive" name="nameDetectionActive" value="1" <%= config.nameDetectionActive ? 'checked' : '' %>>
-              <label for="nameDetectionActive">Enable AI name detection on upload <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, BCookieSubs uses a name formatter model to guess movie/show details from filenames."></i></label>
+              <label for="nameDetectionActive"><%= __('config.enableNameDetection') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipNameDetection') %>"></i></label>
             </div>
             <div class="field field-checkbox">
               <input type="checkbox" id="showPosters" <%= config.nameDetectionActive ? '' : 'disabled' %> name="showPosters" value="1" <%= config.showPosters ? 'checked' : '' %>>
-              <label for="showPosters">Show media posters <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, posters are shown on dashboard media cards when available. Requires AI name detection to be active."></i></label>
+              <label for="showPosters"><%= __('config.showPosters') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipShowPosters') %>"></i></label>
             </div>
             <div class="field field-checkbox">
               <input type="checkbox" id="theMovieDbActive" <%= config.nameDetectionActive ? '' : 'disabled' %> name="theMovieDbActive" value="1" <%= config.theMovieDbActive ? 'checked' : '' %>>
-              <label for="theMovieDbActive">Enable The Movie DB integration <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, BCookieSubs can fetch metadata and posters from TheMovieDB if an API key is configured. Requires AI name detection to be active."></i></label>
+              <label for="theMovieDbActive"><%= __('config.enableMovieDb') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipMovieDb') %>"></i></label>
             </div>
             <div class="field field-checkbox">
               <input type="checkbox" id="scheduleConfigured" name="scheduleConfigured" value="1" <%= config.scheduleConfigured ? 'checked' : '' %>>
-              <label for="scheduleConfigured">Gate translation by schedule <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, translation only runs during configured schedule windows."></i></label>
+              <label for="scheduleConfigured"><%= __('config.gateBySchedule') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipGateBySchedule') %>"></i></label>
             </div>
             <div class="field field-checkbox">
               <input type="checkbox" id="scanLibraryPaths" name="scanLibraryPaths" value="1" <%= config.scanLibraryPaths ? 'checked' : '' %>>
-              <label for="scanLibraryPaths">Enable Library Path Scanning <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, BCookieSubs scans configured media folders for new subtitle and media files."></i></label>
+              <label for="scanLibraryPaths"><%= __('config.enableLibraryScan') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipLibraryScan') %>"></i></label>
             </div>
-            <% if (config.scanLibraryPaths && (user.isAdmin || user.canManageRootLibraryPath)) { %>
+            <% if (config.scanLibraryPaths && can('canManageSettings')) { %>
             <div class="field">
-              <label for="rootLibraryPath">Root library folder <i class="fa-solid fa-circle-info setting-info" data-tip="Can configure the root folder used to restrict library path browsing. When set, browsing and new library paths are confined to this folder."></i></label>
+              <label for="rootLibraryPath"><%= __('config.rootLibraryFolder') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipRootLibraryFolder') %>"></i></label>
               <div style="display:flex;gap:.4rem">
                 <input type="text" id="rootLibraryPath" name="rootLibraryPath" value="<%= config.rootLibraryPath || '' %>"
                        placeholder="e.g. /mnt/media" style="flex:1">
                 <button type="button" class="btn btn-secondary" style="flex-shrink:0"
-                        onclick="openConfigDirBrowser()">Browse</button>
+                        onclick="openConfigDirBrowser()"><%= __('config.browse') %></button>
               </div>
               <div id="config-path-browser-anchor"></div>
             </div>
@@ -85,13 +85,13 @@
             <div class="field field-checkbox">
               <input type="checkbox" id="clearLogs" name="clearLogs" value="1" <%= config.clearLogs ? 'checked' : '' %>
                     onchange="document.getElementById('clearLogsRow').style.display=this.checked?'':'none'">
-              <label for="clearLogs">Auto-clear old logs <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, old logs are automatically deleted according to the retention period below."></i></label>
+              <label for="clearLogs"><%= __('config.autoClearLogs') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipAutoClearLogs') %>"></i></label>
             </div>
             <div class="field" id="clearLogsRow" style="<%= config.clearLogs ? '' : 'display:none' %>">
-              <label for="clearLogsOlderThanDays">Delete logs older than <span class="hint">(days)</span> <i class="fa-solid fa-circle-info setting-info" data-tip="Logs older than this number of days are deleted when auto-clear is active."></i></label>
+              <label for="clearLogsOlderThanDays"><%= __('config.deleteLogsOlderThan') %> <span class="hint"><%= __('config.daysHint') %></span> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipDeleteLogsOlderThan') %>"></i></label>
               <input type="number" id="clearLogsOlderThanDays" name="clearLogsOlderThanDays"value="<%= config.clearLogsOlderThanDays %>" min="1" required>
             </div>
-            <button type="submit" class="btn btn-primary" style="margin-top:.25rem; float: right;">Save Configuration</button>
+            <button type="submit" class="btn btn-primary" style="margin-top:.25rem; float: right;"><%= __('config.saveConfiguration') %></button>
           </form>
         </div>
 
@@ -101,12 +101,12 @@
 
         <div class="card" style="height:70%;display:flex;flex-direction:column;">
           <div class="card-header">
-            <h2>Default Target Languages</h2>
-            <small class="text-dim">Pre-selected on upload</small>
+            <h2><%= __('config.defaultTargetLanguages') %></h2>
+            <small class="text-dim"><%= __('config.preSelectedOnUpload') %></small>
           </div>
 
           <% if (configLangs.length === 0) { %>
-            <p class="empty-state">No defaults set.</p>
+            <p class="empty-state"><%= __('account.noDefaultsSet') %></p>
           <% } else { %>
             <div style="display:flex;flex-direction:column;gap:.35rem;flex:1">
               <% configLangs.forEach(function(cl, idx) { %>
@@ -115,7 +115,7 @@
                   <span class="text-dim" style="width:1.5rem;text-align:right;font-size:.8rem"><%= idx + 1 %>.</span>
                   <span style="flex:1"><%= lang ? ((lang.flag || '') + ' ' + lang.name) : 'Unknown' %></span>
 
-                  <% if (user.isAdmin || user.canManageLanguages) { %>
+                  <% if (can('canManageSettings')) { %>
                     <form method="POST" action="/config/translationlangs/move/<%= cl.languageId %>" style="display:inline">
                       <input type="hidden" name="direction" value="up">
                       <button type="submit" class="btn btn-icon btn-sm" <%= idx === 0 ? 'disabled' : '' %> title="Move up">↑</button>
@@ -135,7 +135,7 @@
             </div>
           <% } %>
 
-          <% if ((user.isAdmin || user.canManageLanguages) && languages.length > 0) { %>
+          <% if ((can('canManageSettings')) && languages.length > 0) { %>
             <form
               method="POST"
               action="/config/translationlangs/add"
@@ -149,7 +149,7 @@
               "
             >
               <div class="field" style="flex:1;margin:0">
-                <label>Add default language</label>
+                <label><%= __('config.addDefaultLanguage') %></label>
                 <select name="languageId">
                   <% languages.forEach(function(l) { %>
                     <option value="<%= l.id %>"><%= l.flag ? l.flag + ' ' : '' %><%= l.name %></option>
@@ -157,30 +157,50 @@
                 </select>
               </div>
 
-              <button type="submit" class="btn btn-primary">Add</button>
+              <button type="submit" class="btn btn-primary"><%= __('common.add') %></button>
             </form>
           <% } %>
         </div>
 
+        <% if (can('canManageSettings')) { %>
         <div class="card">
           <div class="card-header">
-            <h2>Theme</h2>
+            <h2><%= __('config.defaultLanguage') %></h2>
           </div>
-
-          
-          <form method="POST" action="/config/theme/select" style="display:flex;gap:.5rem;align-items:flex-end;margin-bottom:1rem">
+          <p class="text-dim" style="font-size:.85rem;margin-bottom:.75rem"><%= __('config.defaultLanguageDescription') %></p>
+          <form method="POST" action="/config/language" style="display:flex;gap:.5rem;align-items:flex-end">
             <div class="field" style="flex:1;margin-bottom:0">
-              <label for="themeId">Active theme <i class="fa-solid fa-circle-info setting-info" data-tip="Controls the active color theme used by the interface. Custom themes can be created below."></i></label>
-              <select id="themeId" name="themeId">
-                <% themes.forEach(function(t) { %>
-                  <option value="<%= t.id %>" <%= t.id === theme.id ? 'selected' : '' %>><%= t.name %><%= !t.isPublic ? ' ✏' : '' %></option>
+              <select name="defaultLanguage">
+                <% supportedLocales.forEach(function(lc) { %>
+                  <option value="<%= lc %>" <%= config.defaultLanguage === lc ? 'selected' : '' %>><%= localeFlags[lc] %> <%= localeLabels[lc] %></option>
                 <% }) %>
               </select>
             </div>
-            <button type="submit" class="btn btn-primary" style="flex-shrink:0">Apply</button>
+            <button type="submit" class="btn btn-primary" style="flex-shrink:0"><%= __('config.saveLanguage') %></button>
+          </form>
+        </div>
+        <% } %>
+
+        <% if (can('canManageSettings')) { %>
+        <div class="card">
+          <div class="card-header">
+            <h2><%= __('config.theme') %></h2>
+          </div>
+
+
+          <form method="POST" action="/config/theme/select" style="display:flex;gap:.5rem;align-items:flex-end;margin-bottom:1rem">
+            <div class="field" style="flex:1;margin-bottom:0">
+              <label for="themeId"><%= __('config.activeTheme') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipActiveTheme') %>"></i></label>
+              <select id="themeId" name="themeId">
+                <% themes.forEach(function(t) { %>
+                  <option value="<%= t.id %>" <%= t.id === configTheme.id ? 'selected' : '' %>><%= t.name %><%= !t.isPublic ? ' ✏' : '' %></option>
+                <% }) %>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary" style="flex-shrink:0"><%= __('common.apply') %></button>
           </form>
 
-          
+
           <% var userThemes = themes.filter(function(t){ return !t.isPublic }) %>
           <% if (userThemes.length > 0) { %>
             <div style="display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:1rem">
@@ -192,13 +212,13 @@
             </div>
           <% } %>
 
-          
+
           <details>
-            <summary style="cursor:pointer;font-size:.85rem;font-weight:600;color:var(--text-dim);margin-bottom:.75rem">+ Create custom theme</summary>
+            <summary style="cursor:pointer;font-size:.85rem;font-weight:600;color:var(--text-dim);margin-bottom:.75rem"><%= __('config.createCustomTheme') %></summary>
             <form method="POST" action="/config/theme/create" style="margin-top:.75rem">
               <div class="field">
-                <label>Theme name</label>
-                <input type="text" name="name" required placeholder="My Theme" value="<%= theme.name %> (copy)">
+                <label><%= __('config.themeName') %></label>
+                <input type="text" name="name" required placeholder="My Theme" value="<%= configTheme.name %> (copy)">
               </div>
               <div class="color-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem 1rem">
                 <% var colorFields = [
@@ -213,18 +233,19 @@
                   <div class="field" style="margin-bottom:.35rem">
                     <label style="display:flex;justify-content:space-between"><%= f[1] %> <span class="text-hint" style="font-size:.75rem;font-weight:400"><%= f[0] %></span></label>
                     <div style="display:flex;gap:.4rem;align-items:center">
-                      <input type="color" name="<%= f[0] %>" value="<%= theme[f[0]] %>" style="width:2.2rem;height:2rem;padding:.1rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);cursor:pointer;flex-shrink:0">
-                      <input type="text" name="_<%= f[0] %>_hex" value="<%= theme[f[0]] %>" placeholder="#000000" style="flex:1;font-family:var(--font-mono);font-size:.8rem" oninput="syncColor(this,'<%= f[0] %>')">
+                      <input type="color" name="<%= f[0] %>" value="<%= configTheme[f[0]] %>" style="width:2.2rem;height:2rem;padding:.1rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);cursor:pointer;flex-shrink:0">
+                      <input type="text" name="_<%= f[0] %>_hex" value="<%= configTheme[f[0]] %>" placeholder="#000000" style="flex:1;font-family:var(--font-mono);font-size:.8rem" oninput="syncColor(this,'<%= f[0] %>')">
                     </div>
                   </div>
                 <% }) %>
               </div>
               <div style="margin-top:.75rem">
-                <button type="submit" class="btn btn-primary">Create & Apply</button>
+                <button type="submit" class="btn btn-primary"><%= __('config.createAndApply') %></button>
               </div>
             </form>
           </details>
         </div>
+        <% } %>
 
       </div>
     </div>
@@ -232,13 +253,13 @@
     <% if (canSeeSecrets) { %>
     <div class="card" style="margin-top: 1.5rem;">
       <div class="card-header">
-        <h2>Secrets</h2>
-        <small class="text-dim">Manage encrypted application secrets</small>
+        <h2><%= __('config.secrets') %></h2>
+        <small class="text-dim"><%= __('config.manageSecrets') %></small>
       </div>
 
       <div style="display:flex;flex-direction:column;gap:1rem;">
         <% keys.forEach(function(key) { %>
-          <% 
+          <%
             var existingSecret = secrets
               ? secrets.find(function(s) { return s.secretName === key.secretName })
               : null
@@ -290,7 +311,7 @@
                     value="<%= hasSecret ? secretValue : '' %>"
                     readonly
                     data-secret-input="<%= key.secretName %>"
-                    placeholder="<%= hasSecret ? '' : 'No secret set' %>"
+                    placeholder="<%= hasSecret ? '' : __('config.noSecretSet') %>"
                     style="
                       width:min(310px,100%);
                       padding:.55rem .75rem;
@@ -308,7 +329,7 @@
                       title="Show / hide"
                       data-secret-toggle="<%= key.secretName %>"
                     >
-                      Show
+                      <%= __('config.show') %>
                     </button>
                   <% } %>
                 </div>
@@ -320,7 +341,7 @@
                     title="Edit"
                     onclick="toggleSecretForm('<%= key.secretName %>')"
                   >
-                    Edit
+                    <%= __('config.editSecretBtn') %>
                   </button>
 
                   <form
@@ -330,7 +351,7 @@
                     onsubmit="return confirm('Delete this secret?')"
                   >
                     <button type="submit" class="btn btn-icon btn-danger" title="Delete">
-                      Delete
+                      <%= __('config.deleteSecretBtn') %>
                     </button>
                   </form>
                 <% } else { %>
@@ -340,7 +361,7 @@
                     title="Add"
                     onclick="toggleSecretForm('<%= key.secretName %>')"
                   >
-                    Add
+                    <%= __('config.addSecretBtn') %>
                   </button>
                 <% } %>
               </div>
@@ -371,7 +392,7 @@
                     type="password"
                     name="secretValue"
                     autocomplete="off"
-                    placeholder="<%= hasSecret ? 'Enter a new value' : 'Enter secret value' %>"
+                    placeholder="<%= hasSecret ? __('config.enterNewValue') : __('config.enterSecretValue') %>"
                     style="width:100%;"
                   />
                 </div>
@@ -382,10 +403,10 @@
                     class="btn"
                     onclick="toggleSecretForm('<%= key.secretName %>')"
                   >
-                    Cancel
+                    <%= __('common.cancel') %>
                   </button>
                   <button type="submit" class="btn btn-primary">
-                    <%= hasSecret ? 'Save changes' : 'Add secret' %>
+                    <%= hasSecret ? __('config.saveChanges') : __('config.addSecret') %>
                   </button>
                 </div>
               </form>
@@ -405,11 +426,11 @@
       <span id="config-dir-current-path" class="text-dim" style="font-size:.78rem;word-break:break-all;flex:1;min-width:0"></span>
     </div>
     <div id="config-dir-list" style="max-height:200px;overflow-y:auto;display:flex;flex-direction:column">
-      <div class="text-dim" style="padding:.5rem .75rem;font-size:.8rem">Loading…</div>
+      <div class="text-dim" style="padding:.5rem .75rem;font-size:.8rem"><%= __('common.loading') %></div>
     </div>
     <div style="padding:.5rem .75rem;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:.4rem">
-      <button type="button" id="config-dir-select-btn" class="btn btn-sm btn-primary">Select this folder</button>
-      <button type="button" class="btn btn-sm btn-secondary" onclick="closeConfigDirBrowser()">Cancel</button>
+      <button type="button" id="config-dir-select-btn" class="btn btn-sm btn-primary"><%= __('config.selectFolder') %></button>
+      <button type="button" class="btn btn-sm btn-secondary" onclick="closeConfigDirBrowser()"><%= __('common.cancel') %></button>
     </div>
   </div>
 </div>
@@ -435,7 +456,7 @@
     _configBrowserCurrentPath = dirPath
     document.getElementById('config-dir-current-path').textContent = dirPath
     document.getElementById('config-dir-list').innerHTML =
-      '<div class="text-dim" style="padding:.5rem .75rem;font-size:.8rem">Loading…</div>'
+      '<div class="text-dim" style="padding:.5rem .75rem;font-size:.8rem"><%= __('common.loading') %></div>'
 
     fetch('/library-paths/browse?path=' + encodeURIComponent(dirPath))
       .then(function(r) { return r.json() })
@@ -486,7 +507,6 @@
     var colorInput = hexInput.previousElementSibling
     if (colorInput && /^#[0-9a-fA-F]{6}$/.test(val)) {
       colorInput.value = val
-      // sync the actual hidden form field
       var form = hexInput.closest('form')
       if (form) {
         var real = form.querySelector('[name="' + fieldName + '"]')
@@ -495,17 +515,14 @@
     }
   }
 
-  // Keep hex text in sync when color picker changes
   document.querySelectorAll('input[type="color"]').forEach(function(picker) {
     picker.addEventListener('input', function() {
       var hexInput = picker.nextElementSibling
       if (hexInput) hexInput.value = picker.value
-      // keep the actual field value updated
       picker.value = picker.value
     })
   })
 
-  // On form submit, copy text hex values into the color fields
   var themeCreateForm = document.querySelector('form[action="/config/theme/create"]')
   if (themeCreateForm) {
     themeCreateForm.addEventListener('submit', function() {
@@ -524,6 +541,10 @@
     if (!el) return
     el.style.display = el.style.display === "none" || !el.style.display ? "block" : "none"
   }
+
+  document.querySelectorAll(".setting-info").forEach(function (el) {
+    el.addEventListener("click", function (e) { e.stopPropagation() })
+  })
 
   document.querySelectorAll("[data-secret-toggle]").forEach(function (btn) {
     btn.addEventListener("click", function () {

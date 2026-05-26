@@ -11,8 +11,8 @@ export const getSchedules = (
   job = false,
 ): { schedules: DBSchedule[] } & DefaultResponse => {
   if (!job) {
-    const { hasPermission: perm } = userHasPermission(db, user?.id ?? -1, "canManageSchedules")
-    if (!perm) return { success: false, msg: "User does not have permission to manage schedules", schedules: [] }
+    const { hasPermission: perm } = userHasPermission(db, user?.id ?? -1, "canViewSchedules")
+    if (!perm) return { success: false, msg: "Permission denied", schedules: [] }
   }
 
   return {
@@ -37,7 +37,7 @@ export const getShouldRunNowBySchedule = (
   const currentMinute = now.getUTCMinutes()
   const currentTotalMinutes = currentHour * 60 + currentMinute
 
-    const today = (now.getUTCDay() + 6) % 7
+  const today = (now.getUTCDay() + 6) % 7
   const yesterday = today === 0 ? 6 : today - 1
 
   const schedules = getSchedules(db, null, true).schedules.filter((s) => !!s.enabled)

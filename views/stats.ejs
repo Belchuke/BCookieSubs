@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<%= locale %>">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stats — BCookieSubs</title>
+  <title><%= __('stats.title') %> — BCookieSubs</title>
   <%-  include('theme-vars.ejs') %>
   <link rel="icon" type="image/png" href="/images/icon.png">
   <link rel="stylesheet" href="/static/css/all.min.css">
@@ -24,7 +24,7 @@
       <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
     <% } %>
 
-    <div class="page-header"><h1>Statistics</h1></div>
+    <div class="page-header"><h1><%= __('stats.title') %></h1></div>
 
     <% if (error) { %>
       <div class="alert alert-error" style="margin-bottom:1rem"><%= error %></div>
@@ -33,16 +33,16 @@
     
     <div class="tabs">
       <button class="tab-btn active" data-tab="prompts">
-        <i class="fa-solid fa-message"></i> Prompts
+        <i class="fa-solid fa-message"></i> <%= __('stats.tabPrompts') %>
       </button>
       <button class="tab-btn" data-tab="subtitles">
-        <i class="fa-solid fa-closed-captioning"></i> Subtitles
+        <i class="fa-solid fa-closed-captioning"></i> <%= __('stats.tabSubtitles') %>
       </button>
       <button class="tab-btn" data-tab="models">
-        <i class="fa-solid fa-robot"></i> Models
+        <i class="fa-solid fa-robot"></i> <%= __('stats.tabModels') %>
       </button>
       <button class="tab-btn" data-tab="judge">
-        <i class="fa-solid fa-gavel"></i> Judge
+        <i class="fa-solid fa-gavel"></i> <%= __('stats.tabJudge') %>
       </button>
     </div>
 
@@ -96,7 +96,7 @@
           <div class="field stats-filter-check">
             <label class="checkbox-label" style="gap:.5rem">
               <input type="checkbox" id="f-active" checked style="width:15px;height:15px;accent-color:var(--accent)">
-              Only active models
+              <%= __('stats.onlyActiveModels') %>
             </label>
           </div>
         </div>
@@ -105,11 +105,11 @@
       
       <div class="chart-grid">
         <div class="card">
-          <div class="card-header"><h2>Selected by Model</h2></div>
+          <div class="card-header"><h2><%= __('stats.selectedByModel') %></h2></div>
           <div class="chart-wrap"><canvas id="chart-model"></canvas></div>
         </div>
         <div class="card">
-          <div class="card-header"><h2>Selected by Prompt</h2></div>
+          <div class="card-header"><h2><%= __('stats.selectedByPrompt') %></h2></div>
           <div class="chart-wrap"><canvas id="chart-prompt"></canvas></div>
         </div>
       </div>
@@ -117,7 +117,7 @@
       
       <div class="card">
         <% if (stats.length === 0) { %>
-          <p class="empty-state">No statistics recorded yet.</p>
+          <p class="empty-state"><%= __('stats.noStatsRecorded') %></p>
         <% } else { %>
           <div class="table-wrap">
             <table id="stats-table">
@@ -176,19 +176,19 @@
       <div id="sub-info-panel" style="display:none">
         
         <div class="card" style="margin-top:1rem">
-          <div class="card-header"><h2>Job Info</h2></div>
+          <div class="card-header"><h2><%= __('stats.jobInfo') %></h2></div>
           <div class="stat-grid" id="sub-meta-grid"></div>
         </div>
 
-        
+
         <div class="card" style="margin-top:1rem">
-          <div class="card-header"><h2>Selected Candidates by Model</h2></div>
+          <div class="card-header"><h2><%= __('stats.candidatesByModel') %></h2></div>
           <div class="chart-wrap"><canvas id="sub-chart-model"></canvas></div>
         </div>
 
-        
+
         <div class="card" style="margin-top:1rem">
-          <div class="card-header"><h2>Chunks</h2></div>
+          <div class="card-header"><h2><%= __('stats.chunks') %></h2></div>
           
           <div class="table-wrap sub-chunk-table-wrap">
             <table id="sub-chunk-table">
@@ -200,6 +200,7 @@
                   <th class="num">Duration</th>
                   <th>Prompt</th>
                   <th class="num">Ver.</th>
+                  <th>Reason</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -235,19 +236,19 @@
 
         <div class="chart-grid chart-grid-2x2" style="margin-top:1rem">
           <div class="card">
-            <div class="card-header"><h2>Avg Duration by Prompt</h2></div>
+            <div class="card-header"><h2><%= __('stats.avgDurationByPrompt') %></h2></div>
             <div class="chart-wrap"><canvas id="model-chart-prompt-dur"></canvas></div>
           </div>
           <div class="card">
-            <div class="card-header"><h2>Selected by Prompt</h2></div>
+            <div class="card-header"><h2><%= __('stats.selectedByPrompt') %></h2></div>
             <div class="chart-wrap"><canvas id="model-chart-prompt-sel"></canvas></div>
           </div>
           <div class="card">
-            <div class="card-header"><h2>Selected by Language</h2></div>
+            <div class="card-header"><h2><%= __('stats.selectedByLanguage') %></h2></div>
             <div class="chart-wrap"><canvas id="model-chart-lang"></canvas></div>
           </div>
           <div class="card">
-            <div class="card-header"><h2>Success / Failed</h2></div>
+            <div class="card-header"><h2><%= __('stats.successFailed') %></h2></div>
             <div class="chart-wrap"><canvas id="model-chart-sf"></canvas></div>
           </div>
         </div>
@@ -286,6 +287,8 @@
   var ALL_STATS  = <%- JSON.stringify(stats) %>;
   var ALL_MODELS = <%- JSON.stringify(models) %>;
   var SUBTITLES  = <%- JSON.stringify(subtitles) %>;
+  var STR_NO_JUDGE_EVALS = '<%= __("stats.noJudgeEvals") %>';
+  var STR_ALL_MODELS = '<%= __("stats.allModels") %>';
   var ACTIVE_NAMES = (function() {
     var s = {};
     ALL_MODELS.forEach(function(m) { if (m.active) s[m.name] = true; });
@@ -297,7 +300,12 @@
 <script>
 ;(function() {
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  window.openStatsTextModal = function(title, text) {
+    document.getElementById('stats-text-modal-title').textContent = title
+    document.getElementById('stats-text-modal-body').textContent = text || '—'
+    openModal('stats-text-modal')
+  }
+
   function cssv(n) {
     return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   }
@@ -313,7 +321,6 @@
     return '<div class="stat-card '+(cls||'')+'"><div class="stat-value">'+esc(val)+'</div><div class="stat-label">'+esc(label)+'</div></div>';
   }
 
-  // ── Chart factory ──────────────────────────────────────────────────────────
   function makeBar(id, labels, data) {
     var el = document.getElementById(id);
     if (!el) return null;
@@ -354,7 +361,6 @@
     return m;
   }
 
-  // ── Tab switching ──────────────────────────────────────────────────────────
   document.querySelectorAll('.tab-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
@@ -365,9 +371,6 @@
     });
   });
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // TAB 1: Prompts
-  // ══════════════════════════════════════════════════════════════════════════
   var chartByModel  = makeBar('chart-model',  [], []);
   var chartByPrompt = makeBar('chart-prompt', [], []);
 
@@ -420,9 +423,7 @@
   });
   applyPromptFilters();
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // TAB 2: Subtitles
-  // ══════════════════════════════════════════════════════════════════════════
+
   var subChartModel = null;
 
   document.getElementById('sub-select').addEventListener('change', function() {
@@ -461,7 +462,6 @@
       .then(function(d) {
         document.getElementById('sub-info-panel').style.display = '';
 
-        // Metadata
         document.getElementById('sub-meta-grid').innerHTML = [
           statCard('Title',       d.subtitle ? d.subtitle.name : '—', ''),
           statCard('Chunk Size',  d.job.chunkSetting,  'stat-processing'),
@@ -471,7 +471,7 @@
           statCard('Status',      d.job.status,        d.job.status==='completed'?'stat-success':'stat-processing'),
         ].join('');
 
-        // Chart
+
         var bm = {};
         (d.chunks||[]).forEach(function(c) {
           if (c.selectedModelName) bm[c.selectedModelName] = (bm[c.selectedModelName]||0)+1;
@@ -479,10 +479,15 @@
         if (subChartModel) subChartModel.destroy();
         subChartModel = makeBar('sub-chart-model', Object.keys(bm), Object.values(bm));
 
-        // Chunk table (desktop)
+
+        window._statReasonData = [];
         var tbody = document.querySelector('#sub-chunk-table tbody');
-        tbody.innerHTML = (d.chunks||[]).map(function(c) {
+        tbody.innerHTML = (d.chunks||[]).map(function(c, i) {
+          window._statReasonData.push(c.judgeReason || '');
           var statusCls = c.status==='completed'?'text-success':c.status==='failed'?'text-error':'text-dim';
+          var reasonCell = c.judgeReason
+            ? '<td><button class="btn btn-xs btn-secondary" onclick="openStatsTextModal(\'Judge Reason\',_statReasonData['+i+'])">View</button></td>'
+            : '<td class="text-dim">—</td>';
           return '<tr>'+
             '<td class="num">'+(c.chunkIndex+1)+'</td>'+
             '<td class="'+statusCls+'">'+esc(c.status)+'</td>'+
@@ -490,11 +495,11 @@
             '<td class="num">'+fmtMs(c.durationMs)+'</td>'+
             '<td>'+esc(c.selectedPromptName)+'</td>'+
             '<td class="num">'+esc(c.selectedPromptVersion)+'</td>'+
+            reasonCell+
             '</tr>';
         }).join('');
 
-        // Chunk cards (mobile)
-        document.getElementById('sub-chunk-cards').innerHTML = (d.chunks||[]).map(function(c) {
+        document.getElementById('sub-chunk-cards').innerHTML = (d.chunks||[]).map(function(c, i) {
           var bdge = c.status==='completed'?'badge-success':c.status==='failed'?'badge-error':'badge-neutral';
           return '<div class="chunk-stat-card">'+
             '<div class="chunk-stat-header">'+
@@ -504,15 +509,12 @@
             '<div class="chunk-stat-row"><span>Valid / Total</span><span>'+c.validCandidateCount+' / '+c.totalCandidateCount+'</span></div>'+
             '<div class="chunk-stat-row"><span>Duration</span><span>'+fmtMs(c.durationMs)+'</span></div>'+
             '<div class="chunk-stat-row"><span>Prompt</span><span>'+esc(c.selectedPromptName)+(c.selectedPromptVersion?' v'+c.selectedPromptVersion:'')+'</span></div>'+
-            (c.judgeReason?'<div class="chunk-stat-row chunk-stat-reason"><span>Reason</span><span>'+esc(c.judgeReason)+'</span></div>':'')+
+            (c.judgeReason?'<div class="chunk-stat-row"><span>Reason</span><span><button class="btn btn-xs btn-secondary" onclick="openStatsTextModal(\'Judge Reason\',_statReasonData['+i+'])">View</button></span></div>':'')+
             '</div>';
         }).join('');
       });
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // TAB 3: Models
-  // ══════════════════════════════════════════════════════════════════════════
   var mCharts = {};
 
   document.getElementById('model-select').addEventListener('change', function() {
@@ -557,9 +559,6 @@
       });
   });
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // TAB 4: Judge
-  // ══════════════════════════════════════════════════════════════════════════
   var judgeLoaded = false;
   var _judgePage = 0;
   var JUDGE_PAGE_SIZE = 30;
@@ -577,46 +576,47 @@
         var totalPages = Math.ceil(total / JUDGE_PAGE_SIZE);
         var wrap = document.getElementById('judge-table-wrap');
         if (!rows.length && _judgePage === 0) {
-          wrap.innerHTML = '<p class="empty-state">No judge evaluations recorded yet.</p>';
+          wrap.innerHTML = '<p class="empty-state">' + STR_NO_JUDGE_EVALS + '</p>';
           return;
         }
-        var html = '<div class="table-wrap"><table id="judge-table"><thead><tr>' +
-          '<th>Date</th><th>Model</th><th>Subtitle</th><th class="num">Chunk</th>' +
-          '<th>Reason</th><th>Prompt</th>' +
-          '</tr></thead><tbody>';
-        rows.forEach(function(r) {
-          html += '<tr>' +
-            '<td class="text-dim" style="white-space:nowrap;font-size:.8em">' + esc(r.createdAt ? r.createdAt.split(' ')[0] : '—') + '</td>' +
-            '<td><strong>' + esc(r.modelName || '—') + '</strong></td>' +
-            '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.subtitleName || '—') + '</td>' +
-            '<td class="num">' + (r.chunkIndex != null ? r.chunkIndex + 1 : '—') + '</td>' +
-            '<td style="max-width:260px;font-size:.82em">' + esc(r.judgeReason || '—') + '</td>' +
-            '<td>' +
-              '<details>' +
-                '<summary class="btn btn-sm btn-secondary" style="cursor:pointer;list-style:none;display:inline-flex">Preview</summary>' +
-                '<pre class="prompt-text" style="margin-top:.5rem;font-size:.75em;max-height:300px">' + esc(r.judgeInput || '') + '</pre>' +
-              '</details>' +
-            '</td>' +
-            '</tr>';
+        window._judgeReasonData = [];
+        window._judgePromptData = [];
+        var cardHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.75rem;padding:.25rem 0">';
+        rows.forEach(function(r, i) {
+          window._judgeReasonData.push(r.judgeReason || '');
+          window._judgePromptData.push(r.judgeInput || '');
+          cardHtml += '<div class="chunk-stat-card">'+
+            '<div class="chunk-stat-header">'+
+              '<span class="text-dim" style="font-size:.8em">'+esc(r.createdAt ? r.createdAt.split(' ')[0] : '—')+'</span>'+
+              '<strong>'+esc(r.modelName||'—')+'</strong>'+
+            '</div>'+
+            '<div class="chunk-stat-row"><span>Subtitle</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px">'+esc(r.subtitleName||'—')+'</span></div>'+
+            '<div class="chunk-stat-row"><span>Chunk</span><span>'+(r.chunkIndex != null ? '#'+(r.chunkIndex+1) : '—')+'</span></div>'+
+            '<div class="chunk-stat-row" style="justify-content:flex-start;gap:.5rem;flex-wrap:wrap">'+
+              (r.judgeReason ? '<button class="btn btn-xs btn-secondary" onclick="openStatsTextModal(\'Reason\',_judgeReasonData['+i+'])">Reason</button>' : '')+
+              '<button class="btn btn-xs btn-secondary" onclick="openStatsTextModal(\'Prompt\',_judgePromptData['+i+'])">Prompt</button>'+
+            '</div>'+
+            '</div>';
         });
-        html += '</tbody></table></div>';
+        cardHtml += '</div>';
+        var paginationHtml = '';
         if (totalPages > 1) {
-          html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem .25rem 0;gap:.5rem;flex-wrap:wrap">';
-          html += '<span class="text-dim" style="font-size:.82rem">' +
+          paginationHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem .25rem 0;gap:.5rem;flex-wrap:wrap">';
+          paginationHtml += '<span class="text-dim" style="font-size:.82rem">' +
             'Showing ' + (_judgePage * JUDGE_PAGE_SIZE + 1) + '–' + Math.min((_judgePage + 1) * JUDGE_PAGE_SIZE, total) +
             ' of ' + total + '</span>';
-          html += '<div style="display:flex;gap:.35rem">';
-          html += '<button class="btn btn-sm btn-secondary" ' + (_judgePage === 0 ? 'disabled' : '') +
+          paginationHtml += '<div style="display:flex;gap:.35rem;flex-wrap:wrap">';
+          paginationHtml += '<button class="btn btn-sm btn-secondary" ' + (_judgePage === 0 ? 'disabled' : '') +
             ' onclick="loadJudgeData(' + (_judgePage - 1) + ')">← Prev</button>';
           for (var p = 0; p < totalPages; p++) {
-            html += '<button class="btn btn-sm ' + (p === _judgePage ? 'btn-primary' : 'btn-secondary') + '"' +
+            paginationHtml += '<button class="btn btn-sm ' + (p === _judgePage ? 'btn-primary' : 'btn-secondary') + '"' +
               ' onclick="loadJudgeData(' + p + ')">' + (p + 1) + '</button>';
           }
-          html += '<button class="btn btn-sm btn-secondary" ' + (_judgePage >= totalPages - 1 ? 'disabled' : '') +
+          paginationHtml += '<button class="btn btn-sm btn-secondary" ' + (_judgePage >= totalPages - 1 ? 'disabled' : '') +
             ' onclick="loadJudgeData(' + (_judgePage + 1) + ')">Next →</button>';
-          html += '</div></div>';
+          paginationHtml += '</div></div>';
         }
-        wrap.innerHTML = html;
+        wrap.innerHTML = cardHtml + paginationHtml;
       });
   }
 
@@ -626,9 +626,6 @@
     loadJudgeData(0);
   });
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // Auto-refresh every 15 s — preserve tab + filter state via sessionStorage
-  // ══════════════════════════════════════════════════════════════════════════
   var STORAGE_KEY = 'stats_state';
 
   function saveState() {
@@ -653,7 +650,6 @@
     var state;
     try { state = JSON.parse(raw); } catch(e) { return; }
 
-    // Restore tab
     if (state.tab) {
       var targetBtn = document.querySelector('.tab-btn[data-tab="' + state.tab + '"]');
       if (targetBtn) {
@@ -666,14 +662,12 @@
       }
     }
 
-    // Restore Prompts filters
     if (state.fModel !== undefined) { var el = document.getElementById('f-model'); if(el) el.value = state.fModel; }
     if (state.fLang  !== undefined) { var el = document.getElementById('f-lang');  if(el) el.value = state.fLang; }
     if (state.fPrompt!== undefined) { var el = document.getElementById('f-prompt');if(el) el.value = state.fPrompt; }
     if (state.fActive!== undefined) { var el = document.getElementById('f-active'); if(el) el.checked = state.fActive; }
     if (state.fModel !== undefined || state.fLang !== undefined) applyPromptFilters();
 
-    // Restore Subtitle selection
     if (state.subSelect) {
       var subEl = document.getElementById('sub-select');
       if (subEl) {
@@ -697,7 +691,6 @@
       }
     }
 
-    // Restore Model selection
     if (state.modelSel) {
       var modelEl = document.getElementById('model-select');
       if (modelEl) {
@@ -709,23 +702,20 @@
       }
     }
 
-    // Restore Judge model selection
+
     if (state.judgeSel) {
       var judgeEl = document.getElementById('judge-model-select');
       if (judgeEl) { judgeEl.value = state.judgeSel; }
     }
   }
 
-  // Save state before unload and on every change
   window.addEventListener('beforeunload', saveState);
   document.querySelectorAll('#f-model,#f-lang,#f-prompt,#f-active,#sub-select,#job-select,#model-select,#judge-model-select').forEach(function(el) {
     el.addEventListener('change', saveState);
   });
 
-  // Restore on load
   restoreState();
 
-  // ── Poll: update data without a page reload ───────────────────────────────
   var STATS_POLL_INTERVAL = 30000;
 
   function pollStats() {
@@ -751,5 +741,18 @@
 
 })();
 </script>
+
+<div class="modal-overlay" id="stats-text-modal" onclick="if(event.target===this)closeModal('stats-text-modal')" >
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h2 id="stats-text-modal-title"></h2>
+      <button class="btn btn-icon" onclick="closeModal('stats-text-modal')">✕</button>
+    </div>
+    <div id="stats-text-modal-body" style="white-space:pre-wrap;word-break:break-word;font-size:.85rem;line-height:1.6;max-height:60vh;overflow-y:auto;padding:.25rem 0"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('stats-text-modal')">Close</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

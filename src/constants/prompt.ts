@@ -1,0 +1,16 @@
+export const promptRules = [
+  { note: "source language replacement rule", replaceText: "//sourceLang//" },
+  { note: "source language short form replacement rule", replaceText: "//sourceShortLang//" },
+  { note: "target language replacement rule", replaceText: "//targetLang//" },
+  { note: "target language short form replacement rule", replaceText: "//targetShortLang//" },
+  { note: "series or movie name replacement rule", replaceText: "//name//" },
+  { note: "media type replacement rule", replaceText: "//mediaType//" },
+  { note: "genres replacement rule", replaceText: "//genres//" },
+  { note: "anime detection replacement rule", replaceText: "//isAnime//" },
+  { note: "source subtitles text replacement rule for judge prompt", replaceText: "//sourceText//" },
+  { note: "total candidates count replacement rule for judge prompt", replaceText: "//total//" },
+  { note: "total candidates count minus one replacement rule for judge prompt", replaceText: "//totalMinusOne//" },
+  { note: "translation candidates list replacement rule for judge prompt", replaceText: "//candidateList//" },
+  { note: "movie or show name replacement rule for name formatter prompt", replaceText: "//filename//" },
+  { note: "TMDb candidate list replacement rule for theMovieDBMatchingPrompt", replaceText: "//TheMovieDBCandidate//" },
+]

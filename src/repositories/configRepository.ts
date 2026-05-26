@@ -23,8 +23,8 @@ export const updateConfig = (
   clearLogsOlderThanDays: number,
   sessionTimeoutMinutes: number,
 ): DefaultResponse => {
-  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageConfig")
-  if (!perm) return { success: false, msg: "User does not have permission to manage config" }
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageSettings")
+  if (!perm) return { success: false, msg: "Permission denied" }
 
   const showPostersState = nameDetectionActive === true ? showPosters : false
   const theMovieDbActiveState = nameDetectionActive === true ? theMovieDbActive : false
@@ -56,17 +56,37 @@ export const updateConfig = (
   return { success: true, msg: null }
 }
 
+export const isSetupCompleted = (db: Database.Database): boolean => {
+  const row = db.prepare(`SELECT setupCompleted FROM config WHERE id = 1`).get() as { setupCompleted: number } | undefined
+  return (row?.setupCompleted ?? 0) === 1
+}
+
+export const markSetupCompleted = (db: Database.Database): void => {
+  db.prepare(`UPDATE config SET setupCompleted = 1, updatedAt = datetime('now') WHERE id = 1`).run()
+}
+
+export const enableNameDetection = (db: Database.Database): void => {
+  db.prepare(`UPDATE config SET nameDetectionActive = 1, updatedAt = datetime('now') WHERE id = 1`).run()
+}
+
 export const updateRootLibraryPath = (
   db: Database.Database,
   user: DBUser,
   rootLibraryPath: string | null,
 ): DefaultResponse => {
-  if (!user.isAdmin && !user.canManageRootLibraryPath) {
-    return { success: false, msg: "Permission denied" }
-  }
+  const { hasPermission } = userHasPermission(db, user.id, "canManageSettings")
+  if (!hasPermission) return { success: false, msg: "Permission denied" }
   db.prepare(`UPDATE config SET rootLibraryPath = ?, updatedAt = datetime('now') WHERE id = 1`).run(
     rootLibraryPath || null,
   )
+  return { success: true, msg: null }
+}
+
+export const updateDefaultLanguage = (db: Database.Database, user: DBUser, language: string): DefaultResponse => {
+  const { hasPermission } = userHasPermission(db, user.id, "canManageSettings")
+  if (!hasPermission) return { success: false, msg: "Permission denied" }
+  db.prepare(`UPDATE config SET defaultLanguage = ?, updatedAt = datetime('now') WHERE id = 1`).run(language)
+  createLog(db, "info", "config", null, `Updated default language to ${language} by ${user.username}`, { language })
   return { success: true, msg: null }
 }
 
@@ -75,8 +95,8 @@ export const getLogs = (
   user: DBUser,
   limit = 200,
 ): { logs: DBLog[] | null } & DefaultResponse => {
-  const { hasPermission: perm } = userHasPermission(db, user.id, "canViewLogs")
-  if (!perm) return { logs: null, success: false, msg: "User does not have permission to view logs" }
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canViewLogsDashboard")
+  if (!perm) return { logs: null, success: false, msg: "Permission denied" }
 
   const logs = db
     .prepare(`SELECT * FROM log WHERE deletedAt IS NULL ORDER BY createdAt DESC LIMIT ?`)
@@ -91,7 +111,7 @@ export const getLogsPagination = (
   limit: number,
 ): { logs: DBLog[] | null; total: number } & DefaultResponse => {
   const { hasPermission: perm } = userHasPermission(db, user.id, "canViewLogs")
-  if (!perm) return { logs: null, success: false, msg: "User does not have permission to view logs", total: 0 }
+  if (!perm) return { logs: null, success: false, msg: "Permission denied", total: 0 }
 
   const logs = db
     .prepare(`SELECT * FROM log WHERE deletedAt IS NULL ORDER BY createdAt DESC LIMIT ? OFFSET ?`)

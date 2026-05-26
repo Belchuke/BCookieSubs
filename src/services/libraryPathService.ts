@@ -7,16 +7,18 @@ import { getConfig } from "../repositories/configRepository"
 import { getConfigTranslationLanguages } from "../repositories/languageRepository"
 import { createLog } from "../repositories/logRepository"
 import { createMediaItem, getMediaItemById, getMediaItemByKeys } from "../repositories/mediaRepository"
-import { getSubtitleItemMediaItemFromPrompt } from "../repositories/promptFormattingRepository"
+import {
+  getSubtitleItemMediaItemFromPrompt,
+  selectBestTheMovieDbMatch,
+} from "../repositories/promptFormattingRepository"
+import { fetchTheMovieDbDetailsById } from "../repositories/movieDbRepository"
 import {
   createLibraryPathItem,
   createLibraryPathItemCandidate,
   findLibraryPathItemByPath,
-  getEnabledLibraryPaths,
-  getLibraryPathById,
   getLibraryPathItemById,
-  getLibraryPathsStuckInScanning,
   isLibraryPathItemBlacklisted,
+  setInitialScanCompleted,
   setLibraryPathState,
   updateLibraryPathItemExtractFileName,
   updateLibraryPathItemStatus,
@@ -25,13 +27,11 @@ import { createSubtitleTask, getSubtitleJobsBySubtitleId, getSubtitleById } from
 import { addCreditToSrt } from "./subtitleExportService"
 import { getExportFileName } from "../repositories/subtitleRepository"
 import { DBLibraryPath, DBLibraryPathItem, DBUser } from "../types/dbTypes"
-import { LIBRARY_SCAN_INTERVAL_MS, STUCK_SCAN_THRESHOLD_MINUTES } from "../setup"
 
 const EXTRACT_TEMP_DIR = path.join(os.tmpdir(), `bcookiesubs-extract-${process.pid}`)
 try {
   fs.mkdirSync(EXTRACT_TEMP_DIR, { recursive: true })
-} catch {
-  }
+} catch {}
 
 let _extractCounter = 0
 function makeExtractTempPath(stem: string, tag: string): string {
@@ -57,8 +57,7 @@ function safeDeleteTempExtract(filePath: string, db?: Database.Database, itemId:
 export function cleanupExtractTempDir(): void {
   try {
     fs.rmSync(EXTRACT_TEMP_DIR, { recursive: true, force: true })
-  } catch {
-      }
+  } catch {}
 }
 
 const VIDEO_EXTENSIONS = new Set([
@@ -74,6 +73,89 @@ const VIDEO_EXTENSIONS = new Set([
   ".flv",
   ".webm",
 ])
+
+const SAMPLE_FILE_RE = /^sample(?:[._-].*)?$/i
+
+function isSampleFile(filename: string): boolean {
+  const stem = path.basename(filename, path.extname(filename))
+  return SAMPLE_FILE_RE.test(stem)
+}
+
+// Walk up from filePath to find its direct-child-of-libraryPathRoot ancestor (the series root folder).
+function getSeriesRootDir(filePath: string, libraryPathRoot: string): string {
+  const normalizedRoot = path.normalize(libraryPathRoot)
+  let current = path.normalize(path.dirname(filePath))
+  if (current === normalizedRoot) return libraryPathRoot
+  while (true) {
+    const parent = path.normalize(path.dirname(current))
+    if (parent === normalizedRoot) return current
+    if (parent === current) return path.dirname(filePath) // safety fallback
+    current = parent
+  }
+}
+
+// Return the name of the immediate subfolder of seriesRootDir that contains filePath,
+// or null if the file lives directly inside seriesRootDir.
+function getSeasonFolderNameBetween(filePath: string, seriesRootDir: string): string | null {
+  const normalizedRoot = path.normalize(seriesRootDir)
+  const normalizedParent = path.normalize(path.dirname(filePath))
+  if (normalizedParent === normalizedRoot) return null
+  let current = normalizedParent
+  while (true) {
+    const parent = path.normalize(path.dirname(current))
+    if (parent === normalizedRoot) return path.basename(current)
+    if (parent === current) return null // safety fallback
+    current = parent
+  }
+}
+
+function parseSeasonFolderName(folderName: string): number | null {
+  const t = folderName.trim()
+  // Specials / OVA / Extras → season 0
+  if (/^(?:specials?|ova|extras?)$/i.test(t)) return 0
+  // Exact: "Season 1", "season 01", "S01", "S1", "SE01", "Series 2"
+  const exact = t.match(/^(?:season|series|se?)\s*0?(\d{1,2})$/i)
+  if (exact) return parseInt(exact[1])
+  // Embedded: "Girlfriend, Girlfriend Season 2"
+  const embedded = t.match(/\bseason\s+0?(\d{1,2})\b/i)
+  if (embedded) return parseInt(embedded[1])
+  // Release-group folders: "Kanojo mo Kanojo S01 1080p...", "86 S01P01+SP..."
+  const rel = t.match(/\bS0?(\d{1,2})\b/i)
+  if (rel) return parseInt(rel[1])
+  return null
+}
+
+function parseEpisodeFromFilename(filename: string): number | null {
+  const base = path.basename(filename, path.extname(filename))
+  // SxxExx — highest priority
+  const se = base.match(/[Ss]\d{1,2}[Ee](\d{1,3})/)
+  if (se) return parseInt(se[1])
+  // 1x01 format
+  const x = base.match(/\b\d{1,2}[xX](\d{2,3})\b/)
+  if (x) return parseInt(x[1])
+  // E01 / EP01 standalone (we already returned above if SxxExx matched)
+  const e = base.match(/\bE[Pp]?(\d{1,3})\b/)
+  if (e) return parseInt(e[1])
+  // "Episode 01" literal
+  const ep = base.match(/\bepisode\s*(\d{1,3})\b/i)
+  if (ep) return parseInt(ep[1])
+  // SP00 specials: " - SP01" or "SP01"
+  const sp = base.match(/\bSP(\d{1,3})\b/i)
+  if (sp) return parseInt(sp[1])
+  // Anime-style " - 01 - Title" or " - 01" at end (2–3 digit episode, not a year)
+  const anime = base.match(/\s+-\s+(\d{2,3})(?:\s+-\s+|\s*$|\s+\()/)
+  if (anime) return parseInt(anime[1])
+  return null
+}
+
+function parseSeasonFromFilename(filename: string): number | null {
+  const base = path.basename(filename, path.extname(filename))
+  const se = base.match(/[Ss](\d{1,2})[Ee]\d{1,3}/)
+  if (se) return parseInt(se[1])
+  const x = base.match(/\b(\d{1,2})[xX]\d{2,3}\b/)
+  if (x) return parseInt(x[1])
+  return null
+}
 
 type ScannedFiles = { videoFiles: string[]; srtFiles: string[] }
 
@@ -94,8 +176,11 @@ function findMediaFiles(dirPath: string): ScannedFiles {
       srtFiles.push(...sub.srtFiles)
     } else if (entry.isFile()) {
       const ext = path.extname(entry.name).toLowerCase()
-      if (VIDEO_EXTENSIONS.has(ext)) videoFiles.push(full)
-      else if (ext === ".srt") srtFiles.push(full)
+      if (VIDEO_EXTENSIONS.has(ext)) {
+        if (!isSampleFile(entry.name)) videoFiles.push(full)
+      } else if (ext === ".srt") {
+        srtFiles.push(full)
+      }
     }
   }
   return { videoFiles, srtFiles }
@@ -128,7 +213,7 @@ function selectBestSrt(
   const lowerIso = sourceLangIso639.toLowerCase()
   const lowerName = sourceLangName.toLowerCase()
 
-        const langMatches = pool.filter((f) => {
+  const langMatches = pool.filter((f) => {
     const base = path.basename(f, ".srt").toLowerCase()
     const lastDotPart = base.includes(".") ? base.split(".").pop()! : ""
     const hasLangSuffix = lastDotPart.length >= 2 && lastDotPart.length <= 8
@@ -138,7 +223,7 @@ function selectBestSrt(
 
   const candidates = langMatches.length > 0 ? langMatches : pool
 
-    return candidates.reduce((best, f) => {
+  return candidates.reduce((best, f) => {
     try {
       return fs.statSync(f).size > fs.statSync(best).size ? f : best
     } catch {
@@ -246,15 +331,15 @@ function extractBestEmbeddedSrt(
   const stem = path.basename(videoFile, path.extname(videoFile))
   const ext = path.extname(videoFile).toLowerCase()
 
-    if (ext === ".mkv") {
+  if (ext === ".mkv") {
     const tracks = probeMkvSubtitleTracks(videoFile)
     if (tracks !== null) {
       if (tracks.length === 0) return null
 
-            const langMatch = tracks.filter((t) => trackLangMatches(t.language, sourceIso1, sourceIso2b))
+      const langMatch = tracks.filter((t) => trackLangMatches(t.language, sourceIso1, sourceIso2b))
       const pool = langMatch.length > 0 ? langMatch : tracks
 
-            const sorted = [...pool].sort((a, b) => {
+      const sorted = [...pool].sort((a, b) => {
         if (a.defaultTrack !== b.defaultTrack) return a.defaultTrack ? -1 : 1
         return b.numIndexEntries - a.numIndexEntries
       })
@@ -275,7 +360,11 @@ function extractBestEmbeddedSrt(
   const langMatch = streams.filter((s) => {
     if (trackLangMatches(s.language, sourceIso1, sourceIso2b)) return true
     const title = s.title?.toLowerCase() ?? ""
-    return title.includes(sourceIso1.toLowerCase()) || (sourceIso2b && title.includes(sourceIso2b.toLowerCase())) || title.includes(lowerName)
+    return (
+      title.includes(sourceIso1.toLowerCase()) ||
+      (sourceIso2b && title.includes(sourceIso2b.toLowerCase())) ||
+      title.includes(lowerName)
+    )
   })
   const pool = langMatch.length > 0 ? langMatch : streams
 
@@ -326,10 +415,50 @@ export function findCompanionSrt(
   return extracted ? { path: extracted, isTemp: true } : null
 }
 
+function readNfoTmdbId(dir: string): number | null {
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return null
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".nfo") continue
+    try {
+      const content = fs.readFileSync(path.join(dir, entry.name), "utf-8")
+      // <tmdbid>12345</tmdbid> or <uniqueid type="tmdb">12345</uniqueid>
+      const xmlMatch =
+        content.match(/<tmdbid>\s*(\d+)\s*<\/tmdbid>/i) ??
+        content.match(/<uniqueid[^>]+type=["']tmdb["'][^>]*>\s*(\d+)\s*<\/uniqueid>/i)
+      if (xmlMatch) return parseInt(xmlMatch[1])
+      // https://www.themoviedb.org/movie/12345 or /tv/12345
+      const urlMatch = content.match(/themoviedb\.org\/(?:movie|tv)\/(\d+)/)
+      if (urlMatch) return parseInt(urlMatch[1])
+    } catch {
+      // skip unreadable file
+    }
+  }
+  return null
+}
+
+function getSeriesDetectionName(filePath: string, libraryPathRoot: string): string {
+  const seriesRoot = getSeriesRootDir(filePath, libraryPathRoot)
+  return path.basename(seriesRoot)
+}
+
 function getAdminUser(db: Database.Database): DBUser | null {
-  const row = db.prepare(`SELECT * FROM user WHERE isAdmin = 1 AND deletedAt IS NULL LIMIT 1`).get() as
-    | DBUser
-    | undefined
+  const row = db
+    .prepare(
+      `
+    SELECT u.* FROM user u
+    JOIN userRole ur ON ur.userId = u.id
+    JOIN role r ON r.id = ur.roleId
+    WHERE u.deletedAt IS NULL
+    ORDER BY r.level DESC
+    LIMIT 1
+  `,
+    )
+    .get() as DBUser | undefined
   return row ?? null
 }
 
@@ -338,6 +467,7 @@ async function matchMediaForFile(
   adminUser: DBUser,
   fileName: string,
   libraryType: "movie" | "series",
+  libraryPathRoot: string,
 ): Promise<{
   mediaItemId: number | null
   multipleMatches: boolean
@@ -346,17 +476,76 @@ async function matchMediaForFile(
   episode: number | null
   detectedYear: number | null
 }> {
-    let season: number | null = null
+  let season: number | null = null
   let episode: number | null = null
   let detectedYear: number | null = null
   let candidateMediaItemIds: number[] = []
 
+  // NFO pre-check: if the folder contains an .nfo with a tmdbid, skip AI and fetch directly
+  const nfoDir = libraryType === "series" ? getSeriesRootDir(fileName, libraryPathRoot) : path.dirname(fileName)
+  const nfoTmdbId = readNfoTmdbId(nfoDir)
+  if (nfoTmdbId) {
+    try {
+      const details = await fetchTheMovieDbDetailsById(db, nfoTmdbId, libraryType)
+      if (details) {
+        const tmdbYear = details.releaseDate ? parseInt(details.releaseDate.split("-")[0]) : null
+        const mediaResult = await createMediaItem(
+          db,
+          adminUser,
+          details.name ?? String(nfoTmdbId),
+          details.originalTitle ?? null,
+          libraryType,
+          tmdbYear,
+          details.isAnime ?? false,
+          details.genres || null,
+          String(details.id),
+          details.posterUrl || null,
+        )
+        if (mediaResult.success && mediaResult.mediaItem) {
+          createLog(
+            db,
+            "info",
+            "libraryScanner",
+            null,
+            `NFO TMDB match for "${path.basename(fileName)}" → ${details.name} (id ${details.id})`,
+            {
+              fileName: path.basename(fileName),
+              tmdbId: nfoTmdbId,
+              title: details.name,
+            },
+          )
+          return {
+            mediaItemId: mediaResult.mediaItem.id,
+            multipleMatches: false,
+            candidateMediaItemIds: [],
+            season,
+            episode,
+            detectedYear: tmdbYear,
+          }
+        }
+      }
+    } catch (e) {
+      createLog(
+        db,
+        "warning",
+        "libraryScanner",
+        null,
+        `NFO TMDB fetch failed for "${path.basename(fileName)}": ${String(e).slice(0, 200)}`,
+        {
+          fileName: path.basename(fileName),
+          tmdbId: nfoTmdbId,
+        },
+      )
+    }
+  }
+
+  const detectionName =
+    libraryType === "series"
+      ? getSeriesDetectionName(fileName, libraryPathRoot)
+      : path.basename(fileName, path.extname(fileName))
+
   try {
-    const detected = await getSubtitleItemMediaItemFromPrompt(
-      db,
-      adminUser,
-      path.basename(fileName, path.extname(fileName)),
-    )
+    const detected = await getSubtitleItemMediaItemFromPrompt(db, adminUser, detectionName)
 
     if (detected) {
       season = detected.season
@@ -366,7 +555,7 @@ async function matchMediaForFile(
       const theMovieDbResults = detected.theMovieDbRequestResult ?? []
 
       if (theMovieDbResults.length > 0) {
-                let filtered = detectedYear
+        let filtered = detectedYear
           ? theMovieDbResults.filter((r) => {
               const releaseYear = r.releaseDate
                 ? parseInt(r.releaseDate.split("-")[0])
@@ -380,18 +569,19 @@ async function matchMediaForFile(
         if (filtered.length === 0) filtered = theMovieDbResults
 
         if (filtered.length === 1) {
-                    const match = filtered[0]
-          const mediaResult = createMediaItem(
+          const match = filtered[0]
+          const tmdbYear = match.releaseDate ? parseInt(match.releaseDate.split("-")[0]) : null
+          const mediaResult = await createMediaItem(
             db,
             adminUser,
             match.name ?? detected.name,
             match.originalTitle ?? null,
             libraryType,
-            detectedYear,
-            false,
-            null,
+            tmdbYear ?? detectedYear,
+            match.isAnime ?? false,
+            match.genres || null,
             String(match.id),
-            match.posterBase64,
+            match.posterUrl || null,
           )
           if (mediaResult.success && mediaResult.mediaItem) {
             return {
@@ -404,18 +594,58 @@ async function matchMediaForFile(
             }
           }
         } else {
-                    for (const match of filtered) {
-            const mediaResult = createMediaItem(
+          const aiWinner = await selectBestTheMovieDbMatch(db, adminUser, detectionName, filtered)
+          if (aiWinner) {
+            const tmdbYear = aiWinner.releaseDate ? parseInt(aiWinner.releaseDate.split("-")[0]) : null
+            const mediaResult = await createMediaItem(
+              db,
+              adminUser,
+              aiWinner.name ?? detected.name,
+              aiWinner.originalTitle ?? null,
+              libraryType,
+              tmdbYear ?? detectedYear,
+              aiWinner.isAnime ?? false,
+              aiWinner.genres || null,
+              String(aiWinner.id),
+              aiWinner.posterUrl || null,
+            )
+            if (mediaResult.success && mediaResult.mediaItem) {
+              return {
+                mediaItemId: mediaResult.mediaItem.id,
+                multipleMatches: false,
+                candidateMediaItemIds: [],
+                season,
+                episode,
+                detectedYear,
+              }
+            }
+          }
+
+          createLog(
+            db,
+            "info",
+            "libraryScanner",
+            null,
+            `Multiple TMDb candidates for "${path.basename(fileName)}"; falling back to manual selection`,
+            {
+              fileName: path.basename(fileName),
+              candidateCount: filtered.length,
+            },
+          )
+
+          for (const match of filtered) {
+            const tmdbYear = match.releaseDate ? parseInt(match.releaseDate.split("-")[0]) : null
+            const mediaResult = await createMediaItem(
               db,
               adminUser,
               match.name ?? detected.name,
               match.originalTitle ?? null,
               libraryType,
-              detectedYear,
-              false,
-              null,
+              tmdbYear ?? detectedYear,
+              match.isAnime ?? false,
+              match.genres || null,
               String(match.id),
-              match.posterBase64,
+              match.posterUrl || null,
             )
             if (mediaResult.success && mediaResult.mediaItem) {
               candidateMediaItemIds.push(mediaResult.mediaItem.id)
@@ -424,7 +654,7 @@ async function matchMediaForFile(
           return { mediaItemId: null, multipleMatches: true, candidateMediaItemIds, season, episode, detectedYear }
         }
       } else if (detected.name) {
-                const existing = getMediaItemByKeys(db, detected.name, libraryType, detectedYear, null)
+        const existing = getMediaItemByKeys(db, detected.name, libraryType, detectedYear, null)
         if (existing) {
           return {
             mediaItemId: existing.id,
@@ -435,7 +665,7 @@ async function matchMediaForFile(
             detectedYear,
           }
         }
-        const mediaResult = createMediaItem(
+        const mediaResult = await createMediaItem(
           db,
           adminUser,
           detected.name,
@@ -467,7 +697,7 @@ async function matchMediaForFile(
     })
   }
 
-    if (season === null || episode === null) {
+  if (season === null || episode === null) {
     const seMatch = path.basename(fileName).match(/[Ss](\d{1,2})[Ee](\d{1,2})/)
     if (seMatch) {
       season = parseInt(seMatch[1])
@@ -478,21 +708,35 @@ async function matchMediaForFile(
   return { mediaItemId: null, multipleMatches: false, candidateMediaItemIds: [], season, episode, detectedYear }
 }
 
-async function scanLibraryPath(db: Database.Database, libraryPath: DBLibraryPath): Promise<void> {
+export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibraryPath): Promise<void> {
   const adminUser = getAdminUser(db)
   if (!adminUser) {
-    createLog(db, "warning", "libraryScanner", libraryPath.id, `Skipping scan of "${libraryPath.name}": no admin user available to attribute actions to`, {
-      libraryPathName: libraryPath.name,
-    })
+    createLog(
+      db,
+      "warning",
+      "libraryScanner",
+      libraryPath.id,
+      `Skipping scan of "${libraryPath.name}": no admin user available to attribute actions to`,
+      {
+        libraryPathName: libraryPath.name,
+      },
+    )
     setLibraryPathState(db, libraryPath.id, "idle")
     return
   }
 
   if (!fs.existsSync(libraryPath.path)) {
-    createLog(db, "warning", "libraryScanner", libraryPath.id, `Library path "${libraryPath.name}" does not exist on disk: ${libraryPath.path}`, {
-      libraryPathName: libraryPath.name,
-      path: libraryPath.path,
-    })
+    createLog(
+      db,
+      "warning",
+      "libraryScanner",
+      libraryPath.id,
+      `Library path "${libraryPath.name}" does not exist on disk: ${libraryPath.path}`,
+      {
+        libraryPathName: libraryPath.name,
+        path: libraryPath.path,
+      },
+    )
     setLibraryPathState(db, libraryPath.id, "idle")
     return
   }
@@ -505,9 +749,18 @@ async function scanLibraryPath(db: Database.Database, libraryPath: DBLibraryPath
   const iso2b: string | null = sourceLang?.iso6392b ?? null
   const langName = sourceLang?.name ?? ""
 
-    const companionSrtPaths = new Set<string>()
+  const companionSrtPaths = new Set<string>()
 
-  
+  const seriesFolderCache = new Map<
+    string,
+    {
+      mediaItemId: number | null
+      multipleMatches: boolean
+      candidateMediaItemIds: number[]
+      detectedYear: number | null
+    }
+  >()
+
   for (const videoFile of videoFiles) {
     const stem = path.basename(videoFile, path.extname(videoFile))
 
@@ -533,15 +786,61 @@ async function scanLibraryPath(db: Database.Database, libraryPath: DBLibraryPath
       continue
     }
 
-    const { mediaItemId, multipleMatches, candidateMediaItemIds, season, episode } = await matchMediaForFile(
-      db, adminUser, videoFile, libraryPath.type,
-    )
+    let mediaItemId: number | null = null
+    let multipleMatches = false
+    let candidateMediaItemIds: number[] = []
+    let season: number | null = null
+    let episode: number | null = null
+
+    if (libraryPath.type === "series") {
+      const seriesRoot = getSeriesRootDir(videoFile, libraryPath.path)
+      let cached = seriesFolderCache.get(seriesRoot)
+      if (!cached) {
+        const detection = await matchMediaForFile(db, adminUser, videoFile, libraryPath.type, libraryPath.path)
+        cached = {
+          mediaItemId: detection.mediaItemId,
+          multipleMatches: detection.multipleMatches,
+          candidateMediaItemIds: detection.candidateMediaItemIds,
+          detectedYear: detection.detectedYear,
+        }
+        seriesFolderCache.set(seriesRoot, cached)
+      }
+      mediaItemId = cached.mediaItemId
+      multipleMatches = cached.multipleMatches
+      candidateMediaItemIds = cached.candidateMediaItemIds
+
+      // Season: prefer folder name, then fall back to filename
+      const seasonFolder = getSeasonFolderNameBetween(videoFile, seriesRoot)
+      season =
+        seasonFolder !== null
+          ? (parseSeasonFolderName(seasonFolder) ?? parseSeasonFromFilename(videoFile))
+          : parseSeasonFromFilename(videoFile)
+      // Files directly in the series root with no season info default to season 1
+      if (season === null && seasonFolder === null) season = 1
+      episode = parseEpisodeFromFilename(videoFile)
+    } else {
+      const detection = await matchMediaForFile(db, adminUser, videoFile, libraryPath.type, libraryPath.path)
+      mediaItemId = detection.mediaItemId
+      multipleMatches = detection.multipleMatches
+      candidateMediaItemIds = detection.candidateMediaItemIds
+      season = detection.season
+      episode = detection.episode
+    }
 
     const mediaItem = mediaItemId ? getMediaItemById(db, mediaItemId) : null
     const extractFileName = buildExtractFileName(mediaItem, season, episode, stem)
     const status: DBLibraryPathItem["status"] = mediaItemId ? "not_started" : "no_media_item"
 
-    const item = createLibraryPathItem(db, libraryPath.id, videoFile, extractFileName, mediaItemId, status, season, episode)
+    const item = createLibraryPathItem(
+      db,
+      libraryPath.id,
+      videoFile,
+      extractFileName,
+      mediaItemId,
+      status,
+      season,
+      episode,
+    )
     if (!item) {
       if (resolvedSrt.isTemp) safeDeleteTempExtract(resolvedSrt.path, db)
       continue
@@ -554,33 +853,86 @@ async function scanLibraryPath(db: Database.Database, libraryPath: DBLibraryPath
     }
 
     if (libraryPath.autoTranslate && (mediaItemId || !multipleMatches)) {
-      await autoTranslateItem(db, adminUser, libraryPath, item.id, resolvedSrt, mediaItemId, season, episode, config.defaultChunkSize)
+      await autoTranslateItem(
+        db,
+        adminUser,
+        libraryPath,
+        item.id,
+        resolvedSrt,
+        mediaItemId,
+        season,
+        episode,
+        config.defaultChunkSize,
+      )
     } else if (resolvedSrt.isTemp) {
-            safeDeleteTempExtract(resolvedSrt.path, db, item.id)
+      safeDeleteTempExtract(resolvedSrt.path, db, item.id)
     }
   }
 
-  
   for (const srtFile of srtFiles) {
     if (companionSrtPaths.has(srtFile)) continue
 
     const srtBasename = path.basename(srtFile)
 
-        if (srtBasename.startsWith("[BCookieSub]")) continue
+    if (srtBasename.startsWith("[BCookieSub]")) continue
 
     const stem = path.basename(srtFile, ".srt")
 
     if (findLibraryPathItemByPath(db, libraryPath.id, srtFile)) continue
 
-    const { mediaItemId, multipleMatches, candidateMediaItemIds, season, episode } = await matchMediaForFile(
-      db, adminUser, srtFile, libraryPath.type,
-    )
+    let mediaItemId: number | null = null
+    let multipleMatches = false
+    let candidateMediaItemIds: number[] = []
+    let season: number | null = null
+    let episode: number | null = null
+
+    if (libraryPath.type === "series") {
+      const seriesRoot = getSeriesRootDir(srtFile, libraryPath.path)
+      let cached = seriesFolderCache.get(seriesRoot)
+      if (!cached) {
+        const detection = await matchMediaForFile(db, adminUser, srtFile, libraryPath.type, libraryPath.path)
+        cached = {
+          mediaItemId: detection.mediaItemId,
+          multipleMatches: detection.multipleMatches,
+          candidateMediaItemIds: detection.candidateMediaItemIds,
+          detectedYear: detection.detectedYear,
+        }
+        seriesFolderCache.set(seriesRoot, cached)
+      }
+      mediaItemId = cached.mediaItemId
+      multipleMatches = cached.multipleMatches
+      candidateMediaItemIds = cached.candidateMediaItemIds
+
+      const seasonFolder = getSeasonFolderNameBetween(srtFile, seriesRoot)
+      season =
+        seasonFolder !== null
+          ? (parseSeasonFolderName(seasonFolder) ?? parseSeasonFromFilename(srtFile))
+          : parseSeasonFromFilename(srtFile)
+      if (season === null && seasonFolder === null) season = 1
+      episode = parseEpisodeFromFilename(srtFile)
+    } else {
+      const detection = await matchMediaForFile(db, adminUser, srtFile, libraryPath.type, libraryPath.path)
+      mediaItemId = detection.mediaItemId
+      multipleMatches = detection.multipleMatches
+      candidateMediaItemIds = detection.candidateMediaItemIds
+      season = detection.season
+      episode = detection.episode
+    }
 
     const mediaItem = mediaItemId ? getMediaItemById(db, mediaItemId) : null
     const extractFileName = buildExtractFileName(mediaItem, season, episode, stem)
     const status: DBLibraryPathItem["status"] = mediaItemId ? "not_started" : "no_media_item"
 
-    const item = createLibraryPathItem(db, libraryPath.id, srtFile, extractFileName, mediaItemId, status, season, episode)
+    const item = createLibraryPathItem(
+      db,
+      libraryPath.id,
+      srtFile,
+      extractFileName,
+      mediaItemId,
+      status,
+      season,
+      episode,
+    )
     if (!item) continue
 
     if (multipleMatches && candidateMediaItemIds.length > 0) {
@@ -604,9 +956,12 @@ async function scanLibraryPath(db: Database.Database, libraryPath: DBLibraryPath
     }
   }
 
-  
   if (libraryPath.autoExtract) {
     await autoExtractItems(db, libraryPath)
+  }
+
+  if (!libraryPath.initialScanCompleted) {
+    setInitialScanCompleted(db, libraryPath.id)
   }
 }
 
@@ -620,6 +975,7 @@ export async function autoTranslateItem(
   season: number | null,
   episode: number | null,
   chunkSetting: number,
+  overrideTargetLangIds?: number[],
 ): Promise<{ success: boolean; msg: string }> {
   const { path: srtFilePath, isTemp } = srtSource
 
@@ -641,21 +997,26 @@ export async function autoTranslateItem(
     return { success: false, msg: "Could not read SRT file" }
   }
 
-        if (isTemp) safeDeleteTempExtract(srtFilePath, db, libraryPathItemId)
+  if (isTemp) safeDeleteTempExtract(srtFilePath, db, libraryPathItemId)
 
-  const configLangs = getConfigTranslationLanguages(db)
-  if (configLangs.length === 0) {
-    createLog(db, "warning", "libraryScanner", libraryPathItemId, "No default target languages configured — cannot auto-translate library item", {})
+  const targetLangIds = overrideTargetLangIds ?? getConfigTranslationLanguages(db).map((cl) => cl.languageId)
+  if (targetLangIds.length === 0) {
+    createLog(
+      db,
+      "warning",
+      "libraryScanner",
+      libraryPathItemId,
+      "No default target languages configured — cannot auto-translate library item",
+      {},
+    )
     return { success: false, msg: "No default target languages configured — add them in Settings" }
   }
-
-  const targetLangIds = configLangs.map((cl) => cl.languageId)
   const srtFileName = path.basename(srtFilePath)
 
   const mediaItem = mediaItemId ? getMediaItemById(db, mediaItemId) : null
   const displayName = buildDisplayName(mediaItem)
 
-      const storedSourcePath = isTemp ? null : srtFilePath
+  const storedSourcePath = isTemp ? null : srtFilePath
   const storedMediaDir = isTemp ? path.dirname(libraryPath.path) : path.dirname(srtFilePath)
 
   const result = createSubtitleTask(
@@ -685,16 +1046,23 @@ export async function autoTranslateItem(
     })
     return { success: true, msg: result.msg ?? "Queued for translation" }
   } else {
-    createLog(db, "warning", "libraryScanner", libraryPathItemId, `Failed to create subtitle task for library item: ${result.msg ?? "unknown reason"}`, {
-      srtFileName,
-      msg: result.msg,
-    })
+    createLog(
+      db,
+      "warning",
+      "libraryScanner",
+      libraryPathItemId,
+      `Failed to create subtitle task for library item: ${result.msg ?? "unknown reason"}`,
+      {
+        srtFileName,
+        msg: result.msg,
+      },
+    )
     return { success: false, msg: result.msg ?? "Failed to create subtitle task" }
   }
 }
 
 async function autoExtractItems(db: Database.Database, libraryPath: DBLibraryPath): Promise<void> {
-    const completedSubtitles = db
+  const completedSubtitles = db
     .prepare(
       `SELECT DISTINCT s.id, s.libraryPathItem as libraryPathItemId, s.mediaItemId
        FROM subtitle s
@@ -736,88 +1104,43 @@ async function autoExtractItems(db: Database.Database, libraryPath: DBLibraryPat
       const exportName = getExportFileName(title, job.season, job.episode, mediaItem?.year ?? null, langCode)
       const exportPath = path.join(outputDir, exportName)
 
-            if (fs.existsSync(exportPath)) continue
+      if (fs.existsSync(exportPath)) continue
 
       try {
         const content = addCreditToSrt(job.translatedText!)
         fs.writeFileSync(exportPath, content, "utf-8")
         updateLibraryPathItemExtractFileName(db, item.id, exportName)
-        createLog(db, "info", "libraryScanner", item.id, `Exported translated subtitle to ${exportName} (${lang.name})`, {
-          exportPath,
-          exportName,
-          lang: lang.name,
-          jobId: job.id,
-        })
+        createLog(
+          db,
+          "info",
+          "libraryScanner",
+          item.id,
+          `Exported translated subtitle to ${exportName} (${lang.name})`,
+          {
+            exportPath,
+            exportName,
+            lang: lang.name,
+            jobId: job.id,
+          },
+        )
       } catch (e) {
-        createLog(db, "error", "libraryScanner", item.id, `Failed to export translated subtitle "${exportName}" (${lang.name}): ${String(e).slice(0, 200)}`, {
-          exportPath,
-          exportName,
-          lang: lang.name,
-          jobId: job.id,
-          error: String(e),
-        })
+        createLog(
+          db,
+          "error",
+          "libraryScanner",
+          item.id,
+          `Failed to export translated subtitle "${exportName}" (${lang.name}): ${String(e).slice(0, 200)}`,
+          {
+            exportPath,
+            exportName,
+            lang: lang.name,
+            jobId: job.id,
+            error: String(e),
+          },
+        )
       }
     }
 
-        updateLibraryPathItemStatus(db, item.id, "completed")
+    updateLibraryPathItemStatus(db, item.id, "completed")
   }
-}
-
-export async function libraryScannerMain(db: Database.Database): Promise<void> {
-  console.log("[library-scanner] Started")
-
-  while (true) {
-    try {
-      await runScannerOnce(db)
-    } catch (e) {
-      createLog(db, "error", "libraryScanner", null, `Library scanner loop crashed: ${String(e).slice(0, 200)}`, { error: String(e) })
-      console.error("[library-scanner] Unexpected error:", e)
-    }
-    await sleep(LIBRARY_SCAN_INTERVAL_MS)
-  }
-}
-
-async function runScannerOnce(db: Database.Database): Promise<void> {
-  const config = getConfig(db)
-  if (!config.scanLibraryPaths) return
-
-    const stuckPaths = getLibraryPathsStuckInScanning(db)
-  for (const lp of stuckPaths) {
-    setLibraryPathState(db, lp.id, "error")
-    createLog(db, "error", "libraryScanner", lp.id, `Library path "${lp.name}" scan stuck for more than ${STUCK_SCAN_THRESHOLD_MINUTES} minutes — marked as error`, {
-      name: lp.name,
-      lastRunAt: lp.lastRunAt,
-      thresholdMinutes: STUCK_SCAN_THRESHOLD_MINUTES,
-    })
-    console.warn(
-      `[library-scanner] Path "${lp.name}" stuck in scanning > ${STUCK_SCAN_THRESHOLD_MINUTES}min — marked error`,
-    )
-  }
-
-    const enabledPaths = getEnabledLibraryPaths(db)
-
-  for (const lp of enabledPaths) {
-        const fresh = getLibraryPathById(db, lp.id)
-    if (!fresh || !fresh.enabled) continue
-    if (fresh.state === "scanning") continue
-
-    setLibraryPathState(db, lp.id, "scanning", true)
-    try {
-      await scanLibraryPath(db, lp)
-    } catch (e) {
-      createLog(db, "error", "libraryScanner", lp.id, `Scan failed for library path "${lp.name}": ${String(e).slice(0, 200)}`, {
-        name: lp.name,
-        path: lp.path,
-        error: String(e),
-      })
-      console.error(`[library-scanner] Scan error for "${lp.name}":`, e)
-      setLibraryPathState(db, lp.id, "error")
-      continue
-    }
-    setLibraryPathState(db, lp.id, "idle")
-  }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }

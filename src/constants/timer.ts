@@ -1,0 +1,8 @@
+export const LIBRARY_SCAN_INTERVAL_MS = 12_000
+export const STUCK_SCAN_THRESHOLD_MINUTES = 10
+export const STARTUP_DELAY_MS = 30_000
+export const CREDIT_DURATION_MS = 5000
+
+export const TASK_INTERVAL_MS = 2000
+export const IDLE_INTERVAL_MS = 5000
+export const MODEL_REQUEST_TIMEOUT_MS = 300_000

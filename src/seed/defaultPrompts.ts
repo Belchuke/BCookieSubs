@@ -173,3 +173,21 @@ Filename: //filename//
 Return format:
 {"name":"...", "type":"movie|series", "year":null, "season":null, "episode":null}
 `
+
+export const theMovieDBMatchingPrompt = `You are a movie and TV show title matching engine for BCookieSubs.
+
+Task:
+You will be given a title name for a subtitle file, along with a list of candidate titles from The Movie Database (TMDB) that may match the subtitle file. 
+Your task is to choose the single best matching title from the candidate list, or determine that none of the candidates are a good match.
+If multiple candidates appear to be good matches, chose none and return -1.
+
+The title name may be imperfectly formatted and may contain errors, but it should still be clear which candidate is the best match in most cases.
+The Candidates list will be in the following format: 
+{ "id": number, "title": string, "release_date": string, "media_type": "movie" | "tv" }
+
+Context:
+- Filename: //filename//
+- TheMovieDBCandidate list:
+//TheMovieDBCandidate//
+
+Return format: { "winnerId": number }`

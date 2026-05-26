@@ -13,28 +13,18 @@ import {
 } from "../repositories/subtitleRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
 import { requireAuth } from "../middleware/auth"
+import { requirePermission } from "../services/permissionService"
 import { getModelsStats } from "../repositories/statsRepository"
 
 export function statsRouter(db: Database.Database) {
   const router = Router()
 
-  const requireStats = (_req: any, res: any, next: any) => {
-    const u = res.locals.user
-    if (!u || (!u.isAdmin && !u.canViewStats)) return res.status(403).redirect("/dashboard")
-    next()
-  }
-  const requireStatsJson = (_req: any, res: any, next: any) => {
-    const u = res.locals.user
-    if (!u || (!u.isAdmin && !u.canViewStats)) return res.status(403).json({ error: "Permission denied" })
-    next()
-  }
-
-  router.get("/", requireAuth, requireStats, (req, res) => {
+  router.get("/", requireAuth, requirePermission("canViewStatistics"), (req, res) => {
     const user = res.locals.user!
     const { stats, success, msg } = getAllPromptStats(db, user)
     const models = getModelsStats(db)
     const subtitles = getSubtitlesWithLang(db)
-    const theme = getActiveTheme(db)
+    const theme = getActiveTheme(db, user.id)
 
     res.render("stats", {
       user,
@@ -50,7 +40,7 @@ export function statsRouter(db: Database.Database) {
   })
 
   
-  router.get("/subtitle-data", requireAuth, requireStatsJson, (req, res) => {
+  router.get("/subtitle-data", requireAuth, requirePermission("canViewStatistics"), (req, res) => {
     const subtitleId = parseInt(String(req.query.subtitleId))
     if (!subtitleId) return res.status(400).json({ error: "Missing subtitleId" })
 
@@ -72,7 +62,7 @@ export function statsRouter(db: Database.Database) {
   })
 
   
-  router.get("/job-data", requireAuth, requireStatsJson, (req, res) => {
+  router.get("/job-data", requireAuth, requirePermission("canViewStatistics"), (req, res) => {
     const jobId = parseInt(String(req.query.jobId))
     if (!jobId) return res.status(400).json({ error: "Missing jobId" })
 
@@ -95,21 +85,21 @@ export function statsRouter(db: Database.Database) {
   })
 
   
-  router.get("/model-data", requireAuth, requireStatsJson, (req, res) => {
+  router.get("/model-data", requireAuth, requirePermission("canViewStatistics"), (req, res) => {
     const modelId = parseInt(String(req.query.modelId))
     if (!modelId) return res.status(400).json({ error: "Missing modelId" })
     res.json(getModelCandidateStats(db, modelId))
   })
 
   
-  router.get("/judge-data", requireAuth, requireStatsJson, (req, res) => {
+  router.get("/judge-data", requireAuth, requirePermission("canViewStatistics"), (req, res) => {
     const modelId = req.query.modelId ? parseInt(String(req.query.modelId)) : null
     const page = Math.max(0, parseInt(String(req.query.page || "0")))
     res.json(getJudgeEvaluations(db, modelId, 30, page * 30))
   })
 
   
-  router.get("/poll", requireAuth, requireStatsJson, (_req, res) => {
+  router.get("/poll", requireAuth, requirePermission("canViewStatistics"), (_req, res) => {
     const user = res.locals.user!
     const { stats, success } = getAllPromptStats(db, user)
     res.json({ stats: success ? stats : [] })

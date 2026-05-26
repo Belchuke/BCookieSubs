@@ -1,20 +1,27 @@
 import { Router } from "express"
 import Database from "better-sqlite3"
 import multer from "multer"
-import { addPromptVersion, addTranslationPrompt, getAllPrompts, setActivePromptVersion, setPromptActive } from "../repositories/promptRepository"
+import {
+  addPromptVersion,
+  addTranslationPrompt,
+  getAllPrompts,
+  setActivePromptVersion,
+  setPromptActive,
+} from "../repositories/promptRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
 import { requireAuth } from "../middleware/auth"
-import { promptRules } from "../setup"
+import { requirePermission } from "../services/permissionService"
+import { promptRules } from "../constants/prompt"
 
 const upload = multer()
 
 export function promptsRouter(db: Database.Database) {
   const router = Router()
 
-  router.get("/", requireAuth, (req, res) => {
+  router.get("/", requireAuth, requirePermission("canViewPromptsPage"), (req, res) => {
     const user = res.locals.user!
     const { prompts, success, msg } = getAllPrompts(db, user)
-    const theme = getActiveTheme(db)
+    const theme = getActiveTheme(db, user.id)
 
     res.render("prompts", {
       user,
@@ -28,16 +35,7 @@ export function promptsRouter(db: Database.Database) {
     })
   })
 
-  
-  const requireManagePrompts = (_req: any, res: any, next: any) => {
-    const u = res.locals.user
-    if (!u || (!u.isAdmin && !u.canManagePrompts)) {
-      return res.redirect("/prompts?toast=error&msg=" + encodeURIComponent("Permission denied"))
-    }
-    next()
-  }
-
-  router.post("/create", requireAuth, requireManagePrompts, upload.none(), (req, res) => {
+  router.post("/create", requireAuth, requirePermission("canManagePrompts"), upload.none(), (req, res) => {
     const { name, promptText } = req.body as { name: string; promptText: string }
 
     if (!name || !promptText) {
@@ -51,8 +49,7 @@ export function promptsRouter(db: Database.Database) {
     res.redirect("/prompts?toast=success&msg=" + encodeURIComponent("Prompt created"))
   })
 
-  
-  router.post("/add-version/:id", requireAuth, requireManagePrompts, upload.none(), (req, res) => {
+  router.post("/add-version/:id", requireAuth, requirePermission("canManagePrompts"), upload.none(), (req, res) => {
     const promptId = parseInt(String(req.params.id))
     const { promptText, version } = req.body as { promptText: string; version?: string }
 
@@ -60,7 +57,7 @@ export function promptsRouter(db: Database.Database) {
       return res.redirect("/prompts?toast=error&msg=" + encodeURIComponent("Prompt text is required"))
     }
 
-        const { prompts } = getAllPrompts(db, res.locals.user!, false)
+    const { prompts } = getAllPrompts(db, res.locals.user!, false)
     const prompt = prompts.find((p) => p.id === promptId)
     const nextVersion = version
       ? parseInt(version)
@@ -73,8 +70,7 @@ export function promptsRouter(db: Database.Database) {
     res.redirect("/prompts?toast=success&msg=" + encodeURIComponent("Prompt version added"))
   })
 
-  
-  router.post("/set-version/:promptId/:versionId", requireAuth, requireManagePrompts, (req, res) => {
+  router.post("/set-version/:promptId/:versionId", requireAuth, requirePermission("canManagePrompts"), (req, res) => {
     const result = setActivePromptVersion(
       db,
       res.locals.user!,
@@ -87,8 +83,7 @@ export function promptsRouter(db: Database.Database) {
     res.redirect("/prompts?toast=success&msg=" + encodeURIComponent("Active version updated"))
   })
 
-  
-  router.post("/toggle/:id", requireAuth, requireManagePrompts, upload.none(), (req, res) => {
+  router.post("/toggle/:id", requireAuth, requirePermission("canManagePrompts"), upload.none(), (req, res) => {
     const promptId = parseInt(String(req.params.id))
     const { active } = req.body as { active?: string }
 

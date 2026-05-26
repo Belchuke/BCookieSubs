@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<%= locale %>">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Translated — BCookieSubs</title>
+  <title><%= __('translated.title') %> — BCookieSubs</title>
    <%-  include('theme-vars.ejs') %>
   <link rel="icon" type="image/png" href="/images/icon.png">
   <link rel="stylesheet" href="/static/css/all.min.css">
@@ -25,12 +25,12 @@
     <% } %>
 
     <div class="page-header">
-      <h1>Translated</h1>
+      <h1><%= __('translated.title') %></h1>
     </div>
 
     <% if (subtitles.length === 0) { %>
       <div class="card">
-        <p class="empty-state">No finished subtitles yet. Completed translations will appear here.</p>
+        <p class="empty-state"><%= __('translated.noFinishedSubtitles') %></p>
       </div>
     <% } else { %>
       <div class="card">
@@ -39,24 +39,24 @@
           <table>
             <thead>
               <tr>
-                <% if (config.showPosters) { %><th style="width:50px"></th><% } %>
-                <th>Title</th>
-                <th>Source</th>
-                <th>Target</th>
-                <th class="num">Episode</th>
-                <th class="num">Year</th>
-                <th>Finished</th>
-                <th>Duration</th>
+                <% if (config.showPosters && user.showPosters !== 0) { %><th style="width:50px"></th><% } %>
+                <th><%= __('translated.titleHeader') %></th>
+                <th><%= __('translated.source') %></th>
+                <th><%= __('translated.target') %></th>
+                <th class="num"><%= __('translated.episode') %></th>
+                <th class="num"><%= __('translated.year') %></th>
+                <th><%= __('translated.finished') %></th>
+                <th><%= __('translated.duration') %></th>
                 <th style="width:1px"></th>
               </tr>
             </thead>
             <tbody>
               <% subtitles.forEach(function(sub) { %>
               <tr>
-                <% if (config.showPosters) { %>
+                <% if (config.showPosters && user.showPosters !== 0) { %>
                 <td style="padding:.5rem .75rem">
-                  <% if (sub.posterBase64) { %>
-                    <img src="<%= sub.posterBase64 %>" alt="" class="translated-poster">
+                  <% if (sub.mediaItemPhotoPath) { %>
+                    <img src="/media-photos/<%= sub.mediaItemPhotoPath %>" alt="" class="translated-poster">
                   <% } else { %>
                     <div class="translated-poster-placeholder"></div>
                   <% } %>
@@ -94,8 +94,8 @@
         <div class="translated-cards">
           <% subtitles.forEach(function(sub) { %>
           <div class="translated-card">
-            <% if (config.showPosters && sub.posterBase64) { %>
-              <img src="<%= sub.posterBase64 %>" alt="" class="translated-card-poster">
+            <% if (config.showPosters && user.showPosters !== 0 && sub.mediaItemPhotoPath) { %>
+              <img src="/media-photos/<%= sub.mediaItemPhotoPath %>" alt="" class="translated-card-poster">
             <% } %>
             <div class="translated-card-body">
               <div class="translated-card-title"><%= sub.subtitleName %></div>

@@ -5,8 +5,9 @@ import dotenv from "dotenv"
 import { spawn, ChildProcess } from "node:child_process"
 import { getDb } from "./setup"
 import { syncSecretsFromEnv } from "./repositories/movieDbRepository"
-import { taskMain, cleanupRunningChunks } from "./task"
-import { libraryScannerMain, cleanupExtractTempDir } from "./services/libraryPathService"
+import { taskMain, cleanupRunningChunks } from "./tasks/translateTask"
+import { cleanupExtractTempDir } from "./services/libraryPathService"
+import { libraryScannerMain } from "./tasks/libraryTask"
 import { loadSession } from "./middleware/auth"
 import { requireInternalToken } from "./middleware/internalAuth"
 import { authRouter } from "./routes/auth"
@@ -20,6 +21,9 @@ import { logsRouter } from "./routes/logs"
 import { translatedRouter } from "./routes/translated"
 import { schedulesRouter } from "./routes/schedules"
 import { libraryPathsRouter } from "./routes/librarypaths"
+import { libraryRequestsRouter } from "./routes/libraryrequests"
+import { accountRouter } from "./routes/account"
+import { STARTUP_DELAY_MS } from "./constants/timer"
 
 dotenv.config()
 
@@ -154,14 +158,18 @@ app.use("/logs", logsRouter(db))
 app.use("/translated", translatedRouter(db))
 app.use("/schedules", schedulesRouter(db))
 app.use("/library-paths", libraryPathsRouter(db))
+app.use("/library-requests", libraryRequestsRouter(db))
+app.use("/account", accountRouter(db))
 
 app.use(express.static(path.join(process.cwd(), "public")))
+app.use("/media-photos", express.static(path.join(process.cwd(), "mediaItemPhotos")))
 app.use("/static", express.static(path.join(process.cwd(), "node_modules", "@fortawesome", "fontawesome-free")))
 
 app.post("/aiOllama/window", (req, res) => {
   const user = res.locals.user
   if (!user) return res.status(401).json({ success: false, message: "Unauthorized" })
-  if (!user.isAdmin) return res.status(403).json({ success: false, message: "Admin access required" })
+  if (!res.locals.can("canManageSettings"))
+    return res.status(403).json({ success: false, message: "Permission denied" })
 
   const { start } = req.body as { start: boolean }
   if (start) {
@@ -185,7 +193,6 @@ app.listen(PORT, () => {
   }
 })
 
-const STARTUP_DELAY_MS = 30_000
 console.log(`[startup] Waiting ${STARTUP_DELAY_MS / 1000}s for Ollama to start before launching workers…`)
 setTimeout(() => {
   console.log("[startup] Starting background workers")

@@ -9,9 +9,13 @@ import {
   defaultPromptThree,
   defaultPromptTwo,
   nameFormatterPrompt,
+  theMovieDBMatchingPrompt,
 } from "./seed/defaultPrompts"
 import { seedLanguages } from "./seed/defaultLangs"
 import { recommendedSeeds } from "./seed/recommendedModels"
+import { PERMISSIONS } from "./constants/permissions"
+import { DEFAULT_ROLES } from "./constants/roles"
+import { isSupportedLocale } from "./i18n"
 
 export const dbName = process.env.DBPATH || "subtitles.db"
 
@@ -26,31 +30,95 @@ const createTables = (db: Database.Database) => {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
     passwordHash TEXT NOT NULL,
-    isAdmin INTEGER NOT NULL DEFAULT 0,
-
-    canManageUsers INTEGER NOT NULL DEFAULT 0,
-    canViewModels INTEGER NOT NULL DEFAULT 0,
-    canManageModels INTEGER NOT NULL DEFAULT 0,
-    canViewPrompts INTEGER NOT NULL DEFAULT 0,
-    canManagePrompts INTEGER NOT NULL DEFAULT 0,
-    canManageLanguages INTEGER NOT NULL DEFAULT 0,
-    canManageConfig INTEGER NOT NULL DEFAULT 0,
-    canAddSubtitles INTEGER NOT NULL DEFAULT 0,
-    canStopSubtitles INTEGER NOT NULL DEFAULT 0,
-    canDeleteSubtitles INTEGER NOT NULL DEFAULT 0,
-    canViewLogs INTEGER NOT NULL DEFAULT 0,
-    canManageSchedules INTEGER NOT NULL DEFAULT 0,
-    pauseWorker INTEGER NOT NULL DEFAULT 0,
-    downloadSubtitles INTEGER NOT NULL DEFAULT 0,
-    canViewStats INTEGER NOT NULL DEFAULT 0,
-    canManageSecret INTEGER NOT NULL DEFAULT 0,
-    canManageLibraryPath INTEGER NOT NULL DEFAULT 0,
-    canManageRootLibraryPath INTEGER NOT NULL DEFAULT 0,
+    hasSeenTutorial INTEGER NOT NULL DEFAULT 0,
+    selectedThemeId INTEGER NOT NULL DEFAULT 1,
+    showPosters INTEGER NOT NULL DEFAULT 1,
+    language TEXT DEFAULT NULL,
 
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deletedAt DATETIME DEFAULT NULL
   )`)
+
+    db.exec(`CREATE TABLE IF NOT EXISTS permission (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL,
+    description TEXT NOT NULL,
+    category TEXT DEFAULT NULL,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`)
+
+    db.exec(`CREATE TABLE IF NOT EXISTS role (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    level INTEGER NOT NULL UNIQUE,
+    description TEXT DEFAULT NULL,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`)
+
+    db.exec(`CREATE TABLE IF NOT EXISTS rolePermission (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    roleId INTEGER NOT NULL,
+    permissionId INTEGER NOT NULL,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(roleId, permissionId),
+    FOREIGN KEY(roleId) REFERENCES role(id) ON DELETE CASCADE,
+    FOREIGN KEY(permissionId) REFERENCES permission(id) ON DELETE CASCADE
+  )`)
+
+    db.exec(`CREATE TABLE IF NOT EXISTS userRole (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL,
+    roleId INTEGER NOT NULL,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(userId, roleId),
+    FOREIGN KEY(userId) REFERENCES user(id) ON DELETE CASCADE,
+    FOREIGN KEY(roleId) REFERENCES role(id) ON DELETE CASCADE
+  )`)
+
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_userRole_userId ON userRole(userId)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_rolePermission_roleId ON rolePermission(roleId)`)
+
+    const insertPermission = db.prepare(`
+      INSERT INTO permission (key, label, description, category)
+      VALUES (@key, @label, @description, @category)
+      ON CONFLICT(key) DO UPDATE SET
+        label = excluded.label,
+        description = excluded.description,
+        category = excluded.category,
+        updatedAt = CURRENT_TIMESTAMP
+    `)
+    for (const p of PERMISSIONS) {
+      insertPermission.run({ key: p.key, label: p.label, description: p.description, category: p.category })
+    }
+
+    const insertRole = db.prepare(`
+      INSERT INTO role (name, level, description)
+      VALUES (@name, @level, @description)
+      ON CONFLICT(name) DO UPDATE SET
+        level = excluded.level,
+        description = excluded.description,
+        updatedAt = CURRENT_TIMESTAMP
+    `)
+    for (const r of DEFAULT_ROLES) {
+      insertRole.run({ name: r.name, level: r.level, description: r.description })
+    }
+
+    const insertRolePerm = db.prepare(`
+      INSERT INTO rolePermission (roleId, permissionId)
+      SELECT r.id, p.id
+      FROM role r, permission p
+      WHERE r.name = @roleName AND p.key = @permKey
+      ON CONFLICT(roleId, permissionId) DO NOTHING
+    `)
+    for (const r of DEFAULT_ROLES) {
+      for (const permKey of r.permissions) {
+        insertRolePerm.run({ roleName: r.name, permKey })
+      }
+    }
 
     db.exec(`CREATE TABLE IF NOT EXISTS userSession (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,7 +217,7 @@ const createTables = (db: Database.Database) => {
 
       UNIQUE (modelName, modelUpdatedAt)
     );`)
-        
+
     db.exec(`CREATE TABLE IF NOT EXISTS recommendedModel (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -164,7 +232,7 @@ const createTables = (db: Database.Database) => {
       updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`)
 
-        const seedRecommended = db.prepare(`
+    const seedRecommended = db.prepare(`
       INSERT INTO recommendedModel (name, provider, baseUrl, roles, requireOllamaSubscription, score)
       VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(name) DO NOTHING
@@ -233,7 +301,7 @@ const createTables = (db: Database.Database) => {
     promptId INTEGER NOT NULL,
     version INTEGER NOT NULL,
     promptText TEXT NOT NULL,
-    active INTEGER NOT NULL DEFAULT 1, 
+    active INTEGER NOT NULL DEFAULT 1,
 
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deletedAt DATETIME DEFAULT NULL,
@@ -256,6 +324,7 @@ const createTables = (db: Database.Database) => {
     insertPrompt.run("defaultPrompt5", "translation")
     insertPrompt.run("defaultJudgePrompt", "judge")
     insertPrompt.run("nameFormatterPrompt", "nameFormatter")
+    insertPrompt.run("theMovieDBMatchingPrompt", "nameFormatter")
 
     const insertPromptVersion = db.prepare(`
     INSERT INTO promptVersion (promptId, version, promptText)
@@ -274,6 +343,7 @@ const createTables = (db: Database.Database) => {
     insertPromptVersion.run("defaultPrompt5", 1, defaultPromptFive)
     insertPromptVersion.run("defaultJudgePrompt", 1, defaultJudgePrompt)
     insertPromptVersion.run("nameFormatterPrompt", 1, nameFormatterPrompt)
+    insertPromptVersion.run("theMovieDBMatchingPrompt", 1, theMovieDBMatchingPrompt)
 
     db.exec(`CREATE TABLE IF NOT EXISTS promptStat (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -314,7 +384,7 @@ const createTables = (db: Database.Database) => {
     db.exec(`CREATE TABLE IF NOT EXISTS config (
     id INTEGER PRIMARY KEY CHECK (id = 1),
 
-    defaultChunkSize INTEGER NOT NULL DEFAULT 14,
+    defaultChunkSize INTEGER NOT NULL DEFAULT 12,
     maxRetriesPerChunk INTEGER NOT NULL DEFAULT 5,
 
     showPosters INTEGER NOT NULL DEFAULT 0,
@@ -324,31 +394,38 @@ const createTables = (db: Database.Database) => {
     scanLibraryPaths INTEGER NOT NULL DEFAULT 0,
 
     scheduleConfigured INTEGER NOT NULL DEFAULT 0,
+    setupCompleted INTEGER NOT NULL DEFAULT 0,
 
     clearLogs INTEGER NOT NULL DEFAULT 0,
     clearLogsOlderThanDays INTEGER NOT NULL DEFAULT 30,
 
     version TEXT NOT NULL DEFAULT '0.0.1',
 
-    sessionTimeoutMinutes INTEGER NOT NULL DEFAULT 240,
+    sessionTimeoutMinutes INTEGER NOT NULL DEFAULT 400,
 
     selectedThemeId INTEGER NOT NULL DEFAULT 1,
 
     rootLibraryPath TEXT DEFAULT NULL,
 
+    defaultLanguage TEXT NOT NULL DEFAULT 'en',
+
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`)
 
-            const theMovieDbKey = process.env.THEMOVIEDB_API_KEY?.trim()
+    const theMovieDbKey = process.env.THEMOVIEDB_API_KEY?.trim()
     const theMovieDbActiveDefault = theMovieDbKey ? 1 : 0
+    const showPostersDefault = theMovieDbKey ? 1 : 0
     const rootLibraryPathDefault = process.env.TRANSLATION_ROOT_DIR?.trim() || null
+    const scanLibraryPathsDefault = rootLibraryPathDefault ? 1 : 0
+    const rawEnvLang = process.env.APP_DEFAULT_LANGUAGE?.trim() ?? ""
+    const defaultLanguage = isSupportedLocale(rawEnvLang) ? rawEnvLang : "en"
 
     db.prepare(
-      `INSERT INTO config (id, defaultChunkSize, theMovieDbActive, rootLibraryPath)
-       VALUES (1, 10, ?, ?)
+      `INSERT INTO config (id, defaultChunkSize, theMovieDbActive, showPosters, rootLibraryPath, scanLibraryPaths, defaultLanguage)
+       VALUES (1, 12, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO NOTHING`,
-    ).run(theMovieDbActiveDefault, rootLibraryPathDefault)
+    ).run(theMovieDbActiveDefault, showPostersDefault, rootLibraryPathDefault, scanLibraryPathsDefault, defaultLanguage)
 
     db.exec(`CREATE TABLE IF NOT EXISTS configTranslationLanguage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -360,6 +437,21 @@ const createTables = (db: Database.Database) => {
 
     UNIQUE (languageId),
 
+    FOREIGN KEY (languageId) REFERENCES language(id) ON DELETE CASCADE
+  )`)
+
+    db.exec(`CREATE TABLE IF NOT EXISTS userConfigTranslationLanguage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL,
+    languageId INTEGER NOT NULL,
+    orderNumber INTEGER NOT NULL,
+
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE (userId, languageId),
+
+    FOREIGN KEY (userId) REFERENCES user(id) ON DELETE CASCADE,
     FOREIGN KEY (languageId) REFERENCES language(id) ON DELETE CASCADE
   )`)
 
@@ -411,7 +503,7 @@ const createTables = (db: Database.Database) => {
     theMovieDbId TEXT DEFAULT NULL,
     isAnime INTEGER DEFAULT NULL,
     genres TEXT DEFAULT NULL,
-    posterBase64 TEXT DEFAULT NULL,
+    mediaItemPhotoPath TEXT DEFAULT NULL,
 
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -429,6 +521,7 @@ const createTables = (db: Database.Database) => {
       state TEXT NOT NULL DEFAULT 'idle'
           CHECK (state IN ('idle', 'scanning', 'error')),
       type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+      initialScanCompleted INTEGER NOT NULL DEFAULT 0,
       createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`)
@@ -532,11 +625,11 @@ const createTables = (db: Database.Database) => {
       CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled', 'paused')),
 
     orderNumber INTEGER NOT NULL DEFAULT 0,
-    
+
     translatedText TEXT DEFAULT NULL,
     outputFilePath TEXT DEFAULT NULL,
     outputHash TEXT DEFAULT NULL,
-    
+
     finishedAt DATETIME DEFAULT NULL,
     cancelledAt DATETIME DEFAULT NULL,
     cancelledByUserId INTEGER DEFAULT NULL,
@@ -676,34 +769,10 @@ const validateDb = (db: Database.Database) => {
 }
 
 const runMigrations = (db: Database.Database): void => {
-  const userCols = (db.pragma("table_info(user)") as { name: string }[]).map((c) => c.name)
-  if (!userCols.includes("canManageRootLibraryPath")) {
-    db.exec(`ALTER TABLE user ADD COLUMN canManageRootLibraryPath INTEGER NOT NULL DEFAULT 0`)
-    console.log("Migration: added canManageRootLibraryPath to user")
-  }
-
-  const configCols = (db.pragma("table_info(config)") as { name: string }[]).map((c) => c.name)
-  if (!configCols.includes("rootLibraryPath")) {
-    db.exec(`ALTER TABLE config ADD COLUMN rootLibraryPath TEXT DEFAULT NULL`)
-    console.log("Migration: added rootLibraryPath to config")
-  }
-
-    const tables = (db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as { name: string }[]).map(
-    (t) => t.name,
-  )
-  if (!tables.includes("libraryPathItemBlacklist")) {
-    db.exec(`CREATE TABLE libraryPathItemBlacklist (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      libraryPathItemId INTEGER NOT NULL,
-      blacklistedByUserId INTEGER DEFAULT NULL,
-      reason TEXT DEFAULT NULL,
-      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(libraryPathItemId),
-      FOREIGN KEY(libraryPathItemId) REFERENCES libraryPathItem(id) ON DELETE CASCADE,
-      FOREIGN KEY(blacklistedByUserId) REFERENCES user(id) ON DELETE SET NULL
-    )`)
-    console.log("Migration: added libraryPathItemBlacklist table")
+  try {
+    db.exec(`ALTER TABLE config ADD COLUMN setupCompleted INTEGER NOT NULL DEFAULT 0`)
+  } catch {
+    // column already exists
   }
 }
 
@@ -721,28 +790,3 @@ export function getDb(): Database.Database {
 
   return db
 }
-
-export const promptRules = [
-  { note: "source language replacement rule", replaceText: "//sourceLang//" },
-  { note: "source language short form replacement rule", replaceText: "//sourceShortLang//" },
-  { note: "target language replacement rule", replaceText: "//targetLang//" },
-  { note: "target language short form replacement rule", replaceText: "//targetShortLang//" },
-  { note: "series or movie name replacement rule", replaceText: "//name//" },
-  { note: "media type replacement rule", replaceText: "//mediaType//" },
-  { note: "genres replacement rule", replaceText: "//genres//" },
-  { note: "anime detection replacement rule", replaceText: "//isAnime//" },
-  { note: "source subtitles text replacement rule for judge prompt", replaceText: "//sourceText//" },
-  { note: "total candidates count replacement rule for judge prompt", replaceText: "//total//" },
-  { note: "total candidates count minus one replacement rule for judge prompt", replaceText: "//totalMinusOne//" },
-  { note: "translation candidates list replacement rule for judge prompt", replaceText: "//candidateList//" },
-  { note: "movie or show name replacement rule for name formatter prompt", replaceText: "//filename//" },
-]
-
-export const theMovieDBSecretKey = "theMovieDBApiKey"
-export const ollamaApiSecretKey = "ollamaApiKey"
-export const openAIApiSecretKey = "openAIApiKey"
-export const anthropicApiSecretKey = "anthropicApiKey"
-export const apiKey = "apiKey"
-
-export const LIBRARY_SCAN_INTERVAL_MS = 12_000
-export const STUCK_SCAN_THRESHOLD_MINUTES = 10

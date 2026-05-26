@@ -1,14 +1,26 @@
 import { Router } from "express"
 import Database from "better-sqlite3"
 import multer from "multer"
-import { getConfig } from "../repositories/configRepository"
+import { enableNameDetection, getConfig, isSetupCompleted, markSetupCompleted } from "../repositories/configRepository"
 import { addModel, getModelsListWithRoles, updateRolesForModel } from "../repositories/modelRepository"
+import {
+  getLanguages,
+  getConfigTranslationLanguages,
+  setConfigTranslationLanguages,
+  syncUserConfigTranslationLanguagesFromGlobal,
+} from "../repositories/languageRepository"
 import { getModelsFromOllama } from "../repositories/ollamaRepository"
 import { getRecommendedModelById, getRecommendedModels } from "../repositories/recommendedModelRepository"
 import { deleteSession } from "../repositories/sessionRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
-import { createInitialAdminUser, hasAdminUser, verifyUserPassword } from "../repositories/userRepository"
-import { ollamaApiSecretKey } from "../setup"
+import {
+  createInitialAdminUser,
+  getUserPasswordHash,
+  hasAdminUser,
+  updateUserPassword,
+  verifyUserPassword,
+} from "../repositories/userRepository"
+import bcrypt from "bcrypt"
 import { requireAuth, requireNoAuth } from "../middleware/auth"
 
 const upload = multer()
@@ -16,13 +28,12 @@ const upload = multer()
 export function authRouter(db: Database.Database) {
   const router = Router()
 
-    router.get("/", (req, res) => {
+  router.get("/", (req, res) => {
     if (!hasAdminUser(db)) return res.redirect("/setup/1")
     if (res.locals.user) return res.redirect("/dashboard")
     res.redirect("/login")
   })
 
-  
   router.get("/login", requireNoAuth, (req, res) => {
     res.render("login", { error: req.query.error ?? null, theme: getActiveTheme(db) })
   })
@@ -57,7 +68,6 @@ export function authRouter(db: Database.Database) {
     res.redirect("/login")
   })
 
-  
   router.get("/setup/1", (req, res) => {
     if (hasAdminUser(db)) return res.redirect("/")
     res.render("setup/step1", { error: req.query.error ?? null, theme: getActiveTheme(db) })
@@ -96,8 +106,49 @@ export function authRouter(db: Database.Database) {
     res.redirect("/setup/2")
   })
 
-  
-  router.get("/setup/2", requireAuth, async (req, res) => {
+  router.get("/setup/2", requireAuth, (req, res) => {
+    if (isSetupCompleted(db)) return res.redirect("/")
+    res.render("setup/step2", { user: res.locals.user, theme: getActiveTheme(db) })
+  })
+
+  router.post("/setup/2/next", requireAuth, (req, res) => {
+    if (isSetupCompleted(db)) return res.redirect("/")
+    res.redirect("/setup/3")
+  })
+
+  router.get("/setup/3", requireAuth, (req, res) => {
+    if (isSetupCompleted(db)) return res.redirect("/")
+    const languages = getLanguages(db)
+    const configLangs = getConfigTranslationLanguages(db)
+    res.render("setup/step3", {
+      user: res.locals.user,
+      languages,
+      configLangs,
+      error: req.query.error ?? null,
+      theme: getActiveTheme(db),
+    })
+  })
+
+  router.post("/setup/3/next", requireAuth, upload.none(), (req, res) => {
+    if (isSetupCompleted(db)) return res.redirect("/")
+    const rawIds = req.body.languageId
+    const ids: number[] = (Array.isArray(rawIds) ? rawIds : rawIds ? [rawIds] : [])
+      .map((v: string) => parseInt(v))
+      .filter((n: number) => !isNaN(n))
+
+    if (ids.length === 0) {
+      return res.redirect("/setup/3?error=" + encodeURIComponent("Add at least one language before continuing"))
+    }
+
+    const adminUser = res.locals.user!
+    setConfigTranslationLanguages(db, ids)
+    syncUserConfigTranslationLanguagesFromGlobal(db, adminUser.id)
+
+    res.redirect("/setup/4")
+  })
+
+  router.get("/setup/4", requireAuth, async (req, res) => {
+    if (isSetupCompleted(db)) return res.redirect("/")
     let ollamaModels: string[] = []
     let ollamaError: string | null = null
 
@@ -114,7 +165,7 @@ export function authRouter(db: Database.Database) {
     const { models: dbModels } = getModelsListWithRoles(db, res.locals.user!)
     const recommendedModels = getRecommendedModels(db)
 
-    res.render("setup/step2", {
+    res.render("setup/step4", {
       user: res.locals.user,
       ollamaModels,
       dbModels,
@@ -127,37 +178,89 @@ export function authRouter(db: Database.Database) {
     })
   })
 
-  router.post("/setup/2/install-recommended/:id", requireAuth, async (req, res) => {
+  router.post("/setup/4/install-recommended/:id", requireAuth, async (req, res) => {
+    if (isSetupCompleted(db)) return res.redirect("/")
     const rec = getRecommendedModelById(db, parseInt(String(req.params.id)))
-    if (!rec) return res.redirect("/setup/2?error=" + encodeURIComponent("Recommended model not found"))
+    if (!rec) {
+      if (req.query.json === "1") return res.json({ success: false, msg: "Recommended model not found" })
+      return res.redirect("/setup/4?error=" + encodeURIComponent("Recommended model not found"))
+    }
 
     const validProviders = ["ollama", "ollama cloud", "chatgpt", "claude", "custom"] as const
     const provider = (validProviders as readonly string[]).includes(rec.provider)
       ? (rec.provider as (typeof validProviders)[number])
       : "ollama"
 
-        const result = addModel(
-      db, res.locals.user!,
-      rec.name, true, true,
+    const result = addModel(
+      db,
+      res.locals.user!,
+      rec.name,
+      true,
+      true,
       { model: rec.name, size: null, parameterSize: null, modifiedAt: null },
-      [], provider, rec.baseUrl, rec.id,
+      [],
+      provider,
+      rec.baseUrl,
+      rec.id,
     )
     if (!result.success) {
-      return res.redirect("/setup/2?error=" + encodeURIComponent(result.msg ?? "Failed to add model"))
+      if (req.query.json === "1") return res.json({ success: false, msg: result.msg ?? "Failed to add model" })
+      return res.redirect("/setup/4?error=" + encodeURIComponent(result.msg ?? "Failed to add model"))
     }
-    res.redirect("/setup/2?toast=success&msg=" + encodeURIComponent(`${rec.name} added`))
+    if (req.query.json === "1")
+      return res.json({ success: true, msg: `${rec.name} added`, modelName: rec.name, name: rec.name })
+    res.redirect("/setup/4?toast=success&msg=" + encodeURIComponent(`${rec.name} added`))
   })
 
-  router.post("/setup/2/next", requireAuth, (req, res) => {
+  router.post("/setup/4/add", requireAuth, upload.none(), (req, res) => {
+    if (isSetupCompleted(db)) return res.redirect("/")
+    const { modelName, name, closeAfterUse, roles, provider, baseUrl } = req.body as {
+      modelName: string
+      name?: string
+      closeAfterUse?: string
+      roles?: string | string[]
+      provider?: string
+      baseUrl?: string
+    }
+    if (!modelName) return res.redirect("/setup/4?error=" + encodeURIComponent("Model name is required"))
+
+    const roleList = (Array.isArray(roles) ? roles : roles ? [roles] : ["translation"]) as (
+      | "translation"
+      | "judge"
+      | "nameFormatter"
+    )[]
+    const validProviders = ["ollama", "ollama cloud", "chatgpt", "claude", "custom"] as const
+    const resolvedProvider = (validProviders as readonly string[]).includes(provider ?? "")
+      ? (provider as (typeof validProviders)[number])
+      : "ollama"
+
+    const result = addModel(
+      db,
+      res.locals.user!,
+      (name || modelName).trim(),
+      closeAfterUse !== "0",
+      true,
+      { model: modelName.trim(), size: null, parameterSize: null, modifiedAt: null },
+      roleList,
+      resolvedProvider,
+      baseUrl?.trim() || null,
+    )
+    if (!result.success)
+      return res.redirect("/setup/4?error=" + encodeURIComponent(result.msg ?? "Failed to add model"))
+    res.redirect("/setup/4?toast=success&msg=" + encodeURIComponent("Model added"))
+  })
+
+  router.post("/setup/4/next", requireAuth, (req, res) => {
+    if (isSetupCompleted(db)) return res.redirect("/")
     const { models } = getModelsListWithRoles(db, res.locals.user!)
     if (models.length === 0) {
-      return res.redirect("/setup/2?error=" + encodeURIComponent("Install at least one model before continuing"))
+      return res.redirect("/setup/4?error=" + encodeURIComponent("Install at least one model before continuing"))
     }
-    res.redirect("/setup/3")
+    res.redirect("/setup/5")
   })
 
-  
-  router.get("/setup/3", requireAuth, async (req, res) => {
+  router.get("/setup/5", requireAuth, async (req, res) => {
+    if (isSetupCompleted(db)) return res.redirect("/")
     let ollamaModels: { model: string; name?: string }[] = []
     let ollamaError: string | null = null
 
@@ -173,7 +276,7 @@ export function authRouter(db: Database.Database) {
 
     const { models: dbModels } = getModelsListWithRoles(db, res.locals.user!)
 
-    res.render("setup/step3", {
+    res.render("setup/step5", {
       user: res.locals.user,
       ollamaModels,
       dbModels,
@@ -185,51 +288,120 @@ export function authRouter(db: Database.Database) {
     })
   })
 
-  router.post("/setup/3/add", requireAuth, upload.none(), (req, res) => {
+  router.post("/setup/5/add", requireAuth, upload.none(), (req, res) => {
+    if (isSetupCompleted(db)) return res.redirect("/")
     const { modelName, name, closeAfterUse, roles, provider, baseUrl } = req.body as {
-      modelName: string; name?: string; closeAfterUse?: string; roles?: string | string[]
-      provider?: string; baseUrl?: string
+      modelName: string
+      name?: string
+      closeAfterUse?: string
+      roles?: string | string[]
+      provider?: string
+      baseUrl?: string
     }
-    if (!modelName) return res.redirect("/setup/3?error=" + encodeURIComponent("Model name is required"))
+    if (!modelName) return res.redirect("/setup/5?error=" + encodeURIComponent("Model name is required"))
 
-    const roleList = (Array.isArray(roles) ? roles : roles ? [roles] : ["translation"]) as ("translation" | "judge" | "nameFormatter")[]
+    const roleList = (Array.isArray(roles) ? roles : roles ? [roles] : ["translation"]) as (
+      | "translation"
+      | "judge"
+      | "nameFormatter"
+    )[]
     const validProviders = ["ollama", "ollama cloud", "chatgpt", "claude", "custom"] as const
     const resolvedProvider = (validProviders as readonly string[]).includes(provider ?? "")
-      ? (provider as (typeof validProviders)[number]) : "ollama"
+      ? (provider as (typeof validProviders)[number])
+      : "ollama"
 
     const result = addModel(
-      db, res.locals.user!, (name || modelName).trim(), closeAfterUse !== "0", true,
+      db,
+      res.locals.user!,
+      (name || modelName).trim(),
+      closeAfterUse !== "0",
+      true,
       { model: modelName.trim(), size: null, parameterSize: null, modifiedAt: null },
-      roleList, resolvedProvider, baseUrl?.trim() || null,
+      roleList,
+      resolvedProvider,
+      baseUrl?.trim() || null,
     )
-    if (!result.success) return res.redirect("/setup/3?error=" + encodeURIComponent(result.msg ?? "Failed to add model"))
-    res.redirect("/setup/3?toast=success&msg=" + encodeURIComponent("Model added"))
+    if (!result.success)
+      return res.redirect("/setup/5?error=" + encodeURIComponent(result.msg ?? "Failed to add model"))
+    res.redirect("/setup/5?toast=success&msg=" + encodeURIComponent("Model added"))
   })
 
-  router.post("/setup/3/role/:id", requireAuth, upload.none(), (req, res) => {
+  router.post("/setup/5/role/:id", requireAuth, upload.none(), (req, res) => {
+    if (isSetupCompleted(db)) return res.redirect("/")
     const modelId = parseInt(String(req.params.id))
     const { role, action } = req.body as {
       role: "translation" | "judge" | "nameFormatter"
       action: "add" | "remove"
     }
     if (!role || !["translation", "judge", "nameFormatter"].includes(role)) {
-      return res.redirect("/setup/3?error=" + encodeURIComponent("Invalid role"))
+      return res.redirect("/setup/5?error=" + encodeURIComponent("Invalid role"))
     }
     const result = updateRolesForModel(db, res.locals.user!, modelId, role, action === "add")
     if (!result.success) {
-      return res.redirect("/setup/3?error=" + encodeURIComponent(result.msg ?? "Role update failed"))
+      return res.redirect("/setup/5?error=" + encodeURIComponent(result.msg ?? "Role update failed"))
     }
-    res.redirect("/setup/3?toast=success&msg=" + encodeURIComponent("Role updated"))
+    res.redirect("/setup/5?toast=success&msg=" + encodeURIComponent("Role updated"))
   })
 
-  router.post("/setup/3/next", requireAuth, (req, res) => {
+  router.post("/setup/5/next", requireAuth, (req, res) => {
+    if (isSetupCompleted(db)) return res.redirect("/")
     const { models } = getModelsListWithRoles(db, res.locals.user!)
-    if (models.length === 0) return res.redirect("/setup/3?error=" + encodeURIComponent("Add at least one model before continuing"))
+    if (models.length === 0)
+      return res.redirect("/setup/5?error=" + encodeURIComponent("Add at least one model before continuing"))
     const hasTranslationModel = models.some((m) => m.roles.some((r) => r.role === "translation"))
     if (!hasTranslationModel) {
-      return res.redirect("/setup/3?error=" + encodeURIComponent("Assign the Translation role to at least one model before continuing"))
+      return res.redirect(
+        "/setup/5?error=" + encodeURIComponent("Assign the Translation role to at least one model before continuing"),
+      )
     }
+    const hasNameFormatter = models.some((m) => m.roles.some((r) => r.role === "nameFormatter"))
+    if (hasNameFormatter) {
+      enableNameDetection(db)
+    }
+    markSetupCompleted(db)
     res.redirect("/dashboard?toast=success&msg=" + encodeURIComponent("Setup complete! Welcome."))
+  })
+
+  router.post("/account/change-password", requireAuth, upload.none(), (req, res) => {
+    const user = res.locals.user!
+    const { currentPassword, newPassword, newPassword2, returnTo } = req.body as {
+      currentPassword: string
+      newPassword: string
+      newPassword2: string
+      returnTo?: string
+    }
+
+    const redirectBack = returnTo && /^\/[a-zA-Z0-9/_-]*$/.test(returnTo) ? returnTo : "/dashboard"
+    const errBase = `${redirectBack}?toast=error&msg=`
+
+    if (!currentPassword || !newPassword) {
+      return res.redirect(errBase + encodeURIComponent("All fields are required"))
+    }
+    if (newPassword.length < 8) {
+      return res.redirect(errBase + encodeURIComponent("New password must be at least 8 characters"))
+    }
+    if (newPassword !== newPassword2) {
+      return res.redirect(errBase + encodeURIComponent("New passwords do not match"))
+    }
+
+    const passwordHash = getUserPasswordHash(db, user.id)
+    if (!passwordHash) {
+      return res.redirect(errBase + encodeURIComponent("User not found"))
+    }
+
+    const match = bcrypt.compareSync(currentPassword, passwordHash)
+    if (!match) {
+      return res.redirect(errBase + encodeURIComponent("Current password is incorrect"))
+    }
+
+    const result = updateUserPassword(db, user, user.id, newPassword)
+    if (!result.success) {
+      return res.redirect(errBase + encodeURIComponent(result.msg ?? "Failed to update password"))
+    }
+
+    const config = getConfig(db)
+    res.clearCookie("st_session")
+    res.redirect("/login?error=" + encodeURIComponent("Password changed — please sign in again"))
   })
 
   return router

@@ -4,19 +4,17 @@ import multer from "multer"
 import { createSchedule, deleteSchedule, getSchedules, updateSchedule } from "../repositories/scheduleRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
 import { requireAuth } from "../middleware/auth"
+import { requirePermission } from "../services/permissionService"
 
 const upload = multer()
 
 export function schedulesRouter(db: Database.Database) {
   const router = Router()
 
-  router.get("/", requireAuth, (req, res) => {
+  router.get("/", requireAuth, requirePermission("canViewSchedules"), (req, res) => {
     const user = res.locals.user!
-    if (!user.isAdmin && !user.canManageSchedules) {
-      return res.status(403).redirect("/dashboard")
-    }
     const schedules = getSchedules(db, user)
-    const theme = getActiveTheme(db)
+    const theme = getActiveTheme(db, user.id)
 
     res.render("schedules", {
       user,
@@ -28,11 +26,8 @@ export function schedulesRouter(db: Database.Database) {
     })
   })
 
-  router.post("/add", requireAuth, upload.none(), (req, res) => {
+  router.post("/add", requireAuth, requirePermission("canManageSchedules"), upload.none(), (req, res) => {
     const user = res.locals.user!
-    if (!user.isAdmin && !user.canManageSchedules) {
-      return res.redirect("/schedules?toast=error&msg=" + encodeURIComponent("Permission denied"))
-    }
     const {
       taskName, enabled, dayOfTheWeek, startTimeHour, startTimeMinute,
       durationMinutes, repeatUnit, repeatInterval, firstStartAt,
@@ -57,11 +52,8 @@ export function schedulesRouter(db: Database.Database) {
     res.redirect("/schedules?toast=success&msg=" + encodeURIComponent("Schedule created"))
   })
 
-  router.post("/update/:id", requireAuth, upload.none(), (req, res) => {
+  router.post("/update/:id", requireAuth, requirePermission("canManageSchedules"), upload.none(), (req, res) => {
     const user = res.locals.user!
-    if (!user.isAdmin && !user.canManageSchedules) {
-      return res.redirect("/schedules?toast=error&msg=" + encodeURIComponent("Permission denied"))
-    }
     const {
       taskName, enabled, dayOfTheWeek, startTimeHour, startTimeMinute,
       durationMinutes, repeatUnit, repeatInterval,
@@ -86,11 +78,8 @@ export function schedulesRouter(db: Database.Database) {
     res.redirect("/schedules?toast=success&msg=" + encodeURIComponent("Schedule updated"))
   })
 
-  router.post("/delete/:id", requireAuth, (req, res) => {
+  router.post("/delete/:id", requireAuth, requirePermission("canManageSchedules"), (req, res) => {
     const user = res.locals.user!
-    if (!user.isAdmin && !user.canManageSchedules) {
-      return res.redirect("/schedules?toast=error&msg=" + encodeURIComponent("Permission denied"))
-    }
     const result = deleteSchedule(db, user, parseInt(String(req.params.id)))
     if (!result.success) {
       return res.redirect("/schedules?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed to delete schedule"))
