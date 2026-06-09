@@ -49,6 +49,7 @@ COPY --from=build /app/dist ./dist
 COPY package.json ./
 COPY public ./public
 COPY views ./views
+COPY locales ./locales
 
 # Persistent data + media mount points.
 RUN mkdir -p /data /media
