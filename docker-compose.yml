@@ -48,6 +48,7 @@ services:
       INTERNAL_API_TOKEN: "${INTERNAL_API_TOKEN:-}"
     volumes:
       - app-data:/data
+      - app-photos:/app/mediaItemPhotos
       # Mirror the host's TRANSLATION_ROOT_DIR inside the container. When it
       # isn't set in .env we fall back to ./media on the host -> /media inside.
       - "${TRANSLATION_ROOT_DIR:-./media}:${TRANSLATION_ROOT_DIR:-/media}"
@@ -76,4 +77,5 @@ services:
 
 volumes:
   app-data:
+  app-photos:
   ollama-models:
