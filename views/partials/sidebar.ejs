@@ -68,6 +68,14 @@
       </a>
     </li>
     <% } %>
+    <% if (locals.appConfig && locals.appConfig.scanLibraryPaths && can('canViewOffsetPage')) { %>
+    <li class="<%= activeNav === 'offset' ? 'active' : '' %>">
+      <a href="/offset" title="<%= __('nav.offset') %>">
+        <i class="fa-solid fa-clock-rotate-left"></i>
+        <span class="sidebar-label"><%= __('nav.offset') %></span>
+      </a>
+    </li>
+    <% } %>
     <% if (can('canViewSettingsPage')) { %>
     <li class="<%= activeNav === 'config' ? 'active' : '' %>">
       <a href="/config" title="<%= __('nav.settings') %>">

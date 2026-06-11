@@ -132,6 +132,7 @@ export type DBLanguage = {
   iso6392b: string | null
   locale: string
   flag: string | null
+  flagCode: string | null  // ISO 3166-1 alpha-2 lowercase for flag-icons, e.g. "us", "gb-wls"
   createdAt: string
   updatedAt: string
 }

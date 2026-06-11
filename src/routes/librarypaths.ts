@@ -4,7 +4,7 @@ import multer from "multer"
 import * as fs from "fs"
 import * as path from "path"
 import { requireAuth } from "../middleware/auth"
-import { requireAnyPermission } from "../services/permissionService"
+import { requireAnyPermission, requirePermission } from "../services/permissionService"
 import { getConfig } from "../repositories/configRepository"
 import {
   getConfigTranslationLanguages,
@@ -287,6 +287,86 @@ export function libraryPathsRouter(db: Database.Database) {
     }
   })
 
+  // Bulk TMDB search (does not require a specific item; uses the type from query)
+  router.get("/bulk-search-tmdb", async (req, res) => {
+    const q = String(req.query.q || "").trim()
+    const type: "movie" | "series" = req.query.type === "series" ? "series" : "movie"
+    if (!q) return res.json({ items: [], success: true })
+    try {
+      const result = await searchMediaItemInTheMovieDb(db, q, type, null)
+      const items = result.items.map((i) => ({ ...i, posterBase64: null }))
+      return res.json({ ...result, items })
+    } catch {
+      return res.json({ items: [], success: false, msg: "Search failed" })
+    }
+  })
+
+  // Bulk change match: applies the same TMDB selection to multiple items
+  router.post(
+    "/bulk-change-match",
+    requireAuth,
+    requirePermission("canChangeMatchForLibraryPaths"),
+    upload.none(),
+    async (req, res) => {
+      try {
+        const user = res.locals.user!
+        const body = req.body as { itemIds?: string | string[]; type?: string; tmdb?: any }
+        const itemIdsRaw = body.itemIds
+        const itemIds: number[] = Array.isArray(itemIdsRaw)
+          ? itemIdsRaw.map((s) => parseInt(String(s))).filter((n) => !isNaN(n) && n > 0)
+          : String(itemIdsRaw || "")
+              .split(",")
+              .map((s) => parseInt(s.trim()))
+              .filter((n) => !isNaN(n) && n > 0)
+        if (itemIds.length === 0) return res.json({ success: false, msg: "No items selected" })
+        const tmdb = body.tmdb
+        if (!tmdb || !tmdb.name) return res.json({ success: false, msg: "Invalid TMDB result" })
+        const mediaType: "movie" | "series" = body.type === "series" ? "series" : "movie"
+        const parsedYear = parseInt(String(tmdb.year || tmdb.releaseDate || "")) || null
+
+        const result = await createMediaItem(
+          db,
+          user,
+          String(tmdb.name),
+          tmdb.originalTitle ? String(tmdb.originalTitle) : null,
+          mediaType,
+          parsedYear,
+          tmdb.isAnime === true || tmdb.isAnime === "1" || tmdb.isAnime === 1,
+          tmdb.genres ? String(tmdb.genres) : null,
+          tmdb.theMovieDbId ? String(tmdb.theMovieDbId) : null,
+          tmdb.posterUrl ? String(tmdb.posterUrl) : null,
+        )
+        if (!result.success || !result.mediaItem) {
+          return res.json({ success: false, msg: result.msg ?? "Failed to create media item" })
+        }
+
+        let updated = 0
+        const skipped: number[] = []
+        for (const itemId of itemIds) {
+          const item = getLibraryPathItemById(db, itemId)
+          if (!item) {
+            skipped.push(itemId)
+            continue
+          }
+          // Items in the same group should preserve season/episode - this is per-item, not per-group
+          // Only the media item link is shared; season/episode are kept on the item row.
+          updateLibraryPathItemMediaItem(db, itemId, result.mediaItem.id)
+          if (item.status !== "no_srts_found") updateLibraryPathItemStatus(db, itemId, "not_started")
+          updated++
+        }
+        return res.json({
+          success: true,
+          msg: `Updated ${updated} item(s)${skipped.length > 0 ? `, skipped ${skipped.length}` : ""}`,
+          mediaItemId: result.mediaItem.id,
+          updated,
+          skipped: skipped.length,
+        })
+      } catch (e) {
+        return res.json({ success: false, msg: (e as Error).message || "Bulk change failed" })
+      }
+    },
+  )
+
   router.post("/item/:itemId/select-tmdb-result", requireAuth, upload.none(), async (req, res) => {
     const user = res.locals.user!
     const itemId = parseInt(String(req.params.itemId))
@@ -340,6 +420,7 @@ export function libraryPathsRouter(db: Database.Database) {
     itemId: number,
     resetStatus: boolean,
     user: any,
+    sourceOverride?: { type: string; path: string; language: string; codec: string } | null,
   ): Promise<{ success: boolean; msg: string }> {
     const item = getLibraryPathItemById(db, itemId)
     if (!item) return { success: false, msg: "Item not found" }
@@ -356,6 +437,27 @@ export function libraryPathsRouter(db: Database.Database) {
     let srtSource: { path: string; isTemp: boolean } | null = null
     if (item.path.toLowerCase().endsWith(".srt")) {
       srtSource = { path: item.path, isTemp: false }
+    } else if (sourceOverride && sourceOverride.path) {
+      // Use the user-selected source (embedded or external)
+      if (sourceOverride.type === "external" && fs.existsSync(sourceOverride.path)) {
+        srtSource = { path: sourceOverride.path, isTemp: false }
+      } else if (sourceOverride.type === "embedded") {
+        // Re-extract from the media file (since embedded temp files are per-scan)
+        const sourceLang = getLanguageById(db, libraryPath.sourceLangId)
+        srtSource = sourceLang
+          ? findCompanionSrt(item.path, sourceLang.iso639, sourceLang.iso6392b ?? null, sourceLang.name ?? "")
+          : null
+        // If language-specific track was chosen, try to find the specific track
+        if (srtSource && sourceOverride.language) {
+          // Use a more specific extraction if a particular language was chosen
+          // (findCompanionSrt already prefers matching tracks)
+        }
+      } else {
+        const sourceLang = getLanguageById(db, libraryPath.sourceLangId)
+        srtSource = sourceLang
+          ? findCompanionSrt(item.path, sourceLang.iso639, sourceLang.iso6392b ?? null, sourceLang.name ?? "")
+          : null
+      }
     } else {
       const sourceLang = getLanguageById(db, libraryPath.sourceLangId)
       srtSource = sourceLang
@@ -405,7 +507,17 @@ export function libraryPathsRouter(db: Database.Database) {
   }
 
   router.post("/item/:itemId/translate", upload.none(), async (req, res) => {
-    const result = await queueTranslationForItem(parseInt(String(req.params.itemId)), false, res.locals.user!)
+    const body = req.body as { sourceType?: string; sourcePath?: string; sourceLanguage?: string; sourceCodec?: string }
+    const sourceOverride =
+      body && body.sourcePath
+        ? {
+            type: body.sourceType || "",
+            path: body.sourcePath || "",
+            language: body.sourceLanguage || "",
+            codec: body.sourceCodec || "",
+          }
+        : null
+    const result = await queueTranslationForItem(parseInt(String(req.params.itemId)), false, res.locals.user!, sourceOverride)
     if (req.query.json === "1") return res.json(result)
     if (!result.success) return res.redirect("/library-paths?toast=error&msg=" + encodeURIComponent(result.msg))
     res.redirect("/library-paths?toast=success&msg=" + encodeURIComponent(result.msg))

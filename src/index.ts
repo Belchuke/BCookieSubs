@@ -23,6 +23,7 @@ import { schedulesRouter } from "./routes/schedules"
 import { libraryPathsRouter } from "./routes/librarypaths"
 import { libraryRequestsRouter } from "./routes/libraryrequests"
 import { accountRouter } from "./routes/account"
+import { offsetRouter } from "./routes/offset"
 import { STARTUP_DELAY_MS } from "./constants/timer"
 
 dotenv.config()
@@ -139,6 +140,7 @@ app.locals.db = db
 app.set("view engine", "ejs")
 app.set("views", path.join(__dirname, "../views"))
 
+app.use('/offset', express.json({ limit: '5mb' }))
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json())
 app.use(cookieParser())
@@ -160,10 +162,12 @@ app.use("/schedules", schedulesRouter(db))
 app.use("/library-paths", libraryPathsRouter(db))
 app.use("/library-requests", libraryRequestsRouter(db))
 app.use("/account", accountRouter(db))
+app.use("/offset", offsetRouter(db))
 
 app.use(express.static(path.join(process.cwd(), "public")))
 app.use("/media-photos", express.static(path.join(process.cwd(), "mediaItemPhotos")))
 app.use("/static", express.static(path.join(process.cwd(), "node_modules", "@fortawesome", "fontawesome-free")))
+app.use("/flag-icons", express.static(path.join(process.cwd(), "node_modules", "flag-icons")))
 
 app.post("/aiOllama/window", (req, res) => {
   const user = res.locals.user

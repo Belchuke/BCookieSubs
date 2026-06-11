@@ -113,7 +113,7 @@
                 <% var lang = languages.find(function(l){ return l.id === cl.languageId }) %>
                 <div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border)">
                   <span class="text-dim" style="width:1.5rem;text-align:right;font-size:.8rem"><%= idx + 1 %>.</span>
-                  <span style="flex:1"><%= lang ? ((lang.flag || '') + ' ' + lang.name) : 'Unknown' %></span>
+                  <span style="flex:1;display:flex;align-items:center;gap:.35rem"><% if (lang && lang.flagCode) { %><span class="fi fi-<%= lang.flagCode %>" style="flex-shrink:0"></span><% } %><%= lang ? lang.name : 'Unknown' %></span>
 
                   <% if (can('canManageSettings')) { %>
                     <form method="POST" action="/config/translationlangs/move/<%= cl.languageId %>" style="display:inline">
@@ -152,7 +152,7 @@
                 <label><%= __('config.addDefaultLanguage') %></label>
                 <select name="languageId">
                   <% languages.forEach(function(l) { %>
-                    <option value="<%= l.id %>"><%= l.flag ? l.flag + ' ' : '' %><%= l.name %></option>
+                    <option value="<%= l.id %>"><%= l.name %></option>
                   <% }) %>
                 </select>
               </div>

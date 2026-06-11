@@ -13,6 +13,8 @@
     summary { list-style: none }
     details.lp-card[open] .lp-chevron { transform: rotate(180deg) }
     details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg) }
+    .lp-group-cb { width: 1rem; height: 1rem; cursor: pointer; flex-shrink: 0; accent-color: var(--accent); margin-top: .35rem; }
+    .lp-bulk-bar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 200; background: var(--surface-3); border-top: 2px solid var(--accent); padding: .65rem 1.25rem; display: flex; align-items: center; gap: .65rem; flex-wrap: wrap; box-shadow: 0 -4px 20px rgba(0,0,0,.3); }
   </style>
 </head>
 <body>
@@ -161,7 +163,13 @@
                   style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
 
                   <%# ── Group header ─────────────────────────────────────────── %>
-                  <div style="display:flex;align-items:flex-start;gap:.85rem;padding:.75rem;background:var(--surface-3)">
+                  <div style="display:flex;align-items:flex-start;gap:.85rem;padding:.75rem;background:var(--surface-3); align-items: center;">
+                    <input type="checkbox" class="lp-group-cb"
+                      data-group-key="<%= _groupKey %>"
+                      data-item-ids="<%- JSON.stringify(_allItemIds) %>"
+                      data-first-item-id="<%= _firstItemId %>"
+                      data-lp-type="<%= lp.type %>"
+                      title="Select for bulk action">
                     <% if (showPosters && group.mediaItem && group.mediaItem.mediaItemPhotoPath) { %>
                       <img src="/media-photos/<%= group.mediaItem.mediaItemPhotoPath %>"
                            alt="Poster"
@@ -605,6 +613,36 @@
   </div>
 </div>
 
+<%# ── Bulk action bar ─────────────────────────────────────────────── %>
+<div id="lp-bulk-bar" class="lp-bulk-bar" style="display:none">
+  <span id="lp-bulk-count" style="font-size:.87rem;color:var(--text-dim);flex:1">0 groups selected</span>
+  <button type="button" class="btn btn-primary btn-sm" id="lp-bulk-change-match-btn">
+    <i class="fa-solid fa-link"></i> <%= __('librarypaths.bulkChangeMatch') %>
+  </button>
+  <button type="button" class="btn btn-secondary btn-sm" id="lp-bulk-clear-btn">
+    <%= __('librarypaths.bulkClear') %>
+  </button>
+</div>
+
+<%# ── Bulk change match modal ─────────────────────────────────────── %>
+<div class="modal-overlay" id="bulk-match-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h2>Change match — <span id="bulk-modal-count">0</span> groups</h2>
+      <button class="btn btn-icon" onclick="closeModal('bulk-match-modal')">✕</button>
+    </div>
+    <p class="text-dim" style="font-size:.83rem;margin:.25rem 0 .75rem">Search TheMovieDB and select the correct title. All selected groups will be re-matched.</p>
+    <div class="field">
+      <label for="bulk-tmdb-search">Search</label>
+      <input type="search" id="bulk-tmdb-search" placeholder="Title…" autocomplete="off">
+    </div>
+    <div id="bulk-tmdb-results" style="margin-top:.25rem"></div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="closeModal('bulk-match-modal')"><%= __('common.cancel') %></button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="add-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal" style="max-width:480px">
     <div class="modal-header">
@@ -1001,18 +1039,6 @@
   pollLibraryPaths()
   setInterval(pollLibraryPaths, LP_POLL_INTERVAL)
 
-  function showLpToast(msg, type) {
-    var el = document.createElement('div')
-    el.className = 'toast toast-' + (type || 'success')
-    el.textContent = msg
-    document.body.appendChild(el)
-    setTimeout(function() {
-      el.style.transition = 'opacity .4s'
-      el.style.opacity = '0'
-      setTimeout(function() { el.remove() }, 400)
-    }, 4000)
-  }
-
   function lpAjaxPost(url, body, onSuccess) {
     fetch(url + '?json=1', {
       method: 'POST',
@@ -1025,10 +1051,10 @@
         if (data.success) {
           onSuccess(data)
         } else {
-          showLpToast(data.msg || 'Action failed', 'error')
+          showLpToast('error', data.msg || 'Action failed')
         }
       })
-      .catch(function() { showLpToast('Request failed', 'error') })
+      .catch(function() { showLpToast('error', 'Request failed') })
   }
 
   function hideGroupPicker(groupKey) {
@@ -1141,7 +1167,7 @@
             if (f.action && (f.action.includes('/translate') || f.action.includes('/readd'))) f.remove()
           })
         }
-        showLpToast(data.msg || 'Queued', 'success')
+        showLpToast('success', data.msg || 'Queued')
       })
       return
     }
@@ -1164,7 +1190,7 @@
             var row = document.querySelector('[data-item-row="' + id + '"]')
             if (row) row.remove()
           })
-          showLpToast(data.msg || 'Group blacklisted', 'success')
+          showLpToast('success', data.msg || 'Group blacklisted')
           _blItemIds = null
         }
       )
@@ -1173,7 +1199,7 @@
         closeModal('blacklist-modal')
         var row = document.querySelector('[data-item-row="' + _blItemId + '"]')
         if (row) row.remove()
-        showLpToast(data.msg || 'Item blacklisted', 'success')
+        showLpToast('success', data.msg || 'Item blacklisted')
         _blItemId = null
       })
     }
@@ -1187,18 +1213,18 @@
     if (!file) return
     var formData = new FormData()
     formData.append('photo', file)
-    showLpToast('Uploading…', 'success')
+    showLpToast('success', 'Uploading…')
     fetch('/library-paths/media-item/' + mediaItemId + '/upload-photo', { method: 'POST', body: formData })
       .then(function(r) { return r.json() })
       .then(function(data) {
         if (data.success) {
-          showLpToast('Photo updated', 'success')
+          showLpToast('success', 'Photo updated')
           safeReload()
         } else {
-          showLpToast(data.msg || 'Upload failed', 'error')
+          showLpToast('error', data.msg || 'Upload failed')
         }
       })
-      .catch(function() { showLpToast('Upload failed', 'error') })
+      .catch(function() { showLpToast('error', 'Upload failed') })
     input.value = ''
   })
 
@@ -1302,6 +1328,190 @@
           if (resultsEl) resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">Search failed.</div>'
         })
     }, 300)
+  })
+
+  // ============================================================
+  // Lazy load images via IntersectionObserver
+  // ============================================================
+  ;(function() {
+    function loadImg(img) {
+      if (!img.dataset.src) return
+      img.src = img.dataset.src
+      img.removeAttribute('data-src')
+      img.classList.add('is-loaded')
+    }
+    var _lpObserver = null
+    if ('IntersectionObserver' in window) {
+      _lpObserver = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if (entry.isIntersecting) {
+            loadImg(entry.target)
+            _lpObserver.unobserve(entry.target)
+          }
+        })
+      }, { rootMargin: '200px' })
+    }
+    window.lpInitLazyLoad = function(container) {
+      var root = container || document
+      var imgs = root.querySelectorAll('img.lp-lazy-img[data-src]')
+      if (_lpObserver) {
+        imgs.forEach(function(img) { _lpObserver.observe(img) })
+      } else {
+        imgs.forEach(loadImg)
+      }
+    }
+    window.lpInitLazyLoad()
+  })()
+
+  function showLpToast(kind, msg) {
+    var existing = document.getElementById('page-toast')
+    if (existing) existing.remove()
+    var div = document.createElement('div')
+    div.id = 'page-toast'
+    div.className = 'toast toast-' + kind
+    div.innerHTML = '<span class="toast-msg">' + escHtml(String(msg || '')) + '</span>' +
+      '<button type="button" class="toast-close" aria-label="Close" data-toast-close>✕</button>'
+    var main = document.querySelector('.main-content')
+    if (main) main.prepend(div)
+    else document.body.prepend(div)
+    setTimeout(function() { if (div.parentNode) div.remove() }, 4000)
+  }
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest && e.target.closest('[data-toast-close]')
+    if (btn) {
+      var toast = btn.closest('.toast')
+      if (toast) toast.remove()
+    }
+  })
+
+  // ── Bulk group selection ─────────────────────────────────
+  var _selectedGroups = {}
+
+  function updateBulkBar() {
+    var keys = Object.keys(_selectedGroups)
+    var bar = document.getElementById('lp-bulk-bar')
+    var countEl = document.getElementById('lp-bulk-count')
+    if (keys.length === 0) { bar.style.display = 'none'; return }
+    bar.style.display = ''
+    countEl.textContent = keys.length + ' group' + (keys.length !== 1 ? 's' : '') + ' selected'
+  }
+
+  document.addEventListener('change', function(e) {
+    var cb = e.target.closest && e.target.closest('.lp-group-cb')
+    if (!cb) return
+    var key = cb.dataset.groupKey
+    if (cb.checked) {
+      _selectedGroups[key] = {
+        itemIds: JSON.parse(cb.dataset.itemIds || '[]'),
+        firstItemId: cb.dataset.firstItemId,
+        type: cb.dataset.lpType
+      }
+    } else {
+      delete _selectedGroups[key]
+    }
+    updateBulkBar()
+  })
+
+  document.getElementById('lp-bulk-clear-btn').addEventListener('click', function() {
+    _selectedGroups = {}
+    document.querySelectorAll('.lp-group-cb:checked').forEach(function(cb) { cb.checked = false })
+    updateBulkBar()
+  })
+
+  document.getElementById('lp-bulk-change-match-btn').addEventListener('click', function() {
+    var keys = Object.keys(_selectedGroups)
+    if (keys.length === 0) return
+    document.getElementById('bulk-modal-count').textContent = keys.length
+    document.getElementById('bulk-tmdb-search').value = ''
+    document.getElementById('bulk-tmdb-results').innerHTML = ''
+    openModal('bulk-match-modal')
+  })
+
+  var _bulkTmdbTimer = null
+  document.getElementById('bulk-tmdb-search').addEventListener('input', function() {
+    var q = this.value.trim()
+    var resultsEl = document.getElementById('bulk-tmdb-results')
+    clearTimeout(_bulkTmdbTimer)
+    if (!q) { resultsEl.innerHTML = ''; return }
+
+    var keys = Object.keys(_selectedGroups)
+    var firstGroup = keys.length > 0 ? _selectedGroups[keys[0]] : null
+    var type = firstGroup ? (firstGroup.type || 'movie') : 'movie'
+    var firstItemId = firstGroup ? firstGroup.firstItemId : null
+    if (!firstItemId) return
+
+    resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">Searching…</div>'
+    _bulkTmdbTimer = setTimeout(function() {
+      fetch('/library-paths/item/' + firstItemId + '/search-tmdb?q=' + encodeURIComponent(q) + '&type=' + encodeURIComponent(type))
+        .then(function(r) { return r.json() })
+        .then(function(data) {
+          if (!data.items || data.items.length === 0) {
+            resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">No results.</div>'
+            return
+          }
+          var grid = document.createElement('div')
+          grid.className = 'lp-candidate-grid'
+          data.items.slice(0, 8).forEach(function(ti) {
+            var year = (ti.releaseDate && ti.releaseDate.length >= 4) ? ti.releaseDate.substring(0, 4) : 'year unknown'
+            var btn = document.createElement('button')
+            btn.type = 'button'
+            btn.className = 'btn btn-secondary lp-bulk-tmdb-btn'
+            btn.dataset.tmdbItem = JSON.stringify(ti)
+            btn.dataset.type = type
+            btn.style.cssText = 'display:flex;flex-direction:row;align-items:center;gap:.75rem;padding:.6rem .75rem;height:auto;width:100%;text-align:left'
+            var posterHtml = (SHOW_POSTERS && ti.posterUrl)
+              ? '<img src="' + escHtml(ti.posterUrl) + '" alt="Poster" style="width:54px;height:81px;object-fit:cover;border-radius:4px;flex-shrink:0" onerror="this.style.display=\'none\'">'
+              : '<div style="width:54px;height:81px;background:var(--surface-2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fa-solid fa-film" style="font-size:1.4rem;color:var(--text-dim)"></i></div>'
+            btn.innerHTML = posterHtml +
+              '<span style="font-size:.88rem;line-height:1.35;word-break:break-word;min-width:0"><strong>' +
+              escHtml(ti.name || 'Unknown') + '</strong><br>' +
+              '<span class="text-dim" style="font-size:.8rem">(' + escHtml(year) + ')</span>' +
+              (ti.genres ? '<br><span class="text-dim" style="font-size:.75rem">' + escHtml(ti.genres) + '</span>' : '') +
+              '</span>'
+            grid.appendChild(btn)
+          })
+          resultsEl.innerHTML = ''
+          resultsEl.appendChild(grid)
+        })
+        .catch(function() {
+          resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">Search failed.</div>'
+        })
+    }, 300)
+  })
+
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest && e.target.closest('.lp-bulk-tmdb-btn')
+    if (!btn) return
+
+    var ti = JSON.parse(btn.dataset.tmdbItem)
+    var type = btn.dataset.type
+    var year = ti.releaseDate ? ti.releaseDate.substring(0, 4) : ''
+
+    var allItemIds = []
+    Object.values(_selectedGroups).forEach(function(g) { allItemIds = allItemIds.concat(g.itemIds) })
+
+    var bodyParts = [
+      'itemIds=' + encodeURIComponent(JSON.stringify(allItemIds)),
+      'title=' + encodeURIComponent(ti.name || ''),
+      'originalTitle=' + encodeURIComponent(ti.originalTitle || ''),
+      'year=' + encodeURIComponent(year),
+      'isAnime=' + encodeURIComponent(ti.isAnime ? '1' : '0'),
+      'genres=' + encodeURIComponent(ti.genres || ''),
+      'theMovieDbId=' + encodeURIComponent(String(ti.id || '')),
+      'posterUrl=' + encodeURIComponent(ti.posterUrl || ''),
+      'type=' + encodeURIComponent(type)
+    ]
+
+    btn.disabled = true
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin:auto"></i>'
+
+    lpAjaxPost('/library-paths/group/select-tmdb-result', bodyParts.join('&'), function() {
+      closeModal('bulk-match-modal')
+      _selectedGroups = {}
+      document.querySelectorAll('.lp-group-cb:checked').forEach(function(cb) { cb.checked = false })
+      updateBulkBar()
+      reloadWithScrollRestore()
+    })
   })
 </script>
 </body>

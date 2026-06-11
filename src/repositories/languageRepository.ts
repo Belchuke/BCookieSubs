@@ -4,13 +4,36 @@ import { DefaultResponse } from "../types/modelTypes"
 import { createLog } from "./logRepository"
 import { userHasPermission } from "./userRepository"
 
+// Derive the flag-icons country code from the language locale string.
+// Examples: "en-US" → "us", "zh-TW" → "tw", "cy-GB" → "gb-wls", "gd-GB" → "gb-sct"
+function deriveFlagCode(locale: string | null): string | null {
+  if (!locale) return null
+  const lower = locale.toLowerCase()
+  // Special sub-national flags supported by flag-icons
+  if (lower === "cy-gb")  return "gb-wls"  // Welsh
+  if (lower === "gd-gb")  return "gb-sct"  // Scottish Gaelic
+  if (lower === "ga-ie")  return "ie"
+  if (lower === "eu-es")  return "es"      // Basque → Spain
+  if (lower === "ca-es")  return "es"      // Catalan → Spain
+  if (lower === "gl-es")  return "es"      // Galician → Spain
+  if (lower === "eo-001") return "un"      // Esperanto → UN flag (no Esperanto flag in flag-icons)
+  // Generic: take the country portion after the hyphen
+  const parts = lower.split("-")
+  if (parts.length >= 2) return parts[1]
+  return null
+}
+
+function withFlagCode<T extends { locale: string; flagCode?: string | null }>(row: T): T {
+  return { ...row, flagCode: deriveFlagCode(row.locale) }
+}
+
 export const getLanguages = (db: Database.Database): DBLanguage[] => {
-  return db.prepare(`SELECT * FROM language ORDER BY name ASC`).all() as DBLanguage[]
+  return (db.prepare(`SELECT * FROM language ORDER BY name ASC`).all() as DBLanguage[]).map(withFlagCode)
 }
 
 export const getLanguageById = (db: Database.Database, id: number): DBLanguage | null => {
   const result = db.prepare(`SELECT * FROM language WHERE id = ?`).get(id) as DBLanguage | undefined
-  return result ?? null
+  return result ? withFlagCode(result) : null
 }
 
 export const addLanguage = (

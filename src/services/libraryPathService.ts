@@ -25,7 +25,6 @@ import {
 } from "../repositories/libraryPathRepository"
 import { createSubtitleTask, getSubtitleJobsBySubtitleId, getSubtitleById } from "../repositories/subtitleRepository"
 import { addCreditToSrt } from "./subtitleExportService"
-import { getExportFileName } from "../repositories/subtitleRepository"
 import { DBLibraryPath, DBLibraryPathItem, DBUser } from "../types/dbTypes"
 
 const EXTRACT_TEMP_DIR = path.join(os.tmpdir(), `bcookiesubs-extract-${process.pid}`)
@@ -413,6 +412,140 @@ export function findCompanionSrt(
   if (best) return { path: best, isTemp: false }
   const extracted = extractBestEmbeddedSrt(videoFilePath, sourceLangIso639, sourceLangIso2b, sourceLangName)
   return extracted ? { path: extracted, isTemp: true } : null
+}
+
+export type SubtitleSourceCandidate = {
+  type: "embedded" | "external"
+  path: string
+  isTemp: boolean
+  label: string
+  language: string | null
+  codec: string | null
+  filename: string | null
+  filenameOnly: string
+}
+
+function externalCandidatesFor(videoFilePath: string): string[] {
+  return findAllCompanionSrts(videoFilePath)
+}
+
+function embeddedCandidatesFor(videoFilePath: string, ext: string): { trackId: number; language: string | null; codec: string }[] {
+  if (ext === ".mkv") {
+    const tracks = probeMkvSubtitleTracks(videoFilePath)
+    if (tracks) {
+      return tracks.map((t) => ({ trackId: t.id, language: t.language, codec: t.codec }))
+    }
+  }
+  const streams = probeFfSubtitleStreams(videoFilePath)
+  return streams.map((s) => ({ trackId: s.subtitleIndex, language: s.language, codec: "embedded" }))
+}
+
+export function listSubtitleSourcesForVideo(
+  videoFilePath: string,
+  sourceLangIso639: string,
+  sourceLangIso2b: string | null = null,
+  sourceLangName = "",
+): SubtitleSourceCandidate[] {
+  const result: SubtitleSourceCandidate[] = []
+  const ext = path.extname(videoFilePath).toLowerCase()
+  const stem = path.basename(videoFilePath, path.extname(videoFilePath))
+
+  for (const srt of externalCandidatesFor(videoFilePath)) {
+    const filename = path.basename(srt)
+    result.push({
+      type: "external",
+      path: srt,
+      isTemp: false,
+      label: filename,
+      language: null,
+      codec: ".srt",
+      filename,
+      filenameOnly: filename,
+    })
+  }
+
+  for (const track of embeddedCandidatesFor(videoFilePath, ext)) {
+    const langTag = track.language ?? `track-${track.trackId}`
+    const tempPath = makeExtractTempPath(stem, langTag)
+    result.push({
+      type: "embedded",
+      path: tempPath,
+      isTemp: true,
+      label: `Embedded · ${track.codec} · ${track.language ?? "unknown"}`,
+      language: track.language,
+      codec: track.codec,
+      filename: null,
+      filenameOnly: `${stem}.${langTag}.srt`,
+    })
+  }
+
+  // Default ordering: external first, then embedded; prefer embedded when matched to source language
+  result.sort((a, b) => {
+    if (a.type === b.type) return 0
+    return a.type === "external" ? -1 : 1
+  })
+
+  // Mark preferred (matches source lang) for the picker
+  const sourceLangLc = (sourceLangIso639 || "").toLowerCase()
+  const sourceNameLc = (sourceLangName || "").toLowerCase()
+  const source2bLc = (sourceLangIso2b || "").toLowerCase()
+  for (const r of result) {
+    if (r.type === "embedded" && r.language) {
+      const t = r.language.toLowerCase()
+      if (
+        (source2bLc && t === source2bLc) ||
+        t === sourceLangLc ||
+        (sourceNameLc && t === sourceNameLc)
+      ) {
+        r.label = `★ ${r.label}`
+      }
+    }
+  }
+  // If only one, mark preferred if it's embedded
+  return result
+}
+
+export function pickSubtitleSource(
+  candidates: SubtitleSourceCandidate[],
+  sourceLangIso639: string,
+  sourceLangIso2b: string | null = null,
+  sourceLangName = "",
+): SubtitleSourceCandidate | null {
+  if (candidates.length === 0) return null
+  if (candidates.length === 1) return candidates[0]
+
+  // Prefer embedded tracks matching source language
+  const sourceLangLc = (sourceLangIso639 || "").toLowerCase()
+  const sourceNameLc = (sourceLangName || "").toLowerCase()
+  const source2bLc = (sourceLangIso2b || "").toLowerCase()
+  const embeddedMatches = candidates.filter(
+    (c) => c.type === "embedded" && c.language &&
+      (c.language.toLowerCase() === sourceLangLc ||
+        (source2bLc && c.language.toLowerCase() === source2bLc) ||
+        (sourceNameLc && c.language.toLowerCase() === sourceNameLc)),
+  )
+  if (embeddedMatches.length > 0) return embeddedMatches[0]
+  // Else, prefer any embedded
+  const embeddedAny = candidates.find((c) => c.type === "embedded")
+  if (embeddedAny) return embeddedAny
+  return candidates[0]
+}
+
+export function resolveSubtitleSourceFromCandidate(
+  candidate: SubtitleSourceCandidate,
+  sourceLangIso639: string,
+  sourceLangIso2b: string | null = null,
+  sourceLangName = "",
+): ResolvedSrt | null {
+  if (candidate.type === "external") {
+    return { path: candidate.path, isTemp: false }
+  }
+  const ext = path.extname(candidate.path).toLowerCase()
+  if (ext === ".srt" && fs.existsSync(candidate.path)) {
+    return { path: candidate.path, isTemp: true }
+  }
+  // Re-extract from media
+  return findCompanionSrt(candidate.path.split(".").slice(0, -2).join(".") + ".mp4", sourceLangIso639, sourceLangIso2b, sourceLangName)
 }
 
 function readNfoTmdbId(dir: string): number | null {
@@ -1085,31 +1218,39 @@ async function autoExtractItems(db: Database.Database, libraryPath: DBLibraryPat
     const subtitle = getSubtitleById(db, row.id)
     if (!subtitle) continue
 
-    const mediaItem = item.mediaItemId
-      ? (db.prepare(`SELECT * FROM mediaItem WHERE id = ?`).get(item.mediaItemId) as any)
-      : null
+    // Derive the base filename from the source media file (not the subtitle/movie title)
+    // e.g. /movies/Deadpool 2 (2018) [YTS.AM]/Deadpool.2.2018.720p.BluRay.x264-[YTS.AM].mkv
+    //   -> Deadpool.2.2018.720p.BluRay.x264-[YTS.AM]
+    const sourceBaseRaw = path.basename(item.path).replace(/\.[^.]+$/, "")
+    const sourceBase = sourceBaseRaw
+      .replace(/[/\\:*?"<>|]/g, "")
+      .replace(/\s+/g, ".")
+      .trim()
 
     const outputDir = path.dirname(item.path)
+    let lastExportName: string | null = null
+    let anyExported = false
 
+    // Export ALL completed jobs (one file per target language)
     for (const job of completedJobs) {
       const lang = db.prepare(`SELECT * FROM language WHERE id = ?`).get(job.targetLangId) as any
       if (!lang) continue
 
-      const rawTitle = mediaItem?.title ?? subtitle.name
-      const title = rawTitle
-        .replace(/[/\\:*?"<>|]/g, "")
-        .replace(/\s+/g, " ")
-        .trim()
       const langCode = lang.iso639.toLowerCase()
-      const exportName = getExportFileName(title, job.season, job.episode, mediaItem?.year ?? null, langCode)
+      // e.g. Deadpool.2.2018.720p.BluRay.x264-[YTS.AM].th.srt
+      const exportName = `${sourceBase}.${langCode}.srt`
       const exportPath = path.join(outputDir, exportName)
 
-      if (fs.existsSync(exportPath)) continue
+      if (fs.existsSync(exportPath)) {
+        lastExportName = exportName
+        continue
+      }
 
       try {
         const content = addCreditToSrt(job.translatedText!)
         fs.writeFileSync(exportPath, content, "utf-8")
-        updateLibraryPathItemExtractFileName(db, item.id, exportName)
+        lastExportName = exportName
+        anyExported = true
         createLog(
           db,
           "info",
@@ -1141,6 +1282,11 @@ async function autoExtractItems(db: Database.Database, libraryPath: DBLibraryPat
       }
     }
 
-    updateLibraryPathItemStatus(db, item.id, "completed")
+    if (lastExportName) {
+      updateLibraryPathItemExtractFileName(db, item.id, lastExportName)
+    }
+    if (anyExported) {
+      updateLibraryPathItemStatus(db, item.id, "completed")
+    }
   }
 }

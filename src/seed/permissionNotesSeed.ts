@@ -28,6 +28,8 @@ export const permissionNotes = [
   { key: "canBlackListALibraryPathItem", label: "Blacklist Library Item", desc: "Blacklist or un-blacklist library path items." },
   { key: "canEditLibraryPath", label: "Edit Library Path", desc: "Edit existing library path settings." },
   { key: "canDisableAndDeleteALibraryPath", label: "Disable / Delete Library Path", desc: "Disable or permanently delete a library path." },
+  { key: "canViewOffsetPage", label: "View Offset Page", desc: "Access the Offset page to view and apply SRT offset adjustments." },
+  { key: "canEditSubtitleOffsets", label: "Edit Subtitle Offsets", desc: "Apply a time offset to a subtitle file via the Offset page." },
   { key: "canViewSettingsPage", label: "View Settings", desc: "Access the settings / configuration page." },
   { key: "canManageSettings", label: "Manage Settings", desc: "Change application settings, languages, themes, and root library path." },
   { key: "canManageSecrets", label: "Manage Secrets", desc: "View and manage API key secrets." },

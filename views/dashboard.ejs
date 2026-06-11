@@ -80,7 +80,7 @@
         <label for="up1-sourceLangId"><%= __('dashboard.sourceLanguage') %></label>
         <select id="up1-sourceLangId" name="sourceLangId" required>
           <% var englishFound = false; languages.forEach(function(l) { %>
-            <option value="<%= l.id %>" <%= !englishFound && l.iso639 === 'en' ? 'selected' : '' %>><%= l.flag ? l.flag + ' ' : '' %><%= l.name %></option>
+            <option value="<%= l.id %>" <%= !englishFound && l.iso639 === 'en' ? 'selected' : '' %>><%= l.name %></option>
             <% if (l.iso639 === 'en') englishFound = true; %>
           <% }) %>
         </select>
@@ -150,7 +150,7 @@
                 <% var isDefault = userConfigLangs.some(function(cl){ return cl.languageId === l.id }) %>
                 <label class="checkbox-label">
                   <input type="checkbox" name="targetLangIds" value="<%= l.id %>" <%= isDefault ? 'checked' : '' %>>
-                  <%= l.flag ? l.flag + ' ' : '' %><%= l.name %>
+                  <% if (l.flagCode) { %><span class="fi fi-<%= l.flagCode %>"></span> <% } %><%= l.name %>
                 </label>
               <% }) %>
             </div>

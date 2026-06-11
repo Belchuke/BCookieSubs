@@ -43,8 +43,8 @@
         <label for="lang-select"><%= __('setup.step3.addLang') %></label>
         <select id="lang-select">
           <% languages.forEach(function(l) { %>
-            <option value="<%= l.id %>" data-name="<%= l.name %>" data-flag="<%= l.flag || '' %>">
-              <%= l.flag ? l.flag + ' ' : '' %><%= l.name %>
+            <option value="<%= l.id %>" data-name="<%= l.name %>" data-flag-code="<%= l.flagCode || '' %>">
+              <%= l.name %>
             </option>
           <% }) %>
         </select>
@@ -64,7 +64,7 @@
 </div>
 
 <script>
-  var selected = []; // [{id, name, flag}]
+  var selected = []; // [{id, name, flagCode}]
 
   var selectedList = document.getElementById('selected-list');
   var emptyMsg = document.getElementById('empty-msg');
@@ -89,7 +89,7 @@
 
       row.innerHTML =
         '<span class="text-dim" style="width:1.5rem;text-align:right;font-size:.8rem">' + (idx + 1) + '.</span>' +
-        '<span style="flex:1">' + escHtml((lang.flag ? lang.flag + ' ' : '') + lang.name) + '</span>' +
+        '<span style="flex:1">' + (lang.flagCode ? '<span class="fi fi-' + lang.flagCode + '"></span> ' : '') + escHtml(lang.name) + '</span>' +
         '<button type="button" class="btn btn-sm btn-danger" data-idx="' + idx + '">✕</button>';
         
       selectedList.appendChild(row);
@@ -117,7 +117,7 @@
     var opt = langSelect.options[langSelect.selectedIndex];
     var id = parseInt(opt.value);
     if (selected.some(function(l){ return l.id === id })) return;
-    selected.push({ id: id, name: opt.dataset.name, flag: opt.dataset.flag });
+    selected.push({ id: id, name: opt.dataset.name, flagCode: opt.dataset.flagCode });
     render();
   });
 

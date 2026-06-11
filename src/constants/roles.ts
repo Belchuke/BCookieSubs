@@ -36,6 +36,7 @@ const MASTERUSER_PERMS: PermissionKey[] = [
   'canViewPromptsPage',
   'canViewModelsPage',
   'canDownloadFinishedSubtitles',
+  'canViewOffsetPage',
 ]
 
 const ADMIN_PERMS: PermissionKey[] = [
@@ -61,6 +62,7 @@ const OWNER_PERMS: PermissionKey[] = [
   'canManageSettings',
   'canManageSecrets',
   'canManageSchedules',
+  'canEditSubtitleOffsets',
 ]
 
 export const DEFAULT_ROLES: RoleDefinition[] = [

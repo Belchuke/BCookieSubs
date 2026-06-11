@@ -233,7 +233,8 @@ function closeModalOnOverlay(event) {
       doneChunks += t.done
       failedChunks += (t.failed || 0)
       var tLang = langMap[t.targetLangId]
-      var tLabel = tLang ? (tLang.flag || "") + " " + (tLang.iso639 || "").toUpperCase() : t.targetLangId
+      var tLangCode = tLang ? (tLang.iso639 || "").toUpperCase() : String(t.targetLangId)
+      var tLabel = tLang ? (tLang.flagCode ? '<span class="fi fi-' + tLang.flagCode + '"></span> ' : '') + tLangCode : tLangCode
       var tDonePct = t.total > 0 ? Math.round((t.done / t.total) * 100) : t.jobStatus === "completed" ? 100 : 0
       var tFailedPct = t.total > 0 ? Math.round(((t.failed || 0) / t.total) * 100) : 0
       if (tDonePct + tFailedPct > 100) tFailedPct = 100 - tDonePct
@@ -241,13 +242,13 @@ function closeModalOnOverlay(event) {
       var tTitle = t.done + " completed, " + (t.failed || 0) + " failed, " + tRemaining + " remaining"
       var jobActive = t.jobStatus !== "completed" && t.jobStatus !== "cancelled"
       html += '<div class="target-progress">'
-      html += '<span class="target-lang">' + escapeHtml(String(tLabel)) + "</span>"
+      html += '<span class="target-lang">' + tLabel + "</span>"
       html += segmentedBar(tDonePct, tFailedPct, tTitle)
       html += '<span class="progress-label">' + t.done + "/" + t.total + " (" + tDonePct + "%)</span>"
       if (multiTarget && jobActive && (typeof CAN_STOP === "undefined" || CAN_STOP)) {
         html += '<form method="POST" action="/dashboard/cancel-job/' + t.jobId + '" style="display:inline"'
-        html += ' onsubmit="return confirm(\'Cancel ' + escapeHtml(String(tLabel)) + '?\')">'
-        html += '<button type="submit" class="btn btn-icon btn-xs btn-danger" title="Cancel ' + escapeHtml(String(tLabel)) + '">✕</button></form>'
+        html += ' onsubmit="return confirm(\'Cancel ' + escapeHtml(tLangCode) + '?\')">'
+        html += '<button type="submit" class="btn btn-icon btn-xs btn-danger" title="Cancel ' + escapeHtml(tLangCode) + '">✕</button></form>'
       }
       html += "</div>"
     })
@@ -289,7 +290,7 @@ function closeModalOnOverlay(event) {
   
   function renderSubtitleRow(s, langMap, nested) {
     var sourceLang = langMap[s.sourceLangId]
-    var srcLabel = sourceLang ? (sourceLang.flag || "") + " " + (sourceLang.iso639 || "").toUpperCase() : s.sourceLangId
+    var srcLabel = sourceLang ? (sourceLang.flagCode ? '<span class="fi fi-' + sourceLang.flagCode + '"></span> ' : '') + (sourceLang.iso639 || "").toUpperCase() : String(s.sourceLangId)
     var tp = targetProgressHtml(s, langMap)
     var pct =
       tp.totalChunks > 0 ? Math.round((tp.doneChunks / tp.totalChunks) * 100) : s.status === "completed" ? 100 : 0
@@ -325,7 +326,7 @@ function closeModalOnOverlay(event) {
     html += '<div class="accordion-header-info">'
     html += '<span class="accordion-title">' + titleLabel + "</span>"
     html += '<span class="badge ' + statusClass + '">' + statusLabel + "</span>"
-    html += '<span class="text-dim" style="font-size:.8rem">' + escapeHtml(String(srcLabel)) + "</span>"
+    html += '<span class="text-dim" style="font-size:.8rem">' + srcLabel + "</span>"
     html += "</div></div>"
     html += '<div class="accordion-progress">' + segmentedBar(pct, failedPct, barTitle) + '<span class="progress-label">' + pct + "%</span></div>"
     html += moveHtml
@@ -669,18 +670,18 @@ function inspectJob(id) {
       var s = data.subtitle
       var srcLang = s.sourceLang
       if (title)
-        title.textContent = s.name + (srcLang ? " — " + (srcLang.flag || "") + " " + srcLang.iso639.toUpperCase() : "")
+        title.innerHTML = escapeHtml(s.name) + (srcLang ? ' — ' + (srcLang.flagCode ? '<span class="fi fi-' + srcLang.flagCode + '"></span> ' : '') + srcLang.iso639.toUpperCase() : '')
 
       var statusLabels = { queued: "Queued", running: "Running", completed: "Done", failed: "Failed", cancelled: "Cancelled", retrying: "Retrying", waiting_for_judge: "Waiting" }
       var statusBadge = { queued: "badge-neutral", running: "badge-processing", completed: "badge-success", failed: "badge-error", cancelled: "badge-neutral", retrying: "badge-processing", waiting_for_judge: "badge-processing" }
 
       var html = ""
       ;(data.perJob || []).forEach(function (pj) {
-        var langLabel = pj.lang ? (pj.lang.flag || "") + " " + pj.lang.iso639.toUpperCase() : "Unknown"
+        var langLabel = pj.lang ? (pj.lang.flagCode ? '<span class="fi fi-' + pj.lang.flagCode + '"></span> ' : '') + pj.lang.iso639.toUpperCase() : 'Unknown'
         var pct = pj.total > 0 ? Math.round((pj.done / pj.total) * 100) : 0
 
         html += '<div style="margin-bottom:1.5rem">'
-        html += '<div style="font-weight:600;margin-bottom:.5rem">' + escapeHtml(langLabel) + " — " + pj.job.status + "</div>"
+        html += '<div style="font-weight:600;margin-bottom:.5rem">' + langLabel + " — " + pj.job.status + "</div>"
         html += '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%"></div></div>'
         html += '<span class="progress-label" style="display:block;margin-bottom:.75rem">' + pj.done + "/" + pj.total + " chunks (" + pct + "%)</span>"
         html += '<div style="overflow-x:auto">'

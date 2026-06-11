@@ -36,6 +36,17 @@ export const getSubtitleByFileHash = (db: Database.Database, fileHash: string): 
   )
 }
 
+export const getActiveSubtitleForLibraryPathItem = (
+  db: Database.Database,
+  libraryPathItemId: number,
+): DBSubtitle | null => {
+  return (
+    (db
+      .prepare(`SELECT * FROM subtitle WHERE libraryPathItem = ? AND deletedAt IS NULL ORDER BY id DESC LIMIT 1`)
+      .get(libraryPathItemId) as DBSubtitle | undefined) ?? null
+  )
+}
+
 export const getSubtitleJobById = (db: Database.Database, id: number): DBSubtitleJob | null => {
   return (
     (db.prepare(`SELECT * FROM subtitleJob WHERE id = ? AND deletedAt IS NULL`).get(id) as DBSubtitleJob | undefined) ??
@@ -66,6 +77,95 @@ export const getNextOrderNumberForSubtitle = (db: Database.Database): number => 
     maxOrder: number | null
   }
   return (result.maxOrder ?? 0) + 1
+}
+
+export const addMissingTargetLanguageJobs = (
+  db: Database.Database,
+  user: DBUser,
+  subtitleId: number,
+  newTargetLangIds: number[],
+): DefaultResponse => {
+  const { hasPermission } = userHasPermission(db, user.id, "canAddSubtitleToTranslateFromLibrary")
+  if (!hasPermission) return { success: false, msg: "Permission denied" }
+
+  const subtitle = getSubtitleById(db, subtitleId)
+  if (!subtitle) return { success: false, msg: "Subtitle not found" }
+
+  if (newTargetLangIds.length === 0) return { success: true, msg: "No new languages to add" }
+
+  const existingJobs = getSubtitleJobsBySubtitleId(db, subtitleId)
+  const existingLangIds = new Set(existingJobs.map((j) => j.targetLangId))
+
+  const newLangs = newTargetLangIds
+    .map((id) => getLanguageById(db, id))
+    .filter((l): l is DBLanguage => !!l && !existingLangIds.has(l.id))
+
+  if (newLangs.length === 0) return { success: true, msg: "All requested languages already exist" }
+
+  const srtParser = new SrtParser2()
+  const parsedSubtitles = srtParser.fromSrt(subtitle.originalText)
+  if (parsedSubtitles.length === 0) return { success: false, msg: "Original SRT could not be parsed" }
+
+  const existingChunkSetting = existingJobs[0]?.chunkSetting ?? 10
+  const existingSeason = existingJobs[0]?.season ?? null
+  const existingEpisode = existingJobs[0]?.episode ?? null
+
+  const chunks = chunkArray(parsedSubtitles, existingChunkSetting)
+
+  // Place these jobs at the front of the queue (priority)
+  const minOrder = db
+    .prepare(`SELECT MIN(orderNumber) as minOrder FROM subtitleJob WHERE deletedAt IS NULL`)
+    .get() as { minOrder: number | null }
+  const priorityStart = (minOrder.minOrder ?? 1) - newLangs.length
+
+  const transaction = db.transaction(() => {
+    newLangs.forEach((lang, index) => {
+      const jobResult = db
+        .prepare(
+          `INSERT INTO subtitleJob (subtitleId, userId, targetLangId, chunkSetting, chunkSizeTotal, season, episode, orderNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          subtitle.id,
+          user.id,
+          lang.id,
+          existingChunkSetting,
+          chunks.length,
+          existingSeason,
+          existingEpisode,
+          priorityStart + index,
+        )
+
+      const subtitleJobId = jobResult.lastInsertRowid as number
+
+      chunks.forEach((chunk, chunkIndex) => {
+        db.prepare(
+          `INSERT INTO subtitleChunk (subtitleId, subtitleJobId, targetLangId, chunkIndex, srtIdFrom, srtIdTo, chunkTextRaw) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          subtitle.id,
+          subtitleJobId,
+          lang.id,
+          chunkIndex,
+          parseInt(chunk[0].id),
+          parseInt(chunk[chunk.length - 1].id),
+          chunk.map((c) => c.text).join("\n"),
+        )
+      })
+    })
+
+    // Make sure the parent subtitle is not marked completed if it was
+    db.prepare(
+      `UPDATE subtitle SET status = 'queued', updatedAt = datetime('now') WHERE id = ? AND status IN ('completed', 'cancelled', 'failed')`,
+    ).run(subtitle.id)
+  })
+  transaction()
+
+  createLog(db, "info", "subtitle", subtitle.id, "Added missing language jobs", {
+    addedLangs: newLangs.map((l) => l.name),
+  })
+  return {
+    success: true,
+    msg: `Added ${newLangs.length} language job(s) with priority`,
+  }
 }
 
 export const createSubtitleTask = (

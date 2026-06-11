@@ -21,7 +21,10 @@
   <%- include('partials/sidebar') %>
   <main class="main-content">
     <% if (locals.toast && locals.msg) { %>
-      <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
+      <div class="toast toast-<%= toast %>" id="page-toast">
+        <span class="toast-msg"><%= msg %></span>
+        <button type="button" class="toast-close" aria-label="Close" data-toast-close>✕</button>
+      </div>
     <% } %>
 
     <div class="page-header">
@@ -65,7 +68,7 @@
                  data-genre="<%= (group.genres || '').toLowerCase() %>">
               <div class="lr-card-poster">
                 <% if (showPosters && group.posterPath) { %>
-                  <img src="/media-photos/<%= group.posterPath %>" alt="<%= group.title %>">
+                  <img class="lr-lazy" data-src="/media-photos/<%= group.posterPath %>" alt="<%= group.title %>" loading="lazy" decoding="async">
                 <% } else { %>
                   <div class="lr-card-placeholder"><i class="fa-solid fa-film"></i></div>
                 <% } %>
@@ -82,9 +85,22 @@
                   <% group.items.forEach(function(it) { %>
                     <div class="lr-card-item">
                       <span class="lr-card-item-filename" title="<%= it.fileName %>"><%= it.fileName %></span>
-                      <form method="POST" action="/library-paths/item/<%= it.itemId %>/translate" style="display:inline;flex-shrink:0">
-                        <button type="submit" class="btn btn-primary" style="padding:.25rem .5rem;font-size:.75rem"><%= __('libraryrequests.translate') %></button>
-                      </form>
+                      <% if (it.subtitleId && it.missingTargetLangIds.length > 0) { %>
+                        <% it.missingTargetLangIds.forEach(function(langId) { %>
+                          <% var lang = langById[langId] %>
+                          <% if (lang) { %>
+                            <button type="button" class="btn btn-secondary lr-add-missing-lang-btn"
+                              data-item-id="<%= it.itemId %>"
+                              data-lang-id="<%= langId %>"
+                              style="padding:.2rem .45rem;font-size:.72rem"
+                              title="Add <%= lang.name %> to existing subtitle"><% if (lang.flagCode) { %><span class="fi fi-<%= lang.flagCode %>"></span> <% } %><%= lang.iso639 %></button>
+                          <% } %>
+                        <% }) %>
+                      <% } else if (!it.subtitleId) { %>
+                        <button type="button" class="btn btn-primary lr-translate-btn"
+                          data-item-id="<%= it.itemId %>"
+                          style="padding:.25rem .5rem;font-size:.75rem"><%= __('libraryrequests.translate') %></button>
+                      <% } %>
                     </div>
                   <% }) %>
                 </div>
@@ -121,7 +137,7 @@
                  data-genre="<%= (group.genres || '').toLowerCase() %>">
               <div class="lr-card-poster">
                 <% if (showPosters && group.posterPath) { %>
-                  <img src="/media-photos/<%= group.posterPath %>" alt="<%= group.title %>">
+                  <img class="lr-lazy" data-src="/media-photos/<%= group.posterPath %>" alt="<%= group.title %>" loading="lazy" decoding="async">
                 <% } else { %>
                   <div class="lr-card-placeholder"><i class="fa-solid fa-tv"></i></div>
                 <% } %>
@@ -142,6 +158,11 @@
                         <span class="lr-season-arrow">&#9658;</span>
                         <span class="lr-season-label"><%= _slabel %></span>
                         <span class="badge badge-neutral" style="font-size:.7rem"><%= _si.length %> <%= __('libraryrequests.episodeCount') %><%= _si.length !== 1 ? 's' : '' %></span>
+                        <button type="button" class="btn btn-primary lr-translate-season-btn"
+                          data-library-path-id="<%= group.items[0].libraryPathId %>"
+                          data-season="<%= sk %>"
+                          onclick="event.stopPropagation()"
+                          style="margin-left:auto;padding:.2rem .55rem;font-size:.72rem"><%= __('libraryrequests.translateSeason') %></button>
                       </div>
                     <% }) %>
                   </div>
@@ -162,9 +183,22 @@
                               <span class="badge badge-neutral" style="font-size:.7rem;flex-shrink:0">S<%= String(it.season).padStart(2,'0') %>E<%= String(it.episode).padStart(2,'0') %></span>
                             <% } %>
                             <span class="lr-card-item-filename" title="<%= it.fileName %>"><%= it.fileName %></span>
-                            <form method="POST" action="/library-paths/item/<%= it.itemId %>/translate" style="display:inline;flex-shrink:0">
-                              <button type="submit" class="btn btn-primary" style="padding:.25rem .5rem;font-size:.75rem"><%= __('libraryrequests.translate') %></button>
-                            </form>
+                            <% if (it.subtitleId && it.missingTargetLangIds.length > 0) { %>
+                              <% it.missingTargetLangIds.forEach(function(langId) { %>
+                                <% var lang = langById[langId] %>
+                                <% if (lang) { %>
+                                  <button type="button" class="btn btn-secondary lr-add-missing-lang-btn"
+                                    data-item-id="<%= it.itemId %>"
+                                    data-lang-id="<%= langId %>"
+                                    style="padding:.15rem .35rem;font-size:.65rem;flex-shrink:0"
+                                    title="Add <%= lang.name %> to existing subtitle"><% if (lang.flagCode) { %><span class="fi fi-<%= lang.flagCode %>"></span> <% } %><%= lang.iso639 %></button>
+                                <% } %>
+                              <% }) %>
+                            <% } else if (!it.subtitleId) { %>
+                              <button type="button" class="btn btn-primary lr-translate-btn"
+                                data-item-id="<%= it.itemId %>"
+                                style="padding:.25rem .5rem;font-size:.75rem;flex-shrink:0"><%= __('libraryrequests.translate') %></button>
+                            <% } %>
                           </div>
                         <% }) %>
                       </div>
@@ -178,6 +212,23 @@
       <% } %>
     </div>
   </main>
+</div>
+
+<%# ── Subtitle source selection dialog ──────────────────────────────────── %>
+<div class="modal-overlay" id="subtitle-source-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-header">
+      <h2 id="subtitle-source-title"><%= __('libraryrequests.selectSource') %></h2>
+      <button class="btn btn-icon" onclick="closeModal('subtitle-source-modal')">✕</button>
+    </div>
+    <div class="modal-body" id="subtitle-source-body">
+      <p class="text-dim" style="font-size:.85rem"><%= __('libraryrequests.chooseSubtitleSource') %></p>
+      <div id="subtitle-source-list" style="display:flex;flex-direction:column;gap:.5rem;margin-top:.75rem"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="closeModal('subtitle-source-modal')"><%= __('common.cancel') %></button>
+    </div>
+  </div>
 </div>
 
 <script src="/app.js"></script>
@@ -242,71 +293,204 @@
     lrGenreEl.addEventListener('change', lrApplyFilters)
   }
 
-  document.addEventListener('submit', function(e) {
-    var form = e.target
-    if (!form || form.tagName !== 'FORM') return
-    var action = form.action || ''
-    var translateMatch = action.match(/\/library-paths\/item\/(\d+)\/translate$/)
-    if (translateMatch) {
-      e.preventDefault()
-      var card = form.closest('.lr-card')
-      fetch(action + '?json=1', {
+  function showToast(message, type) {
+    var t = document.createElement('div')
+    t.className = 'toast toast-' + (type || 'success')
+    t.innerHTML = '<span class="toast-msg"></span><button type="button" class="toast-close" aria-label="Close">✕</button>'
+    t.querySelector('.toast-msg').textContent = message
+    document.body.appendChild(t)
+    t.querySelector('.toast-close').addEventListener('click', function() { t.remove() })
+    setTimeout(function() { if (t.parentNode) t.remove() }, 4000)
+  }
+
+  function translateItem(itemId, sourceChoice) {
+    var url = '/library-paths/item/' + itemId + '/translate'
+    var body = ''
+    if (sourceChoice) {
+      body = 'sourceType=' + encodeURIComponent(sourceChoice.type || '') +
+             '&sourcePath=' + encodeURIComponent(sourceChoice.path || '') +
+             '&sourceLanguage=' + encodeURIComponent(sourceChoice.language || '') +
+             '&sourceCodec=' + encodeURIComponent(sourceChoice.codec || '')
+    }
+    return fetch(url + '?json=1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body
+    }).then(function(r) {
+      if (redirectIfUnauthorized(r)) return null
+      return r.json()
+    })
+  }
+
+  function handleTranslateClick(btn) {
+    var itemId = btn.dataset.itemId
+    var card = btn.closest('.lr-card')
+    fetch('/library-requests/item/' + itemId + '/subtitle-sources')
+      .then(function(r) { return r.json() })
+      .then(function(data) {
+        if (!data || !data.success) {
+          // No source listing — just go ahead and queue
+          translateItem(itemId).then(function(resp) { onTranslateResponse(btn, resp) })
+          return
+        }
+        var sources = data.sources || []
+        if (sources.length === 0) {
+          translateItem(itemId).then(function(resp) { onTranslateResponse(btn, resp) })
+          return
+        }
+        if (sources.length === 1) {
+          // Use the only one
+          translateItem(itemId, sources[0]).then(function(resp) { onTranslateResponse(btn, resp) })
+          return
+        }
+        // Multiple sources — show dialog
+        openSourceDialog(itemId, sources, btn)
+      })
+      .catch(function() {
+        translateItem(itemId).then(function(resp) { onTranslateResponse(btn, resp) })
+      })
+  }
+
+  function openSourceDialog(itemId, sources, btn) {
+    var list = document.getElementById('subtitle-source-list')
+    list.innerHTML = ''
+    sources.forEach(function(s) {
+      var row = document.createElement('button')
+      row.type = 'button'
+      row.className = 'btn btn-secondary lr-source-pick'
+      row.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;gap:.2rem;padding:.65rem .85rem;height:auto;width:100%;text-align:left'
+      var typeLabel = s.type === 'embedded' ? 'Embedded' : 'External'
+      var langLine = s.language ? ' · ' + s.language : ''
+      var codecLine = s.codec ? ' · ' + s.codec : ''
+      var fileLine = s.filename ? ' · ' + s.filename : ''
+      row.innerHTML = '<strong>' + typeLabel + langLine + codecLine + '</strong>' +
+        '<span class="text-dim" style="font-size:.78rem">' + (s.label || '') + fileLine + '</span>'
+      row.addEventListener('click', function() {
+        closeModal('subtitle-source-modal')
+        translateItem(itemId, s).then(function(resp) { onTranslateResponse(btn, resp) })
+      })
+      list.appendChild(row)
+    })
+    openModal('subtitle-source-modal')
+  }
+
+  function onTranslateResponse(btn, data) {
+    if (!data) return
+    if (data.success) {
+      var itemRow = btn.closest('.lr-card-item')
+      if (itemRow) itemRow.style.display = 'none'
+
+      var seasonPanel = btn.closest('.lr-season-panel')
+      if (seasonPanel) {
+        var panelItems = seasonPanel.querySelectorAll('.lr-card-item')
+        var panelHasVisible = false
+        for (var si = 0; si < panelItems.length; si++) {
+          if (panelItems[si].style.display !== 'none') { panelHasVisible = true; break }
+        }
+        if (!panelHasVisible) {
+          var list = seasonPanel.closest('.lr-season-list')
+          var sk = seasonPanel.dataset.seasonKey
+          var overviewRow = list && list.querySelector('.lr-season-row[data-season-key="' + sk + '"]')
+          if (overviewRow) overviewRow.style.display = 'none'
+          seasonPanel.style.display = 'none'
+          var overview = list && list.querySelector('.lr-seasons-overview')
+          if (overview) overview.style.display = ''
+        }
+      }
+      var card = btn.closest('.lr-card')
+      if (card) {
+        var visibleItems = card.querySelectorAll('.lr-card-item')
+        var hasVisible = false
+        for (var i = 0; i < visibleItems.length; i++) {
+          if (visibleItems[i].style.display !== 'none') { hasVisible = true; break }
+        }
+        if (!hasVisible) card.style.display = 'none'
+      }
+      showToast(data.msg || 'Queued', 'success')
+    } else {
+      showToast(data.msg || 'Failed', 'error')
+    }
+  }
+
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.lr-translate-btn')
+    if (btn) {
+      handleTranslateClick(btn)
+    }
+
+    var seasonBtn = e.target.closest('.lr-translate-season-btn')
+    if (seasonBtn) {
+      var lpId = seasonBtn.dataset.libraryPathId
+      var sk = seasonBtn.dataset.season
+      var body = 'season=' + encodeURIComponent(sk)
+      fetch('/library-requests/season/' + lpId + '/translate?json=1', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: ''
+        body: body
+      })
+        .then(function(r) { if (redirectIfUnauthorized(r)) return null; return r.json() })
+        .then(function(data) {
+          if (!data) return
+          showToast(data.msg || 'Done', data.success ? 'success' : 'error')
+          if (data.success) {
+            // Reload after a moment
+            setTimeout(function() { location.reload() }, 800)
+          }
+        })
+        .catch(function() { showToast('Request failed', 'error') })
+    }
+
+    var missingBtn = e.target.closest('.lr-add-missing-lang-btn')
+    if (missingBtn) {
+      var itemId = missingBtn.dataset.itemId
+      var langId = missingBtn.dataset.langId
+      var body = 'targetLangIds=' + encodeURIComponent(langId)
+      fetch('/library-requests/item/' + itemId + '/add-missing-lang?json=1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body
       })
         .then(function(r) { if (redirectIfUnauthorized(r)) return null; return r.json() })
         .then(function(data) {
           if (!data) return
           if (data.success) {
-            var itemRow = form.closest('.lr-card-item')
-            if (itemRow) itemRow.style.display = 'none'
-
-            var seasonPanel = form.closest('.lr-season-panel')
-            if (seasonPanel) {
-              var panelItems = seasonPanel.querySelectorAll('.lr-card-item')
-              var panelHasVisible = false
-              for (var si = 0; si < panelItems.length; si++) {
-                if (panelItems[si].style.display !== 'none') { panelHasVisible = true; break }
-              }
-              if (!panelHasVisible) {
-                var list = seasonPanel.closest('.lr-season-list')
-                var sk = seasonPanel.dataset.seasonKey
-                var overviewRow = list && list.querySelector('.lr-season-row[data-season-key="' + sk + '"]')
-                if (overviewRow) overviewRow.style.display = 'none'
-                seasonPanel.style.display = 'none'
-                var overview = list && list.querySelector('.lr-seasons-overview')
-                if (overview) overview.style.display = ''
-              }
-            }
-            if (card) {
-              var visibleItems = card.querySelectorAll('.lr-card-item')
-              var hasVisible = false
-              for (var i = 0; i < visibleItems.length; i++) {
-                if (visibleItems[i].style.display !== 'none') { hasVisible = true; break }
-              }
-              if (!hasVisible) card.style.display = 'none'
-            }
-            var toast = document.createElement('div')
-            toast.className = 'toast toast-success'
-            toast.textContent = data.msg || '<%= __('common.queued') %>';
-            document.body.appendChild(toast)
-            setTimeout(function() { toast.remove() }, 3000)
+            missingBtn.style.display = 'none'
+            showToast(data.msg || 'Added', 'success')
           } else {
-            var toast = document.createElement('div')
-            toast.className = 'toast toast-error'
-            toast.textContent = data.msg || '<%= __('common.failed') %>';
-            document.body.appendChild(toast)
-            setTimeout(function() { toast.remove() }, 3000)
+            showToast(data.msg || 'Failed', 'error')
           }
         })
-        .catch(function() {
-          var toast = document.createElement('div')
-          toast.className = 'toast toast-error'
-          toast.textContent = 'Request failed'
-          document.body.appendChild(toast)
-          setTimeout(function() { toast.remove() }, 3000)
-        })
+        .catch(function() { showToast('Request failed', 'error') })
+    }
+  })
+
+  // Lazy load images using IntersectionObserver as a fallback
+  ;(function() {
+    var lazyImgs = document.querySelectorAll('img.lr-lazy')
+    if (!('IntersectionObserver' in window)) {
+      lazyImgs.forEach(function(img) { if (img.dataset.src) img.src = img.dataset.src })
+      return
+    }
+    var obs = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          var img = entry.target
+          if (img.dataset.src) {
+            img.src = img.dataset.src
+            img.removeAttribute('data-src')
+          }
+          obs.unobserve(img)
+        }
+      })
+    }, { rootMargin: '200px' })
+    lazyImgs.forEach(function(img) { obs.observe(img) })
+  })()
+
+  // Close-toast button (for any server-rendered toast)
+  document.addEventListener('click', function(e) {
+    if (e.target.matches('[data-toast-close]') || e.target.closest('[data-toast-close]')) {
+      var t = e.target.closest('.toast')
+      if (t) t.remove()
     }
   })
 </script>
