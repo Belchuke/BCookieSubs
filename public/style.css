@@ -751,7 +751,18 @@ tr:hover td { background: var(--surface-2); }
   background: var(--surface-2);
   border: 2px dashed var(--border);
   border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
 }
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+}
+.upload-zone-content { text-align: center; }
+.upload-text { display: flex; flex-direction: column; gap: .25rem; }
+.upload-text-main { font-weight: 600; font-size: .95rem; color: var(--text); }
+.upload-text-sub { font-size: .78rem; color: var(--text-dim); }
+.upload-filename { margin-top: .5rem; font-size: .85rem; color: var(--accent); font-weight: 500; display: none; }
 
 /* ── Pagination ───────────────────────────────────────────────────────────── */
 .pagination-container {

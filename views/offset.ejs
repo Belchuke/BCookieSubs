@@ -47,10 +47,15 @@
 
         <%# Upload panel %>
         <div id="off-panel-upload">
-          <div class="field">
-            <label for="off-file-input"><%= __('offset.chooseFile') %></label>
-            <input type="file" id="off-file-input" accept=".srt,text/plain">
-            <p class="text-dim" style="margin:.25rem 0 0;font-size:.78rem"><%= __('offset.uploadHint') %></p>
+          <div class="upload-zone" id="off-upload-zone" onclick="document.getElementById('off-file-input').click()">
+            <input type="file" id="off-file-input" accept=".srt,text/plain" style="display:none">
+            <div class="upload-zone-content">
+              <div class="upload-text">
+                <span id="off-upload-text-main" class="upload-text-main"><%= __('offset.chooseFile') %></span>
+                <span id="off-upload-text-sub" class="upload-text-sub"><%= __('offset.uploadHint') %></span>
+              </div>
+              <div class="upload-filename" id="off-upload-filename"></div>
+            </div>
           </div>
         </div>
 
@@ -490,20 +495,52 @@
 
   // ── File upload ─────────────────────────────────────────
 
-  document.getElementById('off-file-input').addEventListener('change', function(e) {
-    var file = e.target.files && e.target.files[0]
-    if (!file) return
-    var fd = new FormData()
-    fd.append('srt', file)
-    fetch('/offset/parse', { method: 'POST', body: fd })
-      .then(function(r) { return r.json() })
-      .then(function(data) {
-        if (!data.success) { showOffToast('error', data.msg || 'Failed to parse SRT'); return }
-        setEntries(data.entries, file.name, null, null)
-        showOffToast('success', '<%= __("offset.loadedCount") %>'.replace('{{count}}', data.count))
-      })
-      .catch(function() { showOffToast('error', 'Failed to parse SRT') })
-  })
+  ;(function() {
+    var zone = document.getElementById('off-upload-zone')
+    var fileInput = document.getElementById('off-file-input')
+    var fileNameEl = document.getElementById('off-upload-filename')
+    var textMain = document.getElementById('off-upload-text-main')
+    var textSub = document.getElementById('off-upload-text-sub')
+    if (!zone || !fileInput) return
+
+    function setDragOver(e) { e.preventDefault(); e.stopPropagation(); zone.classList.add('drag-over') }
+    function clearDragOver(e) { e.preventDefault(); e.stopPropagation(); zone.classList.remove('drag-over') }
+
+    ;['dragenter', 'dragover'].forEach(function(evt) { zone.addEventListener(evt, setDragOver, false) })
+    ;['dragleave', 'drop'].forEach(function(evt) { zone.addEventListener(evt, clearDragOver, false) })
+
+    zone.addEventListener('drop', function(e) {
+      var files = e.dataTransfer.files
+      if (files.length > 0) {
+        var dt = new DataTransfer()
+        dt.items.add(files[0])
+        fileInput.files = dt.files
+        fileInput.dispatchEvent(new Event('change'))
+      }
+    }, false)
+
+    function showFileName(name) {
+      if (fileNameEl) { fileNameEl.textContent = name; fileNameEl.style.display = 'block' }
+      if (textMain) textMain.style.display = 'none'
+      if (textSub) textSub.style.display = 'none'
+    }
+
+    fileInput.addEventListener('change', function(e) {
+      var file = e.target.files && e.target.files[0]
+      if (!file) return
+      showFileName(file.name)
+      var fd = new FormData()
+      fd.append('srt', file)
+      fetch('/offset/parse', { method: 'POST', body: fd })
+        .then(function(r) { return r.json() })
+        .then(function(data) {
+          if (!data.success) { showOffToast('error', data.msg || 'Failed to parse SRT'); return }
+          setEntries(data.entries, file.name, null, null)
+          showOffToast('success', '<%= __("offset.loadedCount") %>'.replace('{{count}}', data.count))
+        })
+        .catch(function() { showOffToast('error', 'Failed to parse SRT') })
+    })
+  })()
 
   // ── Library: step 1 — library path ─────────────────────
 
@@ -690,7 +727,7 @@
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'
     fetch('/offset/save-to-library-path', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify({
         targetPath: CURRENT_LIB_ITEM_PATH,
         entries: finalEntries,
@@ -702,7 +739,7 @@
         btn.disabled = false
         btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> <%= __("offset.saveToLibrary") %>'
         if (!data.success) { showOffToast('error', data.msg || 'Save failed'); return }
-        showOffToast('success', data.msg || 'Saved')
+        showOffToast('success', (data.fileName ? 'Saved: ' + data.fileName : data.msg) || 'Saved')
       })
       .catch(function() {
         btn.disabled = false
