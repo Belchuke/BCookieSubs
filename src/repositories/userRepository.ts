@@ -24,6 +24,24 @@ export const getUserById = (db: Database.Database, id: number, omitPassword = tr
   return result
 }
 
+// The highest-privilege non-deleted user. Used by background workers and
+// library automation that need an account to attribute actions to.
+export const getHighestRoleUser = (db: Database.Database, omitPassword = true): DBUser | null => {
+  const row = db
+    .prepare(
+      `SELECT u.* FROM user u
+       JOIN userRole ur ON ur.userId = u.id
+       JOIN role r ON r.id = ur.roleId
+       WHERE u.deletedAt IS NULL
+       ORDER BY r.level DESC
+       LIMIT 1`,
+    )
+    .get() as DBUser | undefined
+  if (!row) return null
+  if (omitPassword) row.passwordHash = ""
+  return row
+}
+
 export const hasAdminUser = (db: Database.Database): boolean => {
   const row = db
     .prepare(

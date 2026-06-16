@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Gagal",
     "inspectStatusCancelled": "Dibatalkan",
     "inspectStatusRetrying": "Mencuba semula",
-    "inspectStatusWaiting": "Menunggu"
+    "inspectStatusWaiting": "Menunggu",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Akaun Saya",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Boleh mengonfigurasi folder utama yang digunakan untuk mengehadkan semak imbas laluan pustaka. Apabila ditetapkan, semak imbas dan laluan pustaka baharu dihadkan kepada folder ini.",
     "tipAutoClearLogs": "Apabila diaktifkan, log lama dipadamkan secara automatik mengikut tempoh pengekalan di bawah.",
     "tipDeleteLogsOlderThan": "Log yang lebih lama daripada bilangan hari ini dipadamkan apabila kosong automatik aktif.",
-    "tipActiveTheme": "Mengawal tema warna aktif yang digunakan oleh antara muka. Tema tersuai boleh dicipta di bawah."
+    "tipActiveTheme": "Mengawal tema warna aktif yang digunakan oleh antara muka. Tema tersuai boleh dicipta di bawah.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Pengguna",
@@ -423,7 +441,18 @@
     "translate": "Terjemah",
     "unknownSeason": "Musim Tidak Diketahui",
     "season": "Musim ",
-    "episodeCount": "ep"
+    "episodeCount": "ep",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Statistik",

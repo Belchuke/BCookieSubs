@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Wedi methu",
     "inspectStatusCancelled": "Wedi canslo",
     "inspectStatusRetrying": "Ailgeisio",
-    "inspectStatusWaiting": "Aros"
+    "inspectStatusWaiting": "Aros",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Fy Nghyfrif",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Gall ffurfweddu'r ffolder gwraidd a ddefnyddir i gyfyngu pori llwybr llyfrgell.",
     "tipAutoClearLogs": "Pan fo wedi'i alluogi, mae hen gofnodion yn cael eu dileu'n awtomatig yn unol â'r cyfnod cadw.",
     "tipDeleteLogsOlderThan": "Mae cofnodion hŷn na'r nifer hwn o ddiwrnodau'n cael eu dileu pan fo autoclirio actif.",
-    "tipActiveTheme": "Yn rheoli'r thema lliw actif a ddefnyddir gan y rhyngwyneb. Gellir creu themâu personol isod."
+    "tipActiveTheme": "Yn rheoli'r thema lliw actif a ddefnyddir gan y rhyngwyneb. Gellir creu themâu personol isod.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Defnyddwyr",
@@ -423,7 +441,18 @@
     "translate": "Cyfieithu",
     "unknownSeason": "Tymor Anhysbys",
     "season": "Tymor ",
-    "episodeCount": "pen"
+    "episodeCount": "pen",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Ystadegau",

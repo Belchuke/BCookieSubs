@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<div class="setup-page" style="max-width:680px">
+<div class="setup-page s3-page">
   <div class="setup-steps">
     <span class="step done">✓</span>
     <span class="step-line done"></span>
@@ -28,18 +28,18 @@
     <div class="alert alert-error"><%= error %></div>
   <% } %>
 
-  <div class="card" style="margin-bottom:1.5rem">
+  <div class="card s3-card">
     <div class="card-header">
       <h2><%= __('setup.step3.selectedLangs') %></h2>
       <small class="text-dim" id="selected-count"><%= __('setup.step3.selectedCount').replace('{{count}}', 0) %></small>
     </div>
 
-    <div id="selected-list" style="display:flex;flex-direction:column;gap:0"></div>
+    <div id="selected-list" class="s3-selected-list"></div>
 
     <p id="empty-msg" class="empty-state"><%= __('setup.step3.empty') %></p>
 
-    <div style="display:flex;gap:.5rem;align-items:flex-end;padding:.75rem 0 0;margin-top:.5rem" id="add-row">
-      <div class="field" style="flex:1;margin:0">
+    <div class="s3-add-row" id="add-row">
+      <div class="field s3-add-field">
         <label for="lang-select"><%= __('setup.step3.addLang') %></label>
         <select id="lang-select">
           <% languages.forEach(function(l) { %>

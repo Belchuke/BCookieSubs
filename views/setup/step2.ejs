@@ -24,97 +24,89 @@
       <h1><%= __('setup.step2.title') %></h1>
       <p class="page-subtitle"><%= __('setup.step2.subtitle') %></p>
 
-      <div style="display: flex; flex-direction: column; gap: 1.25rem; margin-bottom: 2rem">
+      <div class="s2-cards">
         <div class="card">
           <div class="card-header"><h2><%= __('setup.step2.modelRoles') %></h2></div>
-          <div style="display: flex; flex-direction: column; gap: 0.85rem; padding: 0.25rem 0">
-            <div style="display: flex; gap: 0.85rem; align-items: flex-start">
+          <div class="s2-role-list">
+            <div class="s2-role-row">
               <span
-                class="badge badge-info"
-                style="flex-shrink: 0; margin-top: 0.1rem; min-width: 112px; text-align: center"
+                class="badge badge-info s2-role-badge"
                 ><%= __('setup.step2.roleTranslation') %></span
               >
-              <div style="font-size: 0.88rem; line-height: 1.5"><%= __('setup.step2.roleTranslationDesc') %></div>
+              <div class="s2-role-desc"><%= __('setup.step2.roleTranslationDesc') %></div>
             </div>
 
-            <div style="display: flex; gap: 0.85rem; align-items: flex-start">
+            <div class="s2-role-row">
               <span
-                class="badge badge-warning"
-                style="flex-shrink: 0; margin-top: 0.1rem; min-width: 112px; text-align: center"
+                class="badge badge-warning s2-role-badge"
                 ><%= __('setup.step2.roleJudge') %></span
               >
-              <div style="font-size: 0.88rem; line-height: 1.5"><%= __('setup.step2.roleJudgeDesc') %></div>
+              <div class="s2-role-desc"><%= __('setup.step2.roleJudgeDesc') %></div>
             </div>
 
-            <div style="display: flex; gap: 0.85rem; align-items: flex-start">
+            <div class="s2-role-row">
               <span
-                class="badge badge-success"
-                style="flex-shrink: 0; margin-top: 0.1rem; min-width: 112px; text-align: center"
+                class="badge badge-success s2-role-badge"
                 ><%= __('setup.step2.roleNameFormatter') %></span
               >
-              <div style="font-size: 0.88rem; line-height: 1.5"><%= __('setup.step2.roleNameFormatterDesc') %></div>
+              <div class="s2-role-desc"><%= __('setup.step2.roleNameFormatterDesc') %></div>
             </div>
           </div>
         </div>
 
         <div class="card">
           <div class="card-header"><h2><%= __('setup.step2.promptsTitle') %></h2></div>
-          <div style="font-size: 0.88rem; line-height: 1.6">
-            <p style="margin: 0 0 0.6rem"><%= __('setup.step2.promptsDesc') %></p>
-            <p style="margin: 0 0 0.4rem"><%= __('setup.step2.placeholdersLabel') %></p>
+          <div class="s2-prompts">
+            <p class="s2-prompts-p1"><%= __('setup.step2.promptsDesc') %></p>
+            <p class="s2-prompts-p2"><%= __('setup.step2.placeholdersLabel') %></p>
             <div
-              style="
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-                gap: 0.3rem 0.75rem;
-                font-size: 0.82rem;
-              "
+              class="s2-placeholders"
             ></div>
-            <p style="margin: 0.6rem 0 0" class="text-dim"><%= __('setup.step2.promptsEditHint') %></p>
+            <p class="s2-prompts-hint text-dim"><%= __('setup.step2.promptsEditHint') %></p>
           </div>
         </div>
 
         <div class="card">
           <div class="card-header"><h2><%= __('setup.step2.settingsOverview') %></h2></div>
-          <div style="display: flex; flex-direction: column; gap: 0.7rem; font-size: 0.88rem; line-height: 1.5">
-            <div style="display: flex; gap: 1rem; align-items: flex-start">
-              <span style="font-weight: 600; min-width: 185px; flex-shrink: 0"
+          <div class="s2-settings">
+            <div class="s2-setting-row">
+              <span class="s2-setting-label"
                 ><%= __('setup.step2.defaultChunkSize') %></span
               >
               <span class="text-dim"><%= __('setup.step2.defaultChunkSizeDesc') %></span>
             </div>
-            <div style="display: flex; gap: 1rem; align-items: flex-start">
-              <span style="font-weight: 600; min-width: 185px; flex-shrink: 0"
+            <div class="s2-setting-row">
+              <span class="s2-setting-label"
                 ><%= __('setup.step2.finishOneFirst') %></span
               >
               <span class="text-dim"><%= __('setup.step2.finishOneFirstDesc') %></span>
             </div>
-            <div style="display: flex; gap: 1rem; align-items: flex-start">
-              <span style="font-weight: 600; min-width: 185px; flex-shrink: 0"
+            <div class="s2-setting-row">
+              <span class="s2-setting-label"
                 ><%= __('setup.step2.nameDetection') %></span
               >
               <span class="text-dim"><%= __('setup.step2.nameDetectionDesc') %></span>
             </div>
-            <div style="display: flex; gap: 1rem; align-items: flex-start">
-              <span style="font-weight: 600; min-width: 185px; flex-shrink: 0"
+            <div class="s2-setting-row">
+              <span class="s2-setting-label"
                 ><%= __('setup.step2.tmdbIntegration') %></span
               >
               <span class="text-dim"><%= __('setup.step2.tmdbIntegrationDesc') %></span>
             </div>
-            <div style="display: flex; gap: 1rem; align-items: flex-start">
-              <span style="font-weight: 600; min-width: 185px; flex-shrink: 0"
+            <div class="s2-setting-row">
+              <span class="s2-setting-label"
                 ><%= __('setup.step2.showPosters') %></span
               >
               <span class="text-dim"><%= __('setup.step2.showPostersDesc') %></span>
             </div>
-            <div style="display: flex; gap: 1rem; align-items: flex-start">
-              <span style="font-weight: 600; min-width: 185px; flex-shrink: 0"
+            <div class="s2-setting-row">
+              <span class="s2-setting-label"
                 ><%= __('setup.step2.libraryScanning') %></span
               >
               <span class="text-dim"><%= __('setup.step2.libraryScanningDesc') %></span>
             </div>
-            <div style="display: flex; gap: 1rem; align-items: flex-start">
-              <span style="font-weight: 600; min-width: 185px; flex-shrink: 0"
+            <div class="s2-setting-row">
+              <span class="s2-setting-label"
                 ><%= __('setup.step2.autoClearLogs') %></span
               >
               <span class="text-dim"><%= __('setup.step2.autoClearLogsDesc') %></span>
@@ -124,16 +116,16 @@
 
         <div class="card">
           <div class="card-header"><h2><%= __('setup.step2.languagesTitle') %></h2></div>
-          <div style="font-size: 0.88rem; line-height: 1.5; display: flex; flex-direction: column; gap: 0.5rem">
+          <div class="s2-langs">
             <div>
               <strong><%= __('setup.step2.defaultTargetLangs') %></strong>
-              <span class="text-dim" style="margin-left: 0.4rem"><%= __('setup.step2.systemWide') %></span>
+              <span class="text-dim s2-lang-tag"><%= __('setup.step2.systemWide') %></span>
               <br />
               <span class="text-dim"> <%= __('setup.step2.defaultTargetLangsDesc') %> </span>
             </div>
             <div>
               <strong><%= __('setup.step2.perUserLangs') %></strong>
-              <span class="text-dim" style="margin-left: 0.4rem"><%= __('setup.step2.accountOverride') %></span>
+              <span class="text-dim s2-lang-tag"><%= __('setup.step2.accountOverride') %></span>
               <br />
               <span class="text-dim"> <%= __('setup.step2.perUserLangsDesc') %> </span>
             </div>

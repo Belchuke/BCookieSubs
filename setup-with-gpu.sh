@@ -32,6 +32,13 @@ ok "docker + compose v2 reachable"
 step "Bootstrapping .env"
 ensure_env_file "$ROOT"
 
+# Mark the deployment as GPU-enabled for the app container.
+if grep -Eq '^WHISPER_GPU_AVAILABLE=' "$ROOT/.env"; then
+  sed -i.bak 's/^WHISPER_GPU_AVAILABLE=.*/WHISPER_GPU_AVAILABLE=1/' "$ROOT/.env" && rm -f "$ROOT/.env.bak"
+else
+  printf '\nWHISPER_GPU_AVAILABLE=1\n' >> "$ROOT/.env"
+fi
+
 step "Building and starting the stack (with GPU passthrough)"
 docker compose \
   -f "$ROOT/docker-compose.yml" \

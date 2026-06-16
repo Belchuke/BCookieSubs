@@ -214,12 +214,29 @@ function closeModalOnOverlay(event) {
     )
   }
 
-  function segmentedBar(donePct, failedPct, title) {
-    var html = '<div class="progress-bar" title="' + title + '"><div style="height:100%;display:flex">'
-    html += '<div class="progress-fill" style="width:' + donePct + '%"></div>'
-    if (failedPct > 0) html += '<div class="progress-fill-failed" style="width:' + failedPct + '%"></div>'
+  function segmentedBar(donePct, failedPct, title, indeterminate) {
+    var html = '<div class="progress-bar' + (indeterminate ? ' progress-bar-indeterminate' : '') + '" title="' + title + '"><div style="height:100%;display:flex">'
+    if (indeterminate) {
+      html += '<div class="progress-fill-indeterminate"></div>'
+    } else {
+      html += '<div class="progress-fill" style="width:' + donePct + '%"></div>'
+      if (failedPct > 0) html += '<div class="progress-fill-failed" style="width:' + failedPct + '%"></div>'
+    }
     html += '</div></div>'
     return html
+  }
+
+  // A single determinate "Whispering" progress row shown while a Whisper
+  // subtitle is still transcribing (before any translation jobs can run).
+  function whisperProgressRow(pct) {
+    var label = (typeof APP_STRINGS !== "undefined" && APP_STRINGS.whispering) || "Whispering"
+    return (
+      '<div class="target-progress">' +
+      '<span class="target-lang">' + label + "</span>" +
+      segmentedBar(pct, 0, label, false) +
+      '<span class="progress-label">' + pct + "%</span>" +
+      "</div>"
+    )
   }
 
   function targetProgressHtml(s, langMap) {
@@ -235,16 +252,19 @@ function closeModalOnOverlay(event) {
       var tLang = langMap[t.targetLangId]
       var tLangCode = tLang ? (tLang.iso639 || "").toUpperCase() : String(t.targetLangId)
       var tLabel = tLang ? (tLang.flagCode ? '<span class="fi fi-' + tLang.flagCode + '"></span> ' : '') + tLangCode : tLangCode
+      var isPlaceholder = t.total === 0 && t.jobStatus === "queued"
       var tDonePct = t.total > 0 ? Math.round((t.done / t.total) * 100) : t.jobStatus === "completed" ? 100 : 0
       var tFailedPct = t.total > 0 ? Math.round(((t.failed || 0) / t.total) * 100) : 0
       if (tDonePct + tFailedPct > 100) tFailedPct = 100 - tDonePct
       var tRemaining = Math.max(0, t.total - t.done - (t.failed || 0))
-      var tTitle = t.done + " completed, " + (t.failed || 0) + " failed, " + tRemaining + " remaining"
+      var tTitle = isPlaceholder
+        ? "Waiting for Whisper transcription"
+        : t.done + " completed, " + (t.failed || 0) + " failed, " + tRemaining + " remaining"
       var jobActive = t.jobStatus !== "completed" && t.jobStatus !== "cancelled"
       html += '<div class="target-progress">'
       html += '<span class="target-lang">' + tLabel + "</span>"
-      html += segmentedBar(tDonePct, tFailedPct, tTitle)
-      html += '<span class="progress-label">' + t.done + "/" + t.total + " (" + tDonePct + "%)</span>"
+      html += segmentedBar(tDonePct, tFailedPct, tTitle, isPlaceholder)
+      html += '<span class="progress-label">' + (isPlaceholder ? "—" : t.done + "/" + t.total + " (" + tDonePct + "%)") + "</span>"
       if (multiTarget && jobActive && (typeof CAN_STOP === "undefined" || CAN_STOP)) {
         html += '<form method="POST" action="/dashboard/cancel-job/' + t.jobId + '" style="display:inline"'
         html += ' onsubmit="return confirm(\'Cancel ' + escapeHtml(tLangCode) + '?\')">'
@@ -289,24 +309,39 @@ function closeModalOnOverlay(event) {
 
   
   function renderSubtitleRow(s, langMap, nested) {
-    var sourceLang = langMap[s.sourceLangId]
-    var srcLabel = sourceLang ? (sourceLang.flagCode ? '<span class="fi fi-' + sourceLang.flagCode + '"></span> ' : '') + (sourceLang.iso639 || "").toUpperCase() : String(s.sourceLangId)
     var tp = targetProgressHtml(s, langMap)
     var pct =
       tp.totalChunks > 0 ? Math.round((tp.doneChunks / tp.totalChunks) * 100) : s.status === "completed" ? 100 : 0
     var failedPct = tp.totalChunks > 0 ? Math.round((tp.failedChunks / tp.totalChunks) * 100) : 0
     if (pct + failedPct > 100) failedPct = 100 - pct
+    var whisperActive = s.source === "whisper" && s.whisperTranscriptionStatus && s.whisperTranscriptionStatus !== "transcription_completed"
+    var whisperProgress = Math.max(0, Math.min(100, Math.round(parseFloat(s.whisperProgress) || 0)))
     var barRemaining = Math.max(0, tp.totalChunks - tp.doneChunks - tp.failedChunks)
-    var barTitle = tp.doneChunks + " completed, " + tp.failedChunks + " failed, " + barRemaining + " remaining"
+    var barTitle = whisperActive
+      ? "Whisper transcription in progress"
+      : tp.doneChunks + " completed, " + tp.failedChunks + " failed, " + barRemaining + " remaining"
     var statusClass =
-      s.status === "completed" ? "badge-success" : s.status === "cancelled" ? "badge-error" : "badge-processing"
-    var statusLabel = s.status === "completed" ? "Done" : s.status === "cancelled" ? "Cancelled" : "Processing"
+      s.status === "completed"
+        ? "badge-success"
+        : s.status === "cancelled"
+          ? "badge-error"
+          : s.whisperTranscriptionStatus === "transcription_failed"
+            ? "badge-error"
+            : "badge-processing"
+    var statusLabel = s.status === "completed"
+      ? "Done"
+      : s.status === "cancelled"
+        ? "Cancelled"
+        : s.whisperTranscriptionStatus
+          ? (APP_STRINGS["whisperStatus_" + s.whisperTranscriptionStatus] || s.whisperTranscriptionStatus)
+          : "Processing"
     var isActive = s.status !== "completed" && s.status !== "cancelled"
     var titleLabel = escapeHtml(s.name)
     if (s.season) titleLabel += " <small>S" + pad(s.season) + (s.episode ? "E" + pad(s.episode) : "") + "</small>"
 
-        var moveHtml = ""
-    if (!nested && isActive && (typeof CAN_STOP === "undefined" || CAN_STOP)) {
+    var canMove = !nested && isActive && !whisperActive && (typeof CAN_STOP === "undefined" || CAN_STOP)
+    var moveHtml = ""
+    if (canMove) {
       moveHtml += '<div class="acc-inline-actions">'
       moveHtml += '<form method="POST" action="/dashboard/move-up/' + s.id + '" style="display:inline">'
       moveHtml += '<button type="submit" class="btn btn-icon btn-xs" title="Move up">↑</button></form>'
@@ -319,22 +354,26 @@ function closeModalOnOverlay(event) {
     var headerClass = "accordion-header acc-sub-header" + (nested ? " acc-nested-header" : "")
     var bodyId = "acc-body-sub-" + s.id
 
-    var html = '<div class="' + itemClass + '"' + (!nested ? ' data-draggable' : '') + '>'
+    var html = '<div class="' + itemClass + '"' + (!nested && canMove ? ' data-draggable' : '') + '>'
     html += '<div class="' + headerClass + '" data-sub-id="' + s.id + '">'
     html += '<div class="acc-header-left">'
     if (!nested) html += posterThumb(s.mediaItemId)
     html += '<div class="accordion-header-info">'
     html += '<span class="accordion-title">' + titleLabel + "</span>"
     html += '<span class="badge ' + statusClass + '">' + statusLabel + "</span>"
-    html += '<span class="text-dim" style="font-size:.8rem">' + srcLabel + "</span>"
     html += "</div></div>"
-    html += '<div class="accordion-progress">' + segmentedBar(pct, failedPct, barTitle) + '<span class="progress-label">' + pct + "%</span></div>"
+    var whisperPct = whisperActive ? whisperProgress : pct
+    // Always determinate — no back-and-forth indeterminate animation for Whisper.
+    html += '<div class="accordion-progress">' + segmentedBar(whisperPct, whisperActive ? 0 : failedPct, barTitle, false) + '<span class="progress-label">' + (whisperActive ? whisperProgress + "%" : pct + "%") + "</span></div>"
     html += moveHtml
-    if (!nested) html += '<span class="acc-drag-handle" title="Drag to reorder">⠿</span>'
+    if (!nested && canMove) html += '<span class="acc-drag-handle" title="Drag to reorder">⠿</span>'
     html += '<span class="accordion-chevron">›</span>'
     html += "</div>"
     html += '<div class="accordion-body" id="' + bodyId + '">'
-    html += '<div class="accordion-targets">' + tp.html + "</div>"
+    // While transcribing, show one "Whispering" progress row instead of the
+    // per-target-language placeholder rows (translation can't start until done).
+    var targetsHtml = whisperActive ? whisperProgressRow(whisperProgress) : tp.html
+    html += '<div class="accordion-targets">' + targetsHtml + "</div>"
     html += subtitleBodyActions(s, langMap)
     html += "</div></div>"
     return html
@@ -676,6 +715,23 @@ function inspectJob(id) {
       var statusBadge = { queued: "badge-neutral", running: "badge-processing", completed: "badge-success", failed: "badge-error", cancelled: "badge-neutral", retrying: "badge-processing", waiting_for_judge: "badge-processing" }
 
       var html = ""
+
+      // While a Whisper subtitle is still transcribing there are no translation
+      // chunks yet — show how far the transcription has progressed along the
+      // audio timeline (latest timestamp / total duration).
+      if (s.source === "whisper" && s.whisperTranscriptionStatus && s.whisperTranscriptionStatus !== "transcription_completed") {
+        var wPct = Math.max(0, Math.min(100, Math.round(parseFloat(s.whisperProgress) || 0)))
+        var wPos = parseInt(s.whisperPositionMs, 10) || 0
+        var wDur = parseInt(s.whisperDurationMs, 10) || 0
+        var wLabel = (typeof APP_STRINGS !== "undefined" && APP_STRINGS.whispering) || "Whispering"
+        var wTime = wDur > 0 ? msToClock(wPos) + " / " + msToClock(wDur) : msToClock(wPos)
+        html += '<div style="margin-bottom:1.5rem">'
+        html += '<div style="font-weight:600;margin-bottom:.5rem">' + wLabel + (s.whisperModel ? " — " + escapeHtml(s.whisperModel) : "") + "</div>"
+        html += '<div class="progress-bar"><div class="progress-fill" style="width:' + wPct + '%"></div></div>'
+        html += '<span class="progress-label" style="display:block;margin-top:.4rem">' + escapeHtml(wTime) + " (" + wPct + "%)</span>"
+        html += "</div>"
+      }
+
       ;(data.perJob || []).forEach(function (pj) {
         var langLabel = pj.lang ? (pj.lang.flagCode ? '<span class="fi fi-' + pj.lang.flagCode + '"></span> ' : '') + pj.lang.iso639.toUpperCase() : 'Unknown'
         var pct = pj.total > 0 ? Math.round((pj.done / pj.total) * 100) : 0
@@ -765,6 +821,16 @@ function escapeHtml(str) {
 
 function pad(n) {
   return n < 10 ? "0" + n : String(n)
+}
+
+// Format milliseconds as m:ss (or h:mm:ss) for the Whisper transcription timeline.
+function msToClock(ms) {
+  ms = Math.max(0, Math.floor(ms))
+  var totalSec = Math.floor(ms / 1000)
+  var h = Math.floor(totalSec / 3600)
+  var m = Math.floor((totalSec % 3600) / 60)
+  var sec = totalSec % 60
+  return (h > 0 ? h + ":" + pad(m) : String(m)) + ":" + pad(sec)
 }
 
 function formatLocalTime(utcStr) {

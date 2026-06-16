@@ -31,17 +31,17 @@
       <div class="card card-profile">
         <div class="card-header"><h2><%= __('account.profile') %></h2></div>
         <form method="POST" action="/account/username" id="username-form">
-          <div  style="display:flex;gap:.5rem;align-items:flex-end">
-            <div class="field" style="flex:1;margin-bottom: 0px;">
+          <div  class="acc-row-end">
+            <div class="field acc-field-grow">
               <label for="username"><%= __('account.username') %></label>
               <input type="text" id="username" name="username" value="<%= user.username %>" required minlength="1">
             </div>
-            <button type="submit" class="btn btn-primary" style="flex-shrink:0"><%= __('common.save') %></button>
+            <button type="submit" class="btn btn-primary acc-no-shrink"><%= __('common.save') %></button>
           </div>
         </form>
       </div>
 
-      <div class="card card-langs" style="display:flex;flex-direction:column">
+      <div class="card card-langs acc-col">
         <div class="card-header">
           <h2><%= __('account.myTargetLanguages') %></h2>
           <small class="text-dim"><%= __('account.preSelectedOnUpload') %> <i class="fa-solid fa-circle-info setting-info" data-tip="These languages are pre-selected when you upload an SRT file or choose a movie/episode to translate."></i></small>
@@ -50,24 +50,24 @@
         <% if (userConfigLangs.length === 0) { %>
           <p class="empty-state"><%= __('account.noDefaultsSet') %></p>
         <% } else { %>
-          <div style="display:flex;flex-direction:column;gap:.35rem;flex:1">
+          <div class="acc-lang-list">
             <% userConfigLangs.forEach(function(cl, idx) { %>
               <% var lang = languages.find(function(l){ return l.id === cl.languageId }) %>
-              <div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border)">
-                <span class="text-dim" style="width:1.5rem;text-align:right;font-size:.8rem"><%= idx + 1 %>.</span>
-                <span style="flex:1;display:flex;align-items:center;gap:.35rem"><% if (lang && lang.flagCode) { %><span class="fi fi-<%= lang.flagCode %>" style="flex-shrink:0"></span><% } %><%= lang ? lang.name : 'Unknown' %></span>
+              <div class="acc-lang-row">
+                <span class="text-dim acc-lang-num"><%= idx + 1 %>.</span>
+                <span class="acc-lang-name"><% if (lang && lang.flagCode) { %><span class="fi fi-<%= lang.flagCode %> acc-no-shrink"></span><% } %><%= lang ? lang.name : 'Unknown' %></span>
 
-                <form method="POST" action="/account/translationlangs/move/<%= cl.languageId %>" style="display:inline">
+                <form method="POST" action="/account/translationlangs/move/<%= cl.languageId %>" class="acc-inline-form">
                   <input type="hidden" name="direction" value="up">
                   <button type="submit" class="btn btn-icon btn-sm" <%= idx === 0 ? 'disabled' : '' %> title="Move up">↑</button>
                 </form>
 
-                <form method="POST" action="/account/translationlangs/move/<%= cl.languageId %>" style="display:inline">
+                <form method="POST" action="/account/translationlangs/move/<%= cl.languageId %>" class="acc-inline-form">
                   <input type="hidden" name="direction" value="down">
                   <button type="submit" class="btn btn-icon btn-sm" <%= idx === userConfigLangs.length - 1 ? 'disabled' : '' %> title="Move down">↓</button>
                 </form>
 
-                <form method="POST" action="/account/translationlangs/remove/<%= cl.languageId %>" style="display:inline">
+                <form method="POST" action="/account/translationlangs/remove/<%= cl.languageId %>" class="acc-inline-form">
                   <button type="submit" class="btn btn-sm btn-danger">✕</button>
                 </form>
               </div>
@@ -88,7 +88,7 @@
               <%= userConfigLangs.length === 0 ? 'border-top:1px solid var(--border);' : '' %>
             "
           >
-            <div class="field" style="flex:1;margin:0">
+            <div class="field acc-field-flex">
               <label><%= __('account.addLanguage') %></label>
               <select name="languageId">
                 <% languages.forEach(function(l) { %>
@@ -104,20 +104,20 @@
 
       <div class="card card-settings">
         <div class="card-header"><h2><%= __('account.settings') %></h2></div>
-        <form method="POST" action="/account/showPosters" style="display:flex;flex-direction:column;gap:.6rem">
-          <div class="field field-checkbox" style="margin:0">
+        <form method="POST" action="/account/showPosters" class="acc-col-gap6">
+          <div class="field field-checkbox acc-m0">
             <input type="checkbox" id="showPostersToggle" name="showPosters" value="1" <%= user.showPosters !== 0 ? 'checked' : '' %>>
-            <label for="showPostersToggle"><%= __('account.showMediaPosters') %> <span class="text-dim" style="font-size:.8rem"><%= __('account.whenAvailable') %></span></label>
+            <label for="showPostersToggle"><%= __('account.showMediaPosters') %> <span class="text-dim acc-text-sm"><%= __('account.whenAvailable') %></span></label>
           </div>
-          <button type="submit" class="btn btn-primary" style="align-self:flex-end"><%= __('common.save') %></button>
+          <button type="submit" class="btn btn-primary acc-self-end"><%= __('common.save') %></button>
         </form>
       </div>
 
       <div class="card card-language">
         <div class="card-header"><h2><%= __('account.language') %></h2></div>
-        <small class="text-dim" style="display:block;margin-bottom:.75rem"><%= __('account.languageDescription') %></small>
-        <form method="POST" action="/account/language" style="display:flex;gap:.5rem;align-items:flex-end">
-          <div class="field" style="flex:1;margin-bottom:0">
+        <small class="text-dim acc-block-mb"><%= __('account.languageDescription') %></small>
+        <form method="POST" action="/account/language" class="acc-row-end">
+          <div class="field acc-field-mb0">
             <select name="language">
               <option value="system" <%= !user.language ? 'selected' : '' %>><%= __('account.systemDefault') %></option>
               <% supportedLocales.forEach(function(lc) { %>
@@ -125,14 +125,14 @@
               <% }) %>
             </select>
           </div>
-          <button type="submit" class="btn btn-primary" style="flex-shrink:0"><%= __('account.saveLanguage') %></button>
+          <button type="submit" class="btn btn-primary acc-no-shrink"><%= __('account.saveLanguage') %></button>
         </form>
       </div>
 
       <div class="card card-theme">
         <div class="card-header"><h2><%= __('account.theme') %></h2></div>
-        <form method="POST" action="/account/theme" style="display:flex;gap:.5rem;align-items:flex-end">
-          <div class="field" style="flex:1;margin-bottom:0">
+        <form method="POST" action="/account/theme" class="acc-row-end">
+          <div class="field acc-field-mb0">
             <label for="themeId"><%= __('account.selectedTheme') %></label>
             <select id="themeId" name="themeId">
               <% themes.forEach(function(t) { %>
@@ -140,13 +140,13 @@
               <% }) %>
             </select>
           </div>
-          <button type="submit" class="btn btn-primary" style="flex-shrink:0"><%= __('common.apply') %></button>
+          <button type="submit" class="btn btn-primary acc-no-shrink"><%= __('common.apply') %></button>
         </form>
       </div>
 
-      <div class="card card-password" style="display:flex;flex-direction:column">
+      <div class="card card-password acc-col">
         <div class="card-header"><h2><%= __('account.changePassword') %></h2></div>
-        <form method="POST" action="/account/password" id="password-form" style="display:flex;flex-direction:column;flex:1">
+        <form method="POST" action="/account/password" id="password-form" class="acc-col-flex">
           <div class="field">
             <label for="currentPassword"><%= __('account.currentPassword') %></label>
             <input type="password" id="currentPassword" name="currentPassword" required autocomplete="current-password">
@@ -159,21 +159,21 @@
             <label for="newPassword2"><%= __('account.confirmNewPassword') %></label>
             <input type="password" id="newPassword2" name="newPassword2" required autocomplete="new-password">
           </div>
-          <div id="password-error" class="alert alert-error" style="display:none;margin-bottom:.75rem"></div>
-          <button type="submit" class="btn btn-primary" style="margin-top:auto;align-self:flex-end"><%= __('account.updatePassword') %></button>
+          <div id="password-error" class="alert alert-error acc-error-box"></div>
+          <button type="submit" class="btn btn-primary acc-submit-end"><%= __('account.updatePassword') %></button>
         </form>
       </div>
 
-      <div class="card" style="margin-top:0">
+      <div class="card acc-mt0">
         <div class="card-header"><h2><%= __('account.myRoles') %></h2></div>
         <% if (!userRoles || userRoles.length === 0) { %>
           <p class="empty-state"><%= __('account.noRolesAssigned') %></p>
         <% } else { %>
-          <div style="display:flex;flex-direction:column;gap:.5rem">
+          <div class="acc-col-gap5">
             <% userRoles.forEach(function(r) { %>
-              <div style="display:flex;align-items:center;gap:.6rem;padding:.4rem 0;border-bottom:1px solid var(--border)">
+              <div class="acc-role-row">
                 <span class="badge badge-neutral"><%= r.name %></span>
-                <span class="text-dim" style="font-size:.82rem"><%= __('common.level') %> <%= r.level %></span>
+                <span class="text-dim acc-text-sm2"><%= __('common.level') %> <%= r.level %></span>
               </div>
             <% }) %>
           </div>

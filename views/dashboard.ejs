@@ -26,7 +26,7 @@
 
     <div class="page-header">
       <h1><%= __('dashboard.title') %></h1>
-      <div style="display:flex;gap:.5rem;align-items:center">
+      <div class="dsh-row-center">
         <% if (can('canManageWorker')) { %>
           <button id="worker-stop-btn" class="btn btn-warning" onclick="workerControl('pause')" style="<%= workerPaused ? 'display:none' : 'display:inline-flex' %>"><%= __('dashboard.stopWorker') %></button>
           <button id="worker-start-btn" class="btn btn-secondary" onclick="workerControl('resume')" style="<%= workerPaused ? 'display:inline-flex' : 'display:none' %>"><%= __('dashboard.startWorker') %></button>
@@ -44,13 +44,13 @@
       </div>
     </div>
 
-    <div class="card" style="margin-top:1.5rem">
+    <div class="card dsh-mt-15">
       <div class="card-header">
         <h2><%= __('dashboard.recentLogs') %></h2>
         <small class="text-dim" id="log-count">—</small>
       </div>
       <div class="log-panel" id="log-panel">
-        <p class="text-dim" style="padding:.5rem"><%= __('common.loading') %></p>
+        <p class="text-dim dsh-p-5"><%= __('common.loading') %></p>
       </div>
     </div>
   </main>
@@ -66,7 +66,7 @@
       <div class="field">
         <label><%= __('dashboard.srtFile') %></label>
         <div class="upload-zone" id="upload-zone" onclick="document.getElementById('up1-srtFile').click()">
-          <input type="file" id="up1-srtFile" name="srtFile" accept=".srt" required style="display:none">
+          <input type="file" id="up1-srtFile" name="srtFile" accept=".srt" required class="dsh-hidden">
           <div class="upload-zone-content">
             <div class="upload-text">
               <span id="click-to-upload-1" class="upload-text-main"><%= __('dashboard.clickToUpload') %></span>
@@ -109,13 +109,13 @@
       <input type="hidden" id="up2-posterUrl" name="posterUrl" value="">
 
 
-      <div id="up2-tmdb-selector" style="display:none" class="field">
+      <div id="up2-tmdb-selector" class="field" style="display:none">
         <label for="up2-tmdb-select"><%= __('dashboard.tmdbMatch') %></label>
         <select id="up2-tmdb-select"></select>
       </div>
 
-      <div class="upload-step2-body" style="display:flex;gap:1.5rem;align-items:stretch">
-        <div style="flex:1;min-width:0">
+      <div class="upload-step2-body dsh-step2-body">
+        <div class="dsh-flex-1">
           <div class="field">
             <label for="up2-name"><%= __('dashboard.mediaTitle') %></label>
             <input type="text" id="up2-name" name="mediaTitle" required placeholder="e.g. The Dark Knight">
@@ -129,7 +129,7 @@
                 <option value="unknown"><%= __('dashboard.unknown') %></option>
               </select>
             </div>
-            <div class="field" style="max-width:7rem">
+            <div class="field dsh-mw-7">
               <label for="up2-year"><%= __('dashboard.year') %></label>
               <input type="number" id="up2-year" name="mediaYear" min="1900" max="2100" placeholder="2024">
             </div>
@@ -144,8 +144,8 @@
           </div>
           <div class="field">
             <label><%= __('dashboard.targetLanguages') %></label>
-            <div id="up2-lang-chips" style="display:flex;flex-wrap:wrap;gap:.25rem;min-height:1.5rem;margin-bottom:.4rem"></div>
-            <div class="checkbox-group" id="up2-lang-group" style="max-height:90px">
+            <div id="up2-lang-chips" class="dsh-lang-chips"></div>
+            <div class="checkbox-group dsh-mh-90" id="up2-lang-group">
               <% languages.forEach(function(l) { %>
                 <% var isDefault = userConfigLangs.some(function(cl){ return cl.languageId === l.id }) %>
                 <label class="checkbox-label">
@@ -162,8 +162,8 @@
         </div>
 
 
-        <div id="up2-poster-wrap" style="display:none;flex-shrink:0;width:250px">
-          <img id="up2-poster" src="" alt="Poster" style="width:100%;height:100%;object-fit:cover;border-radius:var(--radius);box-shadow:0 2px 12px rgba(0,0,0,.4)">
+        <div id="up2-poster-wrap" class="dsh-poster-wrap" style="display:none">
+          <img id="up2-poster" src="" alt="Poster" class="dsh-poster">
         </div>
       </div>
 
@@ -238,7 +238,14 @@
     inspectStatusFailed:     '<%= __("dashboard.inspectStatusFailed") %>',
     inspectStatusCancelled:  '<%= __("dashboard.inspectStatusCancelled") %>',
     inspectStatusRetrying:   '<%= __("dashboard.inspectStatusRetrying") %>',
-    inspectStatusWaiting:    '<%= __("dashboard.inspectStatusWaiting") %>'
+    inspectStatusWaiting:    '<%= __("dashboard.inspectStatusWaiting") %>',
+    whisperStatus_queued_for_transcription: '<%= __("dashboard.whisperStatusQueuedForTranscription") %>',
+    whisperStatus_transcribing:             '<%= __("dashboard.whisperStatusTranscribing") %>',
+    whisperStatus_transcription_failed:     '<%= __("dashboard.whisperStatusTranscriptionFailed") %>',
+    whisperStatus_transcription_completed:'<%= __("dashboard.whisperStatusTranscriptionCompleted") %>',
+    whisperStatus_queued_for_translation:   '<%= __("dashboard.whisperStatusQueuedForTranslation") %>',
+    whisperStatus_translating:              '<%= __("dashboard.whisperStatusTranslating") %>',
+    whispering:                             '<%= __("dashboard.whispering") %>'
   };
 
   function toggleSeriesFields(val) {

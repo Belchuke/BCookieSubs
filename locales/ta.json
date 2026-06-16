@@ -134,7 +134,13 @@
     "inspectStatusFailed": "தோல்வியடைந்தது",
     "inspectStatusCancelled": "ரத்துசெய்யப்பட்டது",
     "inspectStatusRetrying": "மறுமுயற்சி",
-    "inspectStatusWaiting": "காத்திருக்கிறது"
+    "inspectStatusWaiting": "காத்திருக்கிறது",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "என் கணக்கு",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "நூலக பாதை உலாவலை கட்டுப்படுத்த பயன்படும் மூல கோப்புறையை கட்டமைக்கலாம். அமைக்கப்பட்டால், உலாவல் மற்றும் புதிய நூலக பாதைகள் இந்த கோப்புறையில் மட்டுமே இருக்கும்.",
     "tipAutoClearLogs": "இயக்கப்பட்டால், கீழே உள்ள தக்கவைப்பு காலத்தின்படி பழைய பதிவுகள் தானாக நீக்கப்படும்.",
     "tipDeleteLogsOlderThan": "தானாக அழி செயல்பாட்டில் இருக்கும்போது இந்த நாட்களுக்கு பழைய பதிவுகள் நீக்கப்படும்.",
-    "tipActiveTheme": "இடைமுகம் பயன்படுத்தும் செயல்பாட்டு வண்ண தீமை கட்டுப்படுத்துகிறது. தனிப்பயன் தீம்கள் கீழே உருவாக்கலாம்."
+    "tipActiveTheme": "இடைமுகம் பயன்படுத்தும் செயல்பாட்டு வண்ண தீமை கட்டுப்படுத்துகிறது. தனிப்பயன் தீம்கள் கீழே உருவாக்கலாம்.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "பயனர்கள்",
@@ -423,7 +441,18 @@
     "translate": "மொழிபெயர்",
     "unknownSeason": "தெரியாத சீசன்",
     "season": "சீசன் ",
-    "episodeCount": "ep"
+    "episodeCount": "ep",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "புள்ளிவிவரங்கள்",

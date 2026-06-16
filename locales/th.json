@@ -134,7 +134,13 @@
     "inspectStatusFailed": "ล้มเหลว",
     "inspectStatusCancelled": "ยกเลิกแล้ว",
     "inspectStatusRetrying": "กำลังลองใหม่",
-    "inspectStatusWaiting": "รอ"
+    "inspectStatusWaiting": "รอ",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "stats": {
     "title": "สถิติ",
@@ -239,7 +245,19 @@
     "tipRootLibraryFolder": "สามารถกำหนดค่าโฟลเดอร์รากที่ใช้จำกัดการเรียกดูเส้นทางไลบรารี เมื่อตั้งค่าแล้ว การเรียกดูและเส้นทางไลบรารีใหม่จะถูกจำกัดอยู่ในโฟลเดอร์นี้",
     "tipAutoClearLogs": "เมื่อเปิดใช้งาน บันทึกเก่าจะถูกลบโดยอัตโนมัติตามระยะเวลาการเก็บรักษาด้านล่าง",
     "tipDeleteLogsOlderThan": "บันทึกที่เก่ากว่าจำนวนวันนี้จะถูกลบเมื่อการล้างอัตโนมัติใช้งานอยู่",
-    "tipActiveTheme": "ควบคุมธีมสีที่ใช้งานอยู่ในอินเทอร์เฟซ สามารถสร้างธีมที่กำหนดเองได้ด้านล่าง"
+    "tipActiveTheme": "ควบคุมธีมสีที่ใช้งานอยู่ในอินเทอร์เฟซ สามารถสร้างธีมที่กำหนดเองได้ด้านล่าง",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "ผู้ใช้",
@@ -442,29 +460,18 @@
     "translate": "แปล",
     "unknownSeason": "ไม่ทราบซีซัน",
     "season": "ซีซัน ",
-    "episodeCount": "ตอน"
-  },
-  "stats": {
-    "title": "สถิติ",
-    "tabPrompts": "พรอมต์",
-    "tabSubtitles": "คำบรรยาย",
-    "tabModels": "โมเดล",
-    "tabJudge": "ผู้ตัดสิน",
-    "onlyActiveModels": "เฉพาะโมเดลที่ใช้งาน",
-    "selectedByModel": "เลือกตามโมเดล",
-    "selectedByPrompt": "เลือกตามพรอมต์",
-    "noStatsRecorded": "ยังไม่มีสถิติที่บันทึก",
-    "selectSubtitle": "— เลือกคำบรรยาย —",
-    "noJudgeEvals": "ยังไม่มีการประเมินของผู้ตัดสิน",
-    "allModels": "โมเดลทั้งหมด",
-    "allLanguages": "ภาษาทั้งหมด",
-    "allPrompts": "พรอมต์ทั้งหมด",
-    "jobInfo": "ข้อมูลงาน",
-    "candidatesByModel": "ผู้สมัครที่เลือกตามโมเดล",
-    "chunks": "ชิ้นส่วน",
-    "avgDurationByPrompt": "ระยะเวลาเฉลี่ยตามพรอมต์",
-    "selectedByLanguage": "เลือกตามภาษา",
-    "successFailed": "สำเร็จ / ล้มเหลว"
+    "episodeCount": "ตอน",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "login": {
     "title": "เข้าสู่ระบบ",

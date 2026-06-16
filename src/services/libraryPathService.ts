@@ -4,9 +4,10 @@ import * as path from "path"
 import { spawnSync } from "child_process"
 import Database from "better-sqlite3"
 import { getConfig } from "../repositories/configRepository"
-import { getConfigTranslationLanguages } from "../repositories/languageRepository"
+import { getConfigTranslationLanguages, getLanguageById } from "../repositories/languageRepository"
 import { createLog } from "../repositories/logRepository"
 import { createMediaItem, getMediaItemById, getMediaItemByKeys } from "../repositories/mediaRepository"
+import { getHighestRoleUser } from "../repositories/userRepository"
 import {
   getSubtitleItemMediaItemFromPrompt,
   selectBestTheMovieDbMatch,
@@ -23,7 +24,12 @@ import {
   updateLibraryPathItemExtractFileName,
   updateLibraryPathItemStatus,
 } from "../repositories/libraryPathRepository"
-import { createSubtitleTask, getSubtitleJobsBySubtitleId, getSubtitleById } from "../repositories/subtitleRepository"
+import {
+  createSubtitleTask,
+  getSubtitleJobsBySubtitleId,
+  getSubtitleById,
+  getCompletedLibrarySubtitlesForExport,
+} from "../repositories/subtitleRepository"
 import { addCreditToSrt } from "./subtitleExportService"
 import { DBLibraryPath, DBLibraryPathItem, DBUser } from "../types/dbTypes"
 
@@ -59,7 +65,7 @@ export function cleanupExtractTempDir(): void {
   } catch {}
 }
 
-const VIDEO_EXTENSIONS = new Set([
+export const VIDEO_EXTENSIONS = new Set([
   ".mkv",
   ".mp4",
   ".avi",
@@ -72,6 +78,10 @@ const VIDEO_EXTENSIONS = new Set([
   ".flv",
   ".webm",
 ])
+
+export function isVideoFile(filePath: string): boolean {
+  return VIDEO_EXTENSIONS.has(path.extname(filePath).toLowerCase())
+}
 
 const SAMPLE_FILE_RE = /^sample(?:[._-].*)?$/i
 
@@ -579,22 +589,6 @@ function getSeriesDetectionName(filePath: string, libraryPathRoot: string): stri
   return path.basename(seriesRoot)
 }
 
-function getAdminUser(db: Database.Database): DBUser | null {
-  const row = db
-    .prepare(
-      `
-    SELECT u.* FROM user u
-    JOIN userRole ur ON ur.userId = u.id
-    JOIN role r ON r.id = ur.roleId
-    WHERE u.deletedAt IS NULL
-    ORDER BY r.level DESC
-    LIMIT 1
-  `,
-    )
-    .get() as DBUser | undefined
-  return row ?? null
-}
-
 async function matchMediaForFile(
   db: Database.Database,
   adminUser: DBUser,
@@ -842,7 +836,7 @@ async function matchMediaForFile(
 }
 
 export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibraryPath): Promise<void> {
-  const adminUser = getAdminUser(db)
+  const adminUser = getHighestRoleUser(db)
   if (!adminUser) {
     createLog(
       db,
@@ -877,7 +871,7 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
   const { videoFiles, srtFiles } = findMediaFiles(libraryPath.path)
 
   const config = getConfig(db)
-  const sourceLang = db.prepare(`SELECT * FROM language WHERE id = ?`).get(libraryPath.sourceLangId) as any
+  const sourceLang = getLanguageById(db, libraryPath.sourceLangId)
   const iso = sourceLang?.iso639 ?? ""
   const iso2b: string | null = sourceLang?.iso6392b ?? null
   const langName = sourceLang?.name ?? ""
@@ -1109,6 +1103,7 @@ export async function autoTranslateItem(
   episode: number | null,
   chunkSetting: number,
   overrideTargetLangIds?: number[],
+  sourceLangIdOverride?: number | null,
 ): Promise<{ success: boolean; msg: string }> {
   const { path: srtFilePath, isTemp } = srtSource
 
@@ -1156,7 +1151,7 @@ export async function autoTranslateItem(
     db,
     adminUser,
     mediaItemId,
-    libraryPath.sourceLangId,
+    sourceLangIdOverride ?? libraryPath.sourceLangId,
     targetLangIds,
     srtContent,
     chunkSetting,
@@ -1195,14 +1190,7 @@ export async function autoTranslateItem(
 }
 
 async function autoExtractItems(db: Database.Database, libraryPath: DBLibraryPath): Promise<void> {
-  const completedSubtitles = db
-    .prepare(
-      `SELECT DISTINCT s.id, s.libraryPathItem as libraryPathItemId, s.mediaItemId
-       FROM subtitle s
-       INNER JOIN subtitleJob sj ON sj.subtitleId = s.id
-       WHERE s.libraryPathItem IS NOT NULL AND sj.status = 'completed'`,
-    )
-    .all() as { id: number; libraryPathItemId: number; mediaItemId: number | null }[]
+  const completedSubtitles = getCompletedLibrarySubtitlesForExport(db)
 
   for (const row of completedSubtitles) {
     const item = getLibraryPathItemById(db, row.libraryPathItemId)
@@ -1233,7 +1221,7 @@ async function autoExtractItems(db: Database.Database, libraryPath: DBLibraryPat
 
     // Export ALL completed jobs (one file per target language)
     for (const job of completedJobs) {
-      const lang = db.prepare(`SELECT * FROM language WHERE id = ?`).get(job.targetLangId) as any
+      const lang = getLanguageById(db, job.targetLangId)
       if (!lang) continue
 
       const langCode = lang.iso639.toLowerCase()

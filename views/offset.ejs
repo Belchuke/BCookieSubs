@@ -47,8 +47,8 @@
 
         <%# Upload panel %>
         <div id="off-panel-upload">
-          <div class="upload-zone" id="off-upload-zone" onclick="document.getElementById('off-file-input').click()">
-            <input type="file" id="off-file-input" accept=".srt,text/plain" style="display:none">
+          <div class="upload-zone" style="height: 15rem !important;" id="off-upload-zone" onclick="document.getElementById('off-file-input').click()">
+            <input type="file" id="off-file-input" accept=".srt,text/plain" class="ofs-hidden">
             <div class="upload-zone-content">
               <div class="upload-text">
                 <span id="off-upload-text-main" class="upload-text-main"><%= __('offset.chooseFile') %></span>
@@ -60,9 +60,9 @@
         </div>
 
         <%# Library panel %>
-        <div id="off-panel-library" style="display:none">
+        <div id="off-panel-library" class="ofs-hidden">
           <% if (libraryPaths.length === 0) { %>
-            <p class="text-dim" style="font-size:.85rem"><%= __('offset.noLibraryPaths') %></p>
+            <p class="text-dim ofs-fs-85"><%= __('offset.noLibraryPaths') %></p>
           <% } else { %>
             <%# Step 1: library path %>
             <div class="field">
@@ -75,19 +75,19 @@
               </select>
             </div>
             <%# Step 2: media item search + list %>
-            <div id="off-media-wrap" style="display:none">
-              <div class="field" style="margin-bottom:0">
+            <div id="off-media-wrap" class="ofs-hidden">
+              <div class="field ofs-mb-0">
                 <label for="off-media-search"><%= __('offset.mediaItem') %></label>
                 <input type="text" id="off-media-search" placeholder="<%= __('offset.searchMedia') %>"
-                       autocomplete="off" style="margin-bottom:0">
+                       autocomplete="off" class="ofs-mb-0">
                 <div class="off-media-list" id="off-media-list">
-                  <div class="off-media-item" style="color:var(--text-dim);cursor:default"><%= __('offset.loadingMedia') %></div>
+                  <div class="off-media-item ofs-media-loading"><%= __('offset.loadingMedia') %></div>
                 </div>
               </div>
             </div>
             <%# Step 3: SRT file picker %>
-            <div id="off-srt-wrap" style="display:none;margin-top:.6rem">
-              <div class="field" style="margin-bottom:0">
+            <div id="off-srt-wrap" class="ofs-hidden-mt-6">
+              <div class="field ofs-mb-0">
                 <label><%= __('offset.subtitleFile') %></label>
                 <div class="off-srt-list" id="off-srt-list"></div>
               </div>
@@ -103,12 +103,12 @@
 
         <div class="field">
           <label><%= __('offset.offsetMs') %></label>
-          <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
+          <div class="ofs-row-center">
             <button type="button" class="btn btn-secondary btn-sm" id="off-offset-dec-large">−5s</button>
             <button type="button" class="btn btn-secondary btn-sm" id="off-offset-dec-small">−1s</button>
             <input type="number" id="off-offset-input" value="0"
                    min="-<%= maxOffsetMs %>" max="<%= maxOffsetMs %>" step="100"
-                   style="width:100px">
+                   class="ofs-w-100">
             <button type="button" class="btn btn-secondary btn-sm" id="off-offset-inc-small">+1s</button>
             <button type="button" class="btn btn-secondary btn-sm" id="off-offset-inc-large">+5s</button>
           </div>
@@ -116,24 +116,24 @@
 
         <div class="field">
           <label><%= __('offset.scope') %></label>
-          <div style="display:flex;gap:.35rem;flex-wrap:wrap">
+          <div class="ofs-row-wrap">
             <button type="button" class="btn btn-secondary btn-sm off-scope-btn is-active" data-scope="all"><%= __('offset.scopeAll') %></button>
             <button type="button" class="btn btn-secondary btn-sm off-scope-btn" data-scope="from"><%= __('offset.scopeFrom') %></button>
             <button type="button" class="btn btn-secondary btn-sm off-scope-btn" data-scope="range"><%= __('offset.scopeRange') %></button>
           </div>
-          <div id="off-scope-from-wrap" style="display:none;margin-top:.4rem">
-            <label class="text-dim" style="font-size:.78rem"><%= __('offset.fromIndex') %></label>
-            <input type="number" id="off-scope-from" style="width:90px;margin-left:.4rem" min="0" value="0">
+          <div id="off-scope-from-wrap" class="ofs-hidden-mt-4">
+            <label class="text-dim ofs-fs-78"><%= __('offset.fromIndex') %></label>
+            <input type="number" id="off-scope-from" class="ofs-w-90" min="0" value="0">
           </div>
-          <div id="off-scope-range-wrap" style="display:none;margin-top:.4rem">
-            <label class="text-dim" style="font-size:.78rem"><%= __('offset.fromIndex') %></label>
-            <input type="number" id="off-scope-from-r" style="width:90px;margin-left:.4rem;margin-right:.75rem" min="0" value="0">
-            <label class="text-dim" style="font-size:.78rem"><%= __('offset.toIndex') %></label>
-            <input type="number" id="off-scope-to-r" style="width:90px;margin-left:.4rem" min="0" value="0">
+          <div id="off-scope-range-wrap" class="ofs-hidden-mt-4">
+            <label class="text-dim ofs-fs-78"><%= __('offset.fromIndex') %></label>
+            <input type="number" id="off-scope-from-r" class="ofs-w-90-mr" min="0" value="0">
+            <label class="text-dim ofs-fs-78"><%= __('offset.toIndex') %></label>
+            <input type="number" id="off-scope-to-r" class="ofs-w-90" min="0" value="0">
           </div>
         </div>
 
-        <div class="field field-checkbox" style="margin-bottom:.75rem">
+        <div class="field field-checkbox ofs-mb-75">
           <input type="checkbox" id="off-add-credit">
           <label for="off-add-credit"><%= __('offset.addCredit') %></label>
         </div>
@@ -149,7 +149,7 @@
             <button type="button" class="btn btn-secondary" id="off-download-btn" disabled>
               <i class="fa-solid fa-download"></i> <%= __('offset.downloadSrt') %>
             </button>
-            <button type="button" class="btn btn-secondary" id="off-save-to-library-btn" style="display:none" disabled>
+            <button type="button" class="btn btn-secondary ofs-hidden" id="off-save-to-library-btn" disabled>
               <i class="fa-solid fa-floppy-disk"></i> <%= __('offset.saveToLibrary') %>
             </button>
           <% } %>
@@ -161,7 +161,7 @@
     <div class="card">
       <div class="card-header">
         <h2><%= __('offset.entriesTitle') %></h2>
-        <span id="off-entry-count" class="badge badge-neutral" style="display:none"></span>
+        <span id="off-entry-count" class="badge badge-neutral ofs-hidden"></span>
       </div>
       <div id="off-entries" class="off-entries">
         <div class="off-empty"><%= __('offset.noEntries') %></div>

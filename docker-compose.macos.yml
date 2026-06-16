@@ -48,9 +48,14 @@ services:
       # See docker-compose.yml for why this mirrors the host path.
       TRANSLATION_ROOT_DIR: "${TRANSLATION_ROOT_DIR:-/media}"
       INTERNAL_API_TOKEN: "${INTERNAL_API_TOKEN:-}"
+      # macOS Docker has no GPU passthrough — Whisper always runs CPU-only.
+      WHISPER_MODEL_ROOT_PATH: "${WHISPER_MODEL_ROOT_PATH:-/data/whisper-models}"
+      WHISPER_GPU_AVAILABLE: "${WHISPER_GPU_AVAILABLE:-}"
     volumes:
       - app-data:/data
+      - whisper-models:/data/whisper-models
       - "${TRANSLATION_ROOT_DIR:-./media}:${TRANSLATION_ROOT_DIR:-/media}"
 
 volumes:
   app-data:
+  whisper-models:

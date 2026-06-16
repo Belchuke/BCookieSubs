@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Imeshindwa",
     "inspectStatusCancelled": "Imeghairiwa",
     "inspectStatusRetrying": "Inajaribu tena",
-    "inspectStatusWaiting": "Inasubiri"
+    "inspectStatusWaiting": "Inasubiri",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Akaunti Yangu",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Inaweza kusanidi folda kuu inayotumika kuzuia uvinjari wa njia ya maktaba. Ikiwekwa, uvinjari na njia mpya za maktaba zimezuiliwa kwenye folda hii.",
     "tipAutoClearLogs": "Inapowezeshwa, kumbukumbu za zamani zinafutwa kiotomatiki kulingana na kipindi cha uhifadhi hapa chini.",
     "tipDeleteLogsOlderThan": "Kumbukumbu za zamani kuliko idadi hii ya siku zinafutwa wakati kufuta kiotomatiki kunafanya kazi.",
-    "tipActiveTheme": "Inadhibiti mandhari ya rangi inayotumika inayotumika na kiolesura. Mandhari maalum zinaweza kuundwa hapa chini."
+    "tipActiveTheme": "Inadhibiti mandhari ya rangi inayotumika inayotumika na kiolesura. Mandhari maalum zinaweza kuundwa hapa chini.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Watumiaji",
@@ -423,7 +441,18 @@
     "translate": "Tafsiri",
     "unknownSeason": "Msimu Usiojulikana",
     "season": "Msimu ",
-    "episodeCount": "vip"
+    "episodeCount": "vip",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Takwimu",

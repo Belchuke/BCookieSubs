@@ -5,11 +5,11 @@
     _cats[p.category].push(p)
   })
 %>
-<div style="display:flex;flex-direction:column;gap:.75rem">
+<div class="perm-cb-wrap">
   <% Object.keys(_cats).forEach(function(cat) { %>
     <div>
-      <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin-bottom:.35rem"><%= cat %></div>
-      <div class="checkbox-group" style="max-height:none">
+      <div class="perm-cat-label"><%= cat %></div>
+      <div class="checkbox-group perm-cb-group">
         <% _cats[cat].forEach(function(p) { %>
           <label class="checkbox-label" title="<%= p.description %>">
             <input type="checkbox" name="permissionKeys" value="<%= p.key %>" <%= checkedKeys.indexOf(p.key) !== -1 ? 'checked' : '' %>>

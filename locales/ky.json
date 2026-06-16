@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Ийгиликсиз",
     "inspectStatusCancelled": "Жокко чыгарылды",
     "inspectStatusRetrying": "Кайталануудa",
-    "inspectStatusWaiting": "Күтүүдө"
+    "inspectStatusWaiting": "Күтүүдө",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Менин аккаунтум",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Китепкана жолун карап чыгууну чектөө үчүн колдонулган тамыр папкасын конфигурациялоого болот.",
     "tipAutoClearLogs": "Иштетилгенде, эски журналдар төмөндөгү сактоо мезгилине ылайык автоматтык жок кылынат.",
     "tipDeleteLogsOlderThan": "Бул күн санынан эски журналдар автоматтык тазалоо активдүү болгондо жок кылынат.",
-    "tipActiveTheme": "Интерфейс колдонгон активдүү түс темасын башкарат. Жеке темаларды төмөндө түзсө болот."
+    "tipActiveTheme": "Интерфейс колдонгон активдүү түс темасын башкарат. Жеке темаларды төмөндө түзсө болот.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Колдонуучулар",
@@ -423,7 +441,18 @@
     "translate": "Которуу",
     "unknownSeason": "Белгисиз мезгил",
     "season": "Мезгил ",
-    "episodeCount": "эп"
+    "episodeCount": "эп",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Статистика",

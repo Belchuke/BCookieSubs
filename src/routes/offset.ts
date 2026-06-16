@@ -7,11 +7,17 @@ import Database from "better-sqlite3"
 import { requireAuth } from "../middleware/auth"
 import { requirePermission } from "../services/permissionService"
 import { getActiveTheme } from "../repositories/themeRepository"
-import { getLibraryPaths } from "../repositories/libraryPathRepository"
+import {
+  getLibraryPaths,
+  getLibraryPathById,
+  getLibraryPathItemById,
+  getLibraryPathsWithFilesystemPath,
+  getLibraryMediaItemsForOffset,
+} from "../repositories/libraryPathRepository"
 import { applyOffsetToEntries, MAX_OFFSET_MS, msToSrtTime, parseSrt, serializeSrt, validateOffsetMs } from "../services/srtService"
 import { addCreditToSrt } from "../services/subtitleExportService"
 import { createLog } from "../repositories/logRepository"
-import { getLanguages, getLanguageById } from "../repositories/languageRepository"
+import { getLanguages, getLanguageById, getLanguageByIso } from "../repositories/languageRepository"
 import { CREDIT_TEXT } from "../constants/keys"
 import { CREDIT_DURATION_MS } from "../constants/timer"
 
@@ -101,7 +107,7 @@ export function offsetRouter(db: Database.Database) {
       // Constrain to a configured library path
       const libraryPathId = body.libraryPathId ? parseInt(String(body.libraryPathId)) : null
       if (!libraryPathId) return res.json({ success: false, msg: "Missing libraryPathId" })
-      const lp = db.prepare(`SELECT * FROM libraryPath WHERE id = ?`).get(libraryPathId) as any
+      const lp = getLibraryPathById(db, libraryPathId)
       if (!lp) return res.json({ success: false, msg: "Library path not found" })
       if (!lp.path) return res.json({ success: false, msg: "Library path has no filesystem path" })
       const root = path.resolve(lp.path)
@@ -119,12 +125,8 @@ export function offsetRouter(db: Database.Database) {
       const baseName = path.basename(filePath).replace(/\.srt$/i, "")
       const parts = baseName.split(".")
       const lastPart = parts.length > 0 ? parts[parts.length - 1].toLowerCase() : ""
-      const targetLangRow = lastPart
-        ? (db.prepare(`SELECT * FROM language WHERE iso639 = ?`).get(lastPart) as any)
-        : null
-      const sourceLangRow = lp.sourceLangId
-        ? (db.prepare(`SELECT * FROM language WHERE id = ?`).get(lp.sourceLangId) as any)
-        : null
+      const targetLangRow = lastPart ? getLanguageByIso(db, lastPart) : null
+      const sourceLangRow = lp.sourceLangId ? getLanguageById(db, lp.sourceLangId) : null
 
       const toLang = (r: any) =>
         r ? { name: r.name, iso639: r.iso639, locale: r.locale } : null
@@ -144,19 +146,10 @@ export function offsetRouter(db: Database.Database) {
   // GET /library-media/:lpId - list media items for a library path (deduplicated by mediaItem)
   router.get("/library-media/:lpId", (req, res) => {
     const lpId = parseInt(String(req.params.lpId))
-    const lp = db.prepare(`SELECT * FROM libraryPath WHERE id = ?`).get(lpId) as any
+    const lp = getLibraryPathById(db, lpId)
     if (!lp || !lp.path) return res.json({ items: [] })
 
-    const rows = db
-      .prepare(
-        `SELECT lpi.id as lpiId, lpi.mediaItemId, lpi.path as videoPath, lpi.season, lpi.episode,
-                mi.title, mi.type, mi.year
-         FROM libraryPathItem lpi
-         LEFT JOIN mediaItem mi ON mi.id = lpi.mediaItemId
-         WHERE lpi.libraryPathId = ? AND lpi.mediaItemId IS NOT NULL
-         ORDER BY mi.title ASC, lpi.id ASC`,
-      )
-      .all(lpId) as any[]
+    const rows = getLibraryMediaItemsForOffset(db, lpId)
 
     const seen = new Set<number>()
     const items: any[] = []
@@ -180,10 +173,10 @@ export function offsetRouter(db: Database.Database) {
   // GET /library-srt-files/:lpiId - list SRT files in the same directory as the library path item's video
   router.get("/library-srt-files/:lpiId", (req, res) => {
     const lpiId = parseInt(String(req.params.lpiId))
-    const lpi = db.prepare(`SELECT * FROM libraryPathItem WHERE id = ?`).get(lpiId) as any
+    const lpi = getLibraryPathItemById(db, lpiId)
     if (!lpi) return res.json({ files: [], libraryPathId: null })
 
-    const lp = db.prepare(`SELECT * FROM libraryPath WHERE id = ?`).get(lpi.libraryPathId) as any
+    const lp = getLibraryPathById(db, lpi.libraryPathId)
     if (!lp || !lp.path) return res.json({ files: [], libraryPathId: lpi.libraryPathId })
 
     const root = path.resolve(lp.path)
@@ -242,7 +235,7 @@ export function offsetRouter(db: Database.Database) {
       const targetPath = body.targetPath
       if (!targetPath) return res.json({ success: false, msg: "No target path" })
 
-      const libraries = db.prepare(`SELECT * FROM libraryPath WHERE path IS NOT NULL`).all() as any[]
+      const libraries = getLibraryPathsWithFilesystemPath(db)
       const root = libraries
         .map((l) => path.resolve(l.path))
         .find((r) => path.resolve(targetPath).startsWith(r + path.sep) || path.resolve(targetPath) === r)

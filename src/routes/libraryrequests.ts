@@ -3,8 +3,14 @@ import Database from "better-sqlite3"
 import * as path from "path"
 import { requireAuth } from "../middleware/auth"
 import { requirePermission } from "../services/permissionService"
-import { getConfig } from "../repositories/configRepository"
-import { getLibraryPaths, getLibraryPathItemsWithDetails, getLibraryPathItemById, getLibraryPathById } from "../repositories/libraryPathRepository"
+import { getConfig, isWhisperGpuAvailable } from "../repositories/configRepository"
+import {
+  getLibraryPaths,
+  getLibraryPathItemsWithDetails,
+  getLibraryPathItemById,
+  getLibraryPathById,
+  updateLibraryPathItemMediaItem,
+} from "../repositories/libraryPathRepository"
 import {
   getConfigTranslationLanguages,
   getLanguageById,
@@ -12,12 +18,22 @@ import {
   getUserConfigTranslationLanguages,
 } from "../repositories/languageRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
+import { createMediaItem, getMediaItemById } from "../repositories/mediaRepository"
 import {
-  getSubtitleJobsBySubtitleId,
   addMissingTargetLanguageJobs,
   getActiveSubtitleForLibraryPathItem,
+  createWhisperSubtitle,
+  getActiveWhisperSubtitleForMediaItem,
+  createPlaceholderTranslationJobs,
+  getTargetLanguagesForWhisperWorkflow,
+  getJobLangStatusBySubtitle,
 } from "../repositories/subtitleRepository"
-import { findCompanionSrt, listSubtitleSourcesForVideo } from "../services/libraryPathService"
+import { getHighestRoleUser } from "../repositories/userRepository"
+import {
+  findCompanionSrt,
+  listSubtitleSourcesForVideo,
+  isVideoFile,
+} from "../services/libraryPathService"
 import { autoTranslateItem } from "../services/libraryPathService"
 
 type RequestGroupItem = {
@@ -30,6 +46,9 @@ type RequestGroupItem = {
   subtitleId: number | null
   missingTargetLangIds: number[]
   hasActiveJobs: boolean
+  whisperStatus: string | null
+  isVideo: boolean
+  hasSrt: boolean
 }
 
 type RequestGroup = {
@@ -67,6 +86,7 @@ export function libraryRequestsRouter(db: Database.Database) {
       subtitleId: number | null,
       missingTargetLangIds: number[],
       hasActiveJobs: boolean,
+      whisperStatus: string | null,
     ) {
       const key = mediaItem?.id ? String(mediaItem.id) : `unmatched-${item.id}`
       const existing = groupsMap.get(key)
@@ -80,6 +100,9 @@ export function libraryRequestsRouter(db: Database.Database) {
         subtitleId,
         missingTargetLangIds,
         hasActiveJobs,
+        whisperStatus,
+        isVideo: isVideoFile(item.path),
+        hasSrt: item.status !== "no_srts_found",
       }
       if (existing) {
         existing.items.push(groupItem)
@@ -107,25 +130,17 @@ export function libraryRequestsRouter(db: Database.Database) {
       const items = getLibraryPathItemsWithDetails(db, lp.id)
       for (const item of items) {
         if (item.blacklist) continue
-        if (item.status === "not_started") {
-          addItemToGroup(lp.type, item.mediaItem, item, null, userTargetLangIds, false)
+        if (item.status === "not_started" || item.status === "no_srts_found") {
+          const whisperStatus = item.mediaItemId
+            ? getActiveWhisperSubtitleForMediaItem(db, item.mediaItemId)?.whisperTranscriptionStatus ?? null
+            : null
+          addItemToGroup(lp.type, item.mediaItem, item, null, userTargetLangIds, false, whisperStatus)
           continue
         }
 
         if (item.subtitleInfo && !item.subtitleInfo.deleted) {
-          // Determine missing user target languages
-          const completedLangIds = new Set(
-            item.subtitleInfo.activeJobs
-              .filter((j) => j.jobStatus === "completed")
-              .map((j) => j.langIso ? null : null), // placeholder
-          )
-
           // Use the actual job targetLangId mapping from DB to be authoritative
-          const jobRows = db
-            .prepare(
-              `SELECT sj.targetLangId, sj.status FROM subtitleJob sj WHERE sj.subtitleId = ? AND sj.deletedAt IS NULL`,
-            )
-            .all(item.subtitleInfo.subtitleId) as { targetLangId: number; status: string }[]
+          const jobRows = getJobLangStatusBySubtitle(db, item.subtitleInfo.subtitleId)
 
           const finishedLangIds = new Set(
             jobRows.filter((j) => j.status === "completed").map((j) => j.targetLangId),
@@ -153,6 +168,9 @@ export function libraryRequestsRouter(db: Database.Database) {
             continue
           }
 
+          const whisperStatus = item.mediaItemId
+            ? getActiveWhisperSubtitleForMediaItem(db, item.mediaItemId)?.whisperTranscriptionStatus ?? null
+            : null
           addItemToGroup(
             lp.type,
             item.mediaItem,
@@ -160,6 +178,7 @@ export function libraryRequestsRouter(db: Database.Database) {
             item.subtitleInfo.subtitleId,
             missingTargetLangIds,
             hasActiveJobs,
+            whisperStatus,
           )
         }
       }
@@ -259,6 +278,101 @@ export function libraryRequestsRouter(db: Database.Database) {
     res.redirect("/library-requests?toast=success&msg=" + encodeURIComponent(result.msg ?? "Added"))
   })
 
+  // Create a Whisper-generated subtitle for a library path item (movie first)
+  router.post(
+    "/item/:itemId/create-whisper-subtitle",
+    requirePermission("canCreateSubtitlesWithWhisper"),
+    async (req, res) => {
+      const user = res.locals.user!
+      const itemId = parseInt(String(req.params.itemId))
+      const item = getLibraryPathItemById(db, itemId)
+      if (!item) {
+        return res.json({ success: false, msg: "Item not found" })
+      }
+
+      const lp = getLibraryPathById(db, item.libraryPathId)
+      if (!lp) {
+        return res.json({ success: false, msg: "Library path not found" })
+      }
+
+      const sourceLang = getLanguageById(db, lp.sourceLangId)
+      if (!sourceLang) {
+        return res.json({ success: false, msg: "Source language not found" })
+      }
+
+      const targetLangIds = getTargetLanguagesForWhisperWorkflow(db, user.id)
+      if (targetLangIds.length === 0) {
+        return res.json({ success: false, msg: "No target languages configured" })
+      }
+
+      let mediaItemId = item.mediaItemId
+      if (!mediaItemId) {
+        const title = path.basename(item.path, path.extname(item.path)).replace(/[._]/g, " ").trim()
+        const mediaResult = await createMediaItem(
+          db,
+          user,
+          title,
+          null,
+          lp.type,
+          null,
+          false,
+          null,
+          null,
+          null,
+        )
+        if (!mediaResult.success || !mediaResult.mediaItem) {
+          return res.json({ success: false, msg: mediaResult.msg ?? "Could not create media item" })
+        }
+        mediaItemId = mediaResult.mediaItem.id
+        updateLibraryPathItemMediaItem(db, item.id, mediaItemId)
+      }
+
+      if (getActiveWhisperSubtitleForMediaItem(db, mediaItemId)) {
+        return res.json({ success: true, msg: "Whisper subtitle workflow already exists" })
+      }
+
+      const config = getConfig(db)
+      const model = config.whisperModel
+      const timestampsLength = config.whisperTimestampsLength
+      const useCuda = isWhisperGpuAvailable() && config.whisperUseCuda === 1
+      const displayName = getMediaItemById(db, mediaItemId)?.title ?? path.basename(item.path)
+      const srtFileName = `${path.basename(item.path, path.extname(item.path))}.whisper.srt`
+
+      const result = createWhisperSubtitle(
+        db,
+        user,
+        mediaItemId,
+        item.id,
+        item.path,
+        lp.sourceLangId,
+        srtFileName,
+        displayName,
+        model,
+        timestampsLength,
+        useCuda,
+        item.season,
+        item.episode,
+      )
+
+      if (!result.success) {
+        return res.json({ success: false, msg: result.msg ?? "Failed to create Whisper subtitle workflow" })
+      }
+
+      if (targetLangIds.length > 0) {
+        createPlaceholderTranslationJobs(
+          db,
+          user,
+          result.subtitle.id,
+          targetLangIds,
+          item.season,
+          item.episode,
+        )
+      }
+
+      return res.json({ success: true, msg: "Whisper subtitle workflow created", subtitleId: result.subtitle.id })
+    },
+  )
+
   // Translate season: queue translation for all eligible episodes in a season
   router.post("/season/:libraryPathId/translate", async (req, res) => {
     const libraryPathId = parseInt(String(req.params.libraryPathId))
@@ -303,11 +417,7 @@ export function libraryRequestsRouter(db: Database.Database) {
     for (const item of items) {
       // If the item already has a subtitle with completed jobs for the user's languages, skip
       if (item.subtitleInfo && !item.subtitleInfo.deleted) {
-        const jobRows = db
-          .prepare(
-            `SELECT sj.targetLangId, sj.status FROM subtitleJob sj WHERE sj.subtitleId = ? AND sj.deletedAt IS NULL`,
-          )
-          .all(item.subtitleInfo.subtitleId) as { targetLangId: number; status: string }[]
+        const jobRows = getJobLangStatusBySubtitle(db, item.subtitleInfo.subtitleId)
         const completed = new Set(
           jobRows.filter((j) => j.status === "completed").map((j) => j.targetLangId),
         )
@@ -335,14 +445,7 @@ export function libraryRequestsRouter(db: Database.Database) {
       }
 
       // Find admin user
-      const adminUser = db
-        .prepare(
-          `SELECT u.* FROM user u
-           JOIN userRole ur ON ur.userId = u.id
-           JOIN role r ON r.id = ur.roleId
-           WHERE r.name = 'Owner' AND u.deletedAt IS NULL LIMIT 1`,
-        )
-        .get() as any
+      const adminUser = getHighestRoleUser(db)
       if (!adminUser) {
         if (req.query.json === "1") return res.json({ success: false, msg: "No admin user found" })
         return res.redirect("/library-requests?toast=error&msg=" + encodeURIComponent("No admin user found"))

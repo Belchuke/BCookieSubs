@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Échoué",
     "inspectStatusCancelled": "Annulé",
     "inspectStatusRetrying": "Nouvelle tentative",
-    "inspectStatusWaiting": "En attente"
+    "inspectStatusWaiting": "En attente",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Mon compte",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Peut configurer le dossier racine utilisé pour restreindre la navigation des chemins de bibliothèque. Lorsqu'il est défini, la navigation et les nouveaux chemins de bibliothèque sont limités à ce dossier.",
     "tipAutoClearLogs": "Lorsqu'activé, les anciens journaux sont automatiquement supprimés selon la période de rétention ci-dessous.",
     "tipDeleteLogsOlderThan": "Les journaux plus anciens que ce nombre de jours sont supprimés lorsque la suppression automatique est active.",
-    "tipActiveTheme": "Contrôle le thème de couleur actif utilisé par l'interface. Des thèmes personnalisés peuvent être créés ci-dessous."
+    "tipActiveTheme": "Contrôle le thème de couleur actif utilisé par l'interface. Des thèmes personnalisés peuvent être créés ci-dessous.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Utilisateurs",
@@ -509,6 +527,19 @@
       "displayName": "Nom d'affichage",
       "displayNameHint": "(optionnel)",
       "finishSubmit": "Terminer la configuration →"
+    }
+  },
+  "libraryrequests": {
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
     }
   }
 }

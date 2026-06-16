@@ -46,9 +46,13 @@ services:
       TRANSLATION_ROOT_DIR: "${TRANSLATION_ROOT_DIR:-/media}"
       # Token for the /internal/* routes (leave blank unless you use them).
       INTERNAL_API_TOKEN: "${INTERNAL_API_TOKEN:-}"
+      # Whisper model cache and GPU flag.
+      WHISPER_MODEL_ROOT_PATH: "${WHISPER_MODEL_ROOT_PATH:-/data/whisper-models}"
+      WHISPER_GPU_AVAILABLE: "${WHISPER_GPU_AVAILABLE:-}"
     volumes:
       - app-data:/data
       - app-photos:/app/mediaItemPhotos
+      - whisper-models:/data/whisper-models
       # Mirror the host's TRANSLATION_ROOT_DIR inside the container. When it
       # isn't set in .env we fall back to ./media on the host -> /media inside.
       - "${TRANSLATION_ROOT_DIR:-./media}:${TRANSLATION_ROOT_DIR:-/media}"
@@ -79,3 +83,4 @@ volumes:
   app-data:
   app-photos:
   ollama-models:
+  whisper-models:

@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Eșuat",
     "inspectStatusCancelled": "Anulat",
     "inspectStatusRetrying": "Se reîncearcă",
-    "inspectStatusWaiting": "Se așteaptă"
+    "inspectStatusWaiting": "Se așteaptă",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Contul meu",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Poate configura folderul rădăcină folosit pentru a restricționa navigarea în căile bibliotecii. Când este setat, navigarea și căile noi ale bibliotecii sunt limitate la acest folder.",
     "tipAutoClearLogs": "Când este activat, jurnalele vechi sunt șterse automat conform perioadei de retenție de mai jos.",
     "tipDeleteLogsOlderThan": "Jurnalele mai vechi decât acest număr de zile sunt șterse când ștergerea automată este activă.",
-    "tipActiveTheme": "Controlează tema de culori activă utilizată de interfață. Temele personalizate pot fi create mai jos."
+    "tipActiveTheme": "Controlează tema de culori activă utilizată de interfață. Temele personalizate pot fi create mai jos.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Utilizatori",
@@ -423,7 +441,18 @@
     "translate": "Traduce",
     "unknownSeason": "Sezon necunoscut",
     "season": "Sezon ",
-    "episodeCount": "ep."
+    "episodeCount": "ep.",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Statistici",

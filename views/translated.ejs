@@ -39,7 +39,7 @@
           <table>
             <thead>
               <tr>
-                <% if (config.showPosters && user.showPosters !== 0) { %><th style="width:50px"></th><% } %>
+                <% if (config.showPosters && user.showPosters !== 0) { %><th class="trn-w-50"></th><% } %>
                 <th><%= __('translated.titleHeader') %></th>
                 <th><%= __('translated.source') %></th>
                 <th><%= __('translated.target') %></th>
@@ -47,14 +47,14 @@
                 <th class="num"><%= __('translated.year') %></th>
                 <th><%= __('translated.finished') %></th>
                 <th><%= __('translated.duration') %></th>
-                <th style="width:1px"></th>
+                <th class="trn-w-1"></th>
               </tr>
             </thead>
             <tbody>
               <% subtitles.forEach(function(sub) { %>
               <tr>
                 <% if (config.showPosters && user.showPosters !== 0) { %>
-                <td style="padding:.5rem .75rem">
+                <td class="trn-poster-cell">
                   <% if (sub.mediaItemPhotoPath) { %>
                     <img src="/media-photos/<%= sub.mediaItemPhotoPath %>" alt="" class="translated-poster">
                   <% } else { %>
@@ -73,10 +73,10 @@
                   <% } %>
                 </td>
                 <td class="num"><%= sub.year !== null ? sub.year : '<span class="text-dim">—</span>' %></td>
-                <td class="text-dim" style="white-space:nowrap">
+                <td class="text-dim trn-nowrap">
                   <span data-utc="<%= sub.finishedAt || '' %>">—</span>
                 </td>
-                <td class="text-dim" style="white-space:nowrap">
+                <td class="text-dim trn-nowrap">
                   <span data-duration-start="<%= sub.earliestChunkStartedAt || '' %>" data-duration-end="<%= sub.finishedAt || '' %>">—</span>
                 </td>
                 <td>
@@ -101,20 +101,20 @@
               <div class="translated-card-title"><%= sub.subtitleName %></div>
               <div class="translated-card-meta">
                 <span class="badge badge-neutral"><%= sub.sourceLang %></span>
-                <i class="fa-solid fa-arrow-right" style="font-size:.7rem;color:var(--text-dim)"></i>
+                <i class="fa-solid fa-arrow-right trn-arrow"></i>
                 <span class="badge badge-success"><%= sub.targetLang %></span>
                 <% if (sub.season !== null && sub.episode !== null) { %>
                   <span class="badge badge-info">S<%= String(sub.season).padStart(2,'0') %>E<%= String(sub.episode).padStart(2,'0') %></span>
                 <% } %>
-                <% if (sub.year) { %><span class="text-dim" style="font-size:.82rem"><%= sub.year %></span><% } %>
+                <% if (sub.year) { %><span class="text-dim trn-fs-82"><%= sub.year %></span><% } %>
                 <% if (sub.finishedAt) { %>
-                  <span class="text-dim" style="font-size:.78rem">Finished: <span data-utc="<%= sub.finishedAt %>">—</span></span>
+                  <span class="text-dim trn-fs-78">Finished: <span data-utc="<%= sub.finishedAt %>">—</span></span>
                 <% } %>
                 <% if (sub.earliestChunkStartedAt && sub.finishedAt) { %>
-                  <span class="text-dim" style="font-size:.78rem">Duration: <span data-duration-start="<%= sub.earliestChunkStartedAt %>" data-duration-end="<%= sub.finishedAt %>">—</span></span>
+                  <span class="text-dim trn-fs-78">Duration: <span data-duration-start="<%= sub.earliestChunkStartedAt %>" data-duration-end="<%= sub.finishedAt %>">—</span></span>
                 <% } %>
               </div>
-              <a href="/dashboard/download/<%= sub.jobId %>" class="btn btn-primary btn-sm" style="margin-top:.5rem;align-self:flex-start">
+              <a href="/dashboard/download/<%= sub.jobId %>" class="btn btn-primary btn-sm trn-export-btn">
                 <i class="fa-solid fa-download"></i> Export
               </a>
             </div>

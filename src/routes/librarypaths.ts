@@ -9,6 +9,7 @@ import { getConfig } from "../repositories/configRepository"
 import {
   getConfigTranslationLanguages,
   getLanguageById,
+  getLanguageByIso,
   getLanguages,
   getUserConfigTranslationLanguages,
 } from "../repositories/languageRepository"
@@ -20,7 +21,9 @@ import {
   getLibraryPathById,
   getLibraryPaths,
   getLibraryPathItemById,
+  getLibraryPathItemCandidates,
   getLibraryPathItemsWithDetails,
+  getActiveLibraryPathItemStatuses,
   isLibraryPathItemBlacklisted,
   toggleLibraryPath,
   unblacklistLibraryPathItem,
@@ -32,6 +35,7 @@ import { getActiveTheme } from "../repositories/themeRepository"
 import { autoTranslateItem, findCompanionSrt } from "../services/libraryPathService"
 import { searchMediaItemInTheMovieDb } from "../repositories/movieDbRepository"
 import { createMediaItem, getMediaItemPhotoPath, updateMediaItemPhotoPath } from "../repositories/mediaRepository"
+import { getHighestRoleUser } from "../repositories/userRepository"
 
 const upload = multer()
 
@@ -421,6 +425,7 @@ export function libraryPathsRouter(db: Database.Database) {
     resetStatus: boolean,
     user: any,
     sourceOverride?: { type: string; path: string; language: string; codec: string } | null,
+    sourceLanguageHint?: string | null,
   ): Promise<{ success: boolean; msg: string }> {
     const item = getLibraryPathItemById(db, itemId)
     if (!item) return { success: false, msg: "Item not found" }
@@ -467,17 +472,7 @@ export function libraryPathsRouter(db: Database.Database) {
 
     if (!srtSource) return { success: false, msg: "No SRT file found next to video file" }
 
-    const adminUser = db
-      .prepare(
-        `
-      SELECT u.* FROM user u
-      JOIN userRole ur ON ur.userId = u.id
-      JOIN role r ON r.id = ur.roleId
-      WHERE r.name = 'Owner' AND u.deletedAt IS NULL
-      LIMIT 1
-    `,
-      )
-      .get() as any
+    const adminUser = getHighestRoleUser(db)
     if (!adminUser) return { success: false, msg: "No admin user found" }
 
     const config = getConfig(db)
@@ -487,6 +482,14 @@ export function libraryPathsRouter(db: Database.Database) {
       userTargetLangs.length > 0
         ? userTargetLangs.map((tl) => tl.languageId)
         : getConfigTranslationLanguages(db).map((cl) => cl.languageId)
+
+    // If the user picked a specific subtitle track (or we guessed a language from
+    // the subtitle filename), use that as the translation source language instead
+    // of the library path default.
+    const sourceLangCode = (sourceOverride && sourceOverride.language) || sourceLanguageHint || ""
+    const sourceLangIdOverride: number | null = sourceLangCode
+      ? getLanguageByIso(db, sourceLangCode)?.id ?? null
+      : null
 
     try {
       return await autoTranslateItem(
@@ -500,6 +503,7 @@ export function libraryPathsRouter(db: Database.Database) {
         item.episode,
         config.defaultChunkSize,
         targetLangIds,
+        sourceLangIdOverride,
       )
     } catch {
       return { success: false, msg: "Failed to queue translation" }
@@ -517,7 +521,13 @@ export function libraryPathsRouter(db: Database.Database) {
             codec: body.sourceCodec || "",
           }
         : null
-    const result = await queueTranslationForItem(parseInt(String(req.params.itemId)), false, res.locals.user!, sourceOverride)
+    const result = await queueTranslationForItem(
+      parseInt(String(req.params.itemId)),
+      false,
+      res.locals.user!,
+      sourceOverride,
+      body.sourceLanguage || null,
+    )
     if (req.query.json === "1") return res.json(result)
     if (!result.success) return res.redirect("/library-paths?toast=error&msg=" + encodeURIComponent(result.msg))
     res.redirect("/library-paths?toast=success&msg=" + encodeURIComponent(result.msg))
@@ -532,16 +542,7 @@ export function libraryPathsRouter(db: Database.Database) {
 
   router.get("/poll", (req, res) => {
     const paths = getLibraryPaths(db).map((lp) => ({ id: lp.id, state: lp.state }))
-    const items = db
-      .prepare(
-        `
-      SELECT lpi.id, lpi.status
-      FROM libraryPathItem lpi
-      LEFT JOIN libraryPathItemBlacklist lpb ON lpb.libraryPathItemId = lpi.id
-      WHERE lpi.status != 'no_srts_found' AND lpb.id IS NULL
-    `,
-      )
-      .all() as { id: number; status: string }[]
+    const items = getActiveLibraryPathItemStatuses(db)
     res.json({ paths, items })
   })
 

@@ -45,6 +45,7 @@ export const PERMISSION_KEYS = [
   'canViewSchedules',
   'canManageSchedules',
   'canViewLogs',
+  'canCreateSubtitlesWithWhisper',
 ] as const
 
 export type PermissionKey = typeof PERMISSION_KEYS[number]
@@ -87,4 +88,5 @@ export const PERMISSIONS: PermissionDefinition[] = [
   { key: 'canViewSchedules', label: 'View Schedules', description: 'Can navigate to the Schedules page when schedules are enabled.', category: 'schedules' },
   { key: 'canManageSchedules', label: 'Manage Schedules', description: 'Can add, edit, and delete schedules.', category: 'schedules' },
   { key: 'canViewLogs', label: 'View Logs', description: 'Can view the Logs page.', category: 'logs' },
+  { key: 'canCreateSubtitlesWithWhisper', label: 'Create Subtitles With Whisper', description: 'Can generate custom source subtitles from media files using Whisper.', category: 'library' },
 ]

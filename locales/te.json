@@ -134,7 +134,13 @@
     "inspectStatusFailed": "విఫలమైంది",
     "inspectStatusCancelled": "రద్దు చేయబడింది",
     "inspectStatusRetrying": "మళ్ళీ ప్రయత్నిస్తోంది",
-    "inspectStatusWaiting": "వేచి ఉంది"
+    "inspectStatusWaiting": "వేచి ఉంది",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "నా ఖాతా",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "లైబ్రరీ పాత్ బ్రౌజింగ్‌ను పరిమితం చేయడానికి రూట్ ఫోల్డర్ కాన్ఫిగర్ చేయవచ్చు. సెట్ చేసినప్పుడు, బ్రౌజింగ్ మరియు కొత్త లైబ్రరీ పాత్‌లు ఈ ఫోల్డర్‌కు పరిమితమవుతాయి.",
     "tipAutoClearLogs": "ప్రారంభించినప్పుడు, దిగువ నిలుపుదల వ్యవధి ప్రకారం పాత లాగ్‌లు స్వయంచాలకంగా తొలగించబడతాయి.",
     "tipDeleteLogsOlderThan": "ఆటో-క్లియర్ యాక్టివ్‌గా ఉన్నప్పుడు ఈ రోజుల కంటే పాత లాగ్‌లు తొలగించబడతాయి.",
-    "tipActiveTheme": "ఇంటర్‌ఫేస్ ఉపయోగించే యాక్టివ్ రంగు థీమ్‌ను నియంత్రిస్తుంది. కస్టమ్ థీమ్‌లు దిగువ సృష్టించవచ్చు."
+    "tipActiveTheme": "ఇంటర్‌ఫేస్ ఉపయోగించే యాక్టివ్ రంగు థీమ్‌ను నియంత్రిస్తుంది. కస్టమ్ థీమ్‌లు దిగువ సృష్టించవచ్చు.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "వినియోగదారులు",
@@ -423,7 +441,18 @@
     "translate": "అనువదించు",
     "unknownSeason": "తెలియని సీజన్",
     "season": "సీజన్ ",
-    "episodeCount": "ep"
+    "episodeCount": "ep",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "గణాంకాలు",

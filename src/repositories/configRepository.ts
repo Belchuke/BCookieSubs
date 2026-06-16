@@ -22,6 +22,11 @@ export const updateConfig = (
   clearLogs: boolean,
   clearLogsOlderThanDays: number,
   sessionTimeoutMinutes: number,
+  whisperModel: string,
+  whisperTimestampsLength: number,
+  whisperUseCuda: boolean,
+  whisperModelRootPath: string | null,
+  whisperEnabled: boolean,
 ): DefaultResponse => {
   const { hasPermission: perm } = userHasPermission(db, user.id, "canManageSettings")
   if (!perm) return { success: false, msg: "Permission denied" }
@@ -30,7 +35,7 @@ export const updateConfig = (
   const theMovieDbActiveState = nameDetectionActive === true ? theMovieDbActive : false
 
   db.prepare(
-    `UPDATE config SET defaultChunkSize = ?, maxRetriesPerChunk = ?, showPosters = ?, nameDetectionActive = ?, theMovieDbActive = ?, finishSingleSubtitleFirst = ?, scanLibraryPaths = ?, scheduleConfigured = ?, clearLogs = ?, clearLogsOlderThanDays = ?, sessionTimeoutMinutes = ?, updatedAt = datetime('now') WHERE id = 1`,
+    `UPDATE config SET defaultChunkSize = ?, maxRetriesPerChunk = ?, showPosters = ?, nameDetectionActive = ?, theMovieDbActive = ?, finishSingleSubtitleFirst = ?, scanLibraryPaths = ?, scheduleConfigured = ?, clearLogs = ?, clearLogsOlderThanDays = ?, sessionTimeoutMinutes = ?, whisperModel = ?, whisperTimestampsLength = ?, whisperUseCuda = ?, whisperModelRootPath = ?, whisperEnabled = ?, updatedAt = datetime('now') WHERE id = 1`,
   ).run(
     defaultChunkSize,
     maxRetriesPerChunk,
@@ -43,6 +48,11 @@ export const updateConfig = (
     clearLogs ? 1 : 0,
     clearLogsOlderThanDays,
     sessionTimeoutMinutes,
+    whisperModel,
+    whisperTimestampsLength,
+    whisperUseCuda ? 1 : 0,
+    whisperModelRootPath,
+    whisperEnabled ? 1 : 0,
   )
 
   createLog(db, "info", "config", null, `Updated config settings by ${user.username}`, {
@@ -51,6 +61,40 @@ export const updateConfig = (
     finishSingleSubtitleFirst,
     scanLibraryPaths,
     scheduleConfigured,
+  })
+
+  return { success: true, msg: null }
+}
+
+// Partial update: only the Whisper-related columns. Lets the Whisper settings
+// form save without touching (clobbering) the rest of the configuration.
+export const updateWhisperConfig = (
+  db: Database.Database,
+  user: DBUser,
+  whisperModel: string,
+  whisperTimestampsLength: number,
+  whisperUseCuda: boolean,
+  whisperModelRootPath: string | null,
+  whisperEnabled: boolean,
+): DefaultResponse => {
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canManageSettings")
+  if (!perm) return { success: false, msg: "Permission denied" }
+
+  db.prepare(
+    `UPDATE config SET whisperModel = ?, whisperTimestampsLength = ?, whisperUseCuda = ?, whisperModelRootPath = ?, whisperEnabled = ?, updatedAt = datetime('now') WHERE id = 1`,
+  ).run(
+    whisperModel,
+    whisperTimestampsLength,
+    whisperUseCuda ? 1 : 0,
+    whisperModelRootPath,
+    whisperEnabled ? 1 : 0,
+  )
+
+  createLog(db, "info", "config", null, `Updated Whisper settings by ${user.username}`, {
+    whisperModel,
+    whisperTimestampsLength,
+    whisperUseCuda,
+    whisperEnabled,
   })
 
   return { success: true, msg: null }
@@ -67,6 +111,10 @@ export const markSetupCompleted = (db: Database.Database): void => {
 
 export const enableNameDetection = (db: Database.Database): void => {
   db.prepare(`UPDATE config SET nameDetectionActive = 1, updatedAt = datetime('now') WHERE id = 1`).run()
+}
+
+export const isWhisperGpuAvailable = (): boolean => {
+  return process.env.WHISPER_GPU_AVAILABLE === "1" || process.env.WHISPER_GPU_AVAILABLE === "true"
 }
 
 export const updateRootLibraryPath = (

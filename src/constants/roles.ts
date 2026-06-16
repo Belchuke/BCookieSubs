@@ -21,6 +21,7 @@ const SUPERUSER_PERMS: PermissionKey[] = [
 
 const MASTERUSER_PERMS: PermissionKey[] = [
   ...SUPERUSER_PERMS,
+  'canCreateSubtitlesWithWhisper',
   'canAddSubtitleToTranslateDashboard',
   'canViewFinishedTranslatedPage',
   'canManageWorker',

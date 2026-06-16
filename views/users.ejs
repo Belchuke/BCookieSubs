@@ -47,7 +47,7 @@
               <th><%= __('users.username') %></th>
               <th><%= __('users.roles') %></th>
               <th><%= __('users.created') %></th>
-              <th style="text-align: end; padding-left: 1rem;"><%= __('users.actions') %></th>
+              <th class="usr-th-actions"><%= __('users.actions') %></th>
             </tr>
           </thead>
           <tbody>
@@ -61,7 +61,7 @@
                 <td>
                   <strong><%= u.username %></strong>
                   <% if (u.id === user.id) { %>
-                    <span class="badge badge-info" style="margin-left:.5rem"><%= __('common.you') %></span>
+                    <span class="badge badge-info usr-ml-half"><%= __('common.you') %></span>
                   <% } %>
                 </td>
                 <td>
@@ -69,12 +69,12 @@
                     <span class="text-dim">—</span>
                   <% } else { %>
                     <% u.roles.slice().sort(function(a,b){ return b.level - a.level }).forEach(function(r) { %>
-                      <span class="badge badge-neutral" style="margin-right:.2rem"><%= r.name %></span>
+                      <span class="badge badge-neutral usr-mr-tiny"><%= r.name %></span>
                     <% }) %>
                   <% } %>
                 </td>
                 <td class="text-dim"><%= u.createdAt.split(' ')[0] %></td>
-                <td class="actions" style="justify-content: end;">
+                <td class="actions usr-actions-end">
                   <% if (can('canManageRoles') && u.id !== user.id) { %>
                     <button class="btn btn-sm btn-secondary user-edit-btn"
                             data-user-id="<%= u.id %>"
@@ -91,7 +91,7 @@
                     </button>
                   <% } %>
                   <% if (can('canAddUser') && u.id !== user.id) { %>
-                    <form method="POST" action="/users/delete/<%= u.id %>" style="display:inline"
+                    <form method="POST" action="/users/delete/<%= u.id %>" class="usr-inline"
                           onsubmit="return confirm('Delete user <%= u.username.replace(/'/g, '\\\'') %>?')">
                       <button type="submit" class="btn btn-sm btn-danger"><%= __('common.delete') %></button>
                     </form>
@@ -115,7 +115,7 @@
               <div>
                 <strong><%= u.username %></strong>
                 <% if (u.id === user.id) { %>
-                  <span class="badge badge-info" style="margin-left:.4rem"><%= __('common.you') %></span>
+                  <span class="badge badge-info usr-ml-sm"><%= __('common.you') %></span>
                 <% } %>
               </div>
               <% if (_highestRole) { %>
@@ -124,7 +124,7 @@
                 <span class="badge badge-neutral"><%= __('common.noRole') %></span>
               <% } %>
             </div>
-            <div class="text-dim" style="font-size:.8rem;margin-bottom:.6rem">Created <%= u.createdAt.split(' ')[0] %></div>
+            <div class="text-dim usr-card-created">Created <%= u.createdAt.split(' ')[0] %></div>
             <div class="actions">
               <% if (can('canManageRoles') && u.id !== user.id) { %>
                 <button class="btn btn-sm btn-secondary user-edit-btn"
@@ -142,7 +142,7 @@
                 </button>
               <% } %>
               <% if (can('canAddUser') && u.id !== user.id) { %>
-                <form method="POST" action="/users/delete/<%= u.id %>" style="display:inline"
+                <form method="POST" action="/users/delete/<%= u.id %>" class="usr-inline"
                       onsubmit="return confirm('Delete user <%= u.username.replace(/'/g, '\\\'') %>?')">
                   <button type="submit" class="btn btn-sm btn-danger"><%= __('common.delete') %></button>
                 </form>
@@ -155,8 +155,8 @@
     </div>
 
     <!-- Roles section -->
-    <div class="page-header" style="margin-top:2rem">
-      <h2 style="font-size:1.2rem;font-weight:600"><%= __('users.rolesTitle') %></h2>
+    <div class="page-header usr-section-mt">
+      <h2 class="usr-roles-heading"><%= __('users.rolesTitle') %></h2>
       <% if (can('canManageRoles')) { %>
         <button class="btn btn-primary" onclick="openModal('create-role-modal')"><%= __('users.createRole') %></button>
       <% } %>
@@ -166,25 +166,25 @@
       <% if (rolesWithPermissions.length === 0) { %>
         <p class="empty-state"><%= __('users.noRolesDefined') %></p>
       <% } else { %>
-        <div style="display:flex;flex-direction:column;gap:.75rem">
+        <div class="usr-stack-sm">
           <% rolesWithPermissions.forEach(function(r) { %>
             <%
               var BUILT_IN = ['User','SuperUser','MasterUser','Admin','Owner']
               var isBuiltIn = BUILT_IN.indexOf(r.name) !== -1
             %>
-            <div class="role-row" id="role-row-<%= r.id %>" style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.75rem 1rem">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:.75rem">
-                <div style="display:flex;align-items:center;gap:.6rem;min-width:0">
-                  <span class="badge badge-neutral" style="flex-shrink:0"><%= r.name %></span>
-                  <span class="text-dim" style="font-size:.8rem;flex-shrink:0"><%= __('common.level') %> <%= r.level %></span>
+            <div class="role-row usr-role-box" id="role-row-<%= r.id %>">
+              <div class="usr-role-head">
+                <div class="usr-role-meta">
+                  <span class="badge badge-neutral usr-noshrink"><%= r.name %></span>
+                  <span class="text-dim usr-role-level"><%= __('common.level') %> <%= r.level %></span>
                   <% if (isBuiltIn) { %>
-                    <span class="badge badge-info" style="flex-shrink:0;font-size:.7rem"><%= __('common.builtIn') %></span>
+                    <span class="badge badge-info usr-role-builtin"><%= __('common.builtIn') %></span>
                   <% } %>
                   <% if (r.description) { %>
-                    <span class="text-dim" style="font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><%= r.description %></span>
+                    <span class="text-dim usr-role-desc"><%= r.description %></span>
                   <% } %>
                 </div>
-                <div style="display:flex;gap:.4rem;align-items:center;flex-shrink:0">
+                <div class="usr-role-actions">
                   <button class="btn btn-sm btn-secondary role-toggle-btn" data-role-id="<%= r.id %>" title="Show/hide permissions">
                     <i class="fa-solid fa-chevron-down"></i>
                   </button>
@@ -194,7 +194,7 @@
                       <%= __('common.edit') %>
                     </button>
                     <% if (!isBuiltIn) { %>
-                      <form method="POST" action="/users/roles/delete/<%= r.id %>" style="display:inline"
+                      <form method="POST" action="/users/roles/delete/<%= r.id %>" class="usr-inline"
                             onsubmit="return confirm('Delete role <%= r.name %>?')">
                         <button type="submit" class="btn btn-sm btn-danger"><%= __('common.delete') %></button>
                       </form>
@@ -204,9 +204,9 @@
               </div>
 
               <!-- Permission list (collapsed by default) -->
-              <div class="role-perms-panel" id="role-perms-<%= r.id %>" style="display:none;margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border)">
+              <div class="role-perms-panel usr-perms-panel" id="role-perms-<%= r.id %>">
                 <% if (r.permissionKeys.length === 0) { %>
-                  <span class="text-dim" style="font-size:.82rem"><%= __('users.noPermissionsAssigned') %></span>
+                  <span class="text-dim usr-fs-82"><%= __('users.noPermissionsAssigned') %></span>
                 <% } else { %>
                   <%
                     var cats = {}
@@ -217,13 +217,13 @@
                       cats[def.category].push(def)
                     })
                   %>
-                  <div style="display:flex;flex-wrap:wrap;gap:1rem">
+                  <div class="usr-perms-cats">
                     <% Object.keys(cats).forEach(function(cat) { %>
-                      <div style="min-width:160px">
-                        <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin-bottom:.35rem"><%= cat %></div>
-                        <div style="display:flex;flex-direction:column;gap:.2rem">
+                      <div class="usr-perms-cat">
+                        <div class="usr-perms-cat-label"><%= cat %></div>
+                        <div class="usr-perms-list">
                           <% cats[cat].forEach(function(p) { %>
-                            <span style="font-size:.8rem;color:var(--text)" title="<%= p.description %>"><i class="fa-solid fa-check" style="font-size:.65rem;color:var(--success);margin-right:.3rem"></i><%= p.label %></span>
+                            <span class="usr-perm-item" title="<%= p.description %>"><i class="fa-solid fa-check usr-perm-check"></i><%= p.label %></span>
                           <% }) %>
                         </div>
                       </div>
@@ -248,7 +248,7 @@
       <button class="btn btn-icon" onclick="closeModal('add-modal')">✕</button>
     </div>
     <form method="POST" action="/users/create" id="create-user-form">
-      <div id="create-user-error" class="alert alert-error" style="display:none;margin-bottom:.75rem"></div>
+      <div id="create-user-error" class="alert alert-error usr-alert-hidden"></div>
       <div class="field">
         <label for="cu-username"><%= __('users.username') %></label>
         <input type="text" id="cu-username" name="username" required>
@@ -298,11 +298,11 @@
     <form method="POST" id="edit-form" action="">
       <div class="field">
         <label><%= __('users.roles') %></label>
-        <div class="checkbox-group" style="max-height:none">
+        <div class="checkbox-group usr-maxh-none">
           <% roles.forEach(function(r) { %>
             <label class="checkbox-label">
               <input type="checkbox" name="roleIds" value="<%= r.id %>" data-role-id="<%= r.id %>">
-              <%= r.name %> <span class="text-dim" style="font-size:.8rem">(<%= __('common.level') %> <%= r.level %>)</span>
+              <%= r.name %> <span class="text-dim usr-fs-80">(<%= __('common.level') %> <%= r.level %>)</span>
             </label>
           <% }) %>
         </div>
@@ -324,11 +324,11 @@
     </div>
     <form method="POST" action="/users/roles/create">
       <div class="field-row">
-        <div class="field" style="flex:2">
+        <div class="field usr-flex-2">
           <label><%= __('users.roleName') %></label>
           <input type="text" name="name" required placeholder="e.g. Translator">
         </div>
-        <div class="field" style="flex:1">
+        <div class="field usr-flex-1">
           <label><%= __('users.level') %></label>
           <input type="number" name="level" min="1" required placeholder="e.g. 15">
         </div>
@@ -358,11 +358,11 @@
     </div>
     <form method="POST" id="edit-role-form" action="">
       <div class="field-row">
-        <div class="field" style="flex:2">
+        <div class="field usr-flex-2">
           <label><%= __('users.roleName') %></label>
           <input type="text" id="er-name" name="name" required>
         </div>
-        <div class="field" style="flex:1">
+        <div class="field usr-flex-1">
           <label><%= __('users.level') %></label>
           <input type="number" id="er-level" name="level" min="1" required>
         </div>
@@ -394,7 +394,7 @@
       <button class="btn btn-icon" onclick="closeModal('pw-modal')">✕</button>
     </div>
     <form method="POST" id="pw-form" action="">
-      <div id="pw-error" class="alert alert-error" style="display:none;margin-bottom:.75rem"></div>
+      <div id="pw-error" class="alert alert-error usr-alert-hidden"></div>
       <div class="field">
         <label for="pw-password"><%= __('users.newPassword') %> <span class="hint"><%= __('users.passwordHint') %></span></label>
         <input type="password" id="pw-password" name="password" required minlength="8">

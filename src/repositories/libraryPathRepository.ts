@@ -22,6 +22,55 @@ export const getEnabledLibraryPaths = (db: Database.Database): DBLibraryPath[] =
   return db.prepare(`SELECT * FROM libraryPath WHERE enabled = 1 ORDER BY id ASC`).all() as DBLibraryPath[]
 }
 
+// All library paths that have a non-null filesystem path (used to validate that
+// a target file lies within a configured library before writing to disk).
+export const getLibraryPathsWithFilesystemPath = (db: Database.Database): DBLibraryPath[] => {
+  return db.prepare(`SELECT * FROM libraryPath WHERE path IS NOT NULL`).all() as DBLibraryPath[]
+}
+
+// Distinct media items tracked under a library path, with their video item info.
+// Used by the offset page to let the user pick a media item from a library.
+export type OffsetLibraryMediaRow = {
+  lpiId: number
+  mediaItemId: number
+  videoPath: string
+  season: number | null
+  episode: number | null
+  title: string | null
+  type: string | null
+  year: number | null
+}
+
+export const getLibraryMediaItemsForOffset = (
+  db: Database.Database,
+  libraryPathId: number,
+): OffsetLibraryMediaRow[] => {
+  return db
+    .prepare(
+      `SELECT lpi.id as lpiId, lpi.mediaItemId, lpi.path as videoPath, lpi.season, lpi.episode,
+              mi.title, mi.type, mi.year
+       FROM libraryPathItem lpi
+       LEFT JOIN mediaItem mi ON mi.id = lpi.mediaItemId
+       WHERE lpi.libraryPathId = ? AND lpi.mediaItemId IS NOT NULL
+       ORDER BY mi.title ASC, lpi.id ASC`,
+    )
+    .all(libraryPathId) as OffsetLibraryMediaRow[]
+}
+
+// Lightweight id+status list for active (non-blacklisted) items, for polling.
+export const getActiveLibraryPathItemStatuses = (
+  db: Database.Database,
+): { id: number; status: string }[] => {
+  return db
+    .prepare(
+      `SELECT lpi.id, lpi.status
+       FROM libraryPathItem lpi
+       LEFT JOIN libraryPathItemBlacklist lpb ON lpb.libraryPathItemId = lpi.id
+       WHERE lpb.id IS NULL`,
+    )
+    .all() as { id: number; status: string }[]
+}
+
 export const createLibraryPath = (
   db: Database.Database,
   user: DBUser,
@@ -217,6 +266,17 @@ export const updateLibraryPathItemExtractFileName = (
     extractFileName,
     id,
   )
+}
+
+export const setLibraryPathItemMediaItemAndStatus = (
+  db: Database.Database,
+  id: number,
+  mediaItemId: number,
+  status: DBLibraryPathItem["status"] = "not_started",
+): void => {
+  db.prepare(
+    `UPDATE libraryPathItem SET mediaItemId = ?, status = ?, updatedAt = datetime('now') WHERE id = ?`,
+  ).run(mediaItemId, status, id)
 }
 
 export const getLibraryPathItemCandidates = (

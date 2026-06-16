@@ -31,7 +31,7 @@
       <% } %>
     </div>
 
-    <div class="alert alert-warning" style="margin-bottom:1.5rem">
+    <div class="alert alert-warning prm-alert-mb">
       <%= __('prompts.warningMessage') %>
     </div>
 
@@ -44,12 +44,12 @@
             <% var activeVersion = p.versions.find(function(v){ return v.active }) %>
             <div class="prompt-item">
               <div class="prompt-item-header" onclick="togglePrompt(<%= p.id %>)">
-                <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+                <div class="prm-header-row">
                   <strong><%= p.name %></strong>
                   <span class="badge badge-neutral"><%= p.type %></span>
                   <% if (!p.active) { %><span class="badge badge-error"><%= __('status.inactive') %></span><% } else { %><span class="badge badge-success"><%= __('status.active') %></span><% } %>
                   <% if (activeVersion) { %><span class="badge badge-info">v<%= activeVersion.version %></span><% } %>
-                  <span class="text-dim" style="font-size:.78rem"><%= p.versions.length %> version<%= p.versions.length !== 1 ? 's' : '' %></span>
+                  <span class="text-dim prm-text-sm"><%= p.versions.length %> version<%= p.versions.length !== 1 ? 's' : '' %></span>
                 </div>
                 <% if (can('canManagePrompts')) { %>
                 <div class="actions" onclick="event.stopPropagation()">
@@ -59,7 +59,7 @@
                     <%= __('prompts.addVersion') %>
                   </button>
                   <% if (p.type === "translation") { %>
-                  <form method="POST" action="/prompts/toggle/<%= p.id %>" style="display:inline">
+                  <form method="POST" action="/prompts/toggle/<%= p.id %>" class="prm-inline-form">
                     <input type="hidden" name="active" value="<%= p.active ? '0' : '1' %>">
                     <button type="submit" class="btn btn-sm <%= p.active ? 'btn-secondary' : 'btn-primary' %>">
                       <%= p.active ? __('prompts.disable') : __('prompts.enable') %>
@@ -75,7 +75,7 @@
                 <% if (activeVersion) { %>
                   <pre class="prompt-text"><%= activeVersion.promptText %></pre>
                 <% } else { %>
-                  <p class="text-dim" style="padding:.75rem 1rem">No active version.</p>
+                  <p class="text-dim prm-no-active">No active version.</p>
                 <% } %>
 
                 <% if (p.versions.length > 1) { %>
@@ -83,18 +83,18 @@
                     <div class="prompt-versions-title"><%= __('prompts.versionHistory') %></div>
                     <% p.versions.slice().sort(function(a,b){ return b.version - a.version }).forEach(function(v) { %>
                       <div class="prompt-version-row">
-                        <span class="badge badge-neutral" style="min-width:3rem;text-align:center">v<%= v.version %></span>
-                        <span class="text-dim" style="font-size:.82rem"><%= v.createdAt.split(' ')[0] %></span>
+                        <span class="badge badge-neutral prm-ver-badge">v<%= v.version %></span>
+                        <span class="text-dim prm-ver-date"><%= v.createdAt.split(' ')[0] %></span>
                         <% if (v.active) { %>
                           <span class="badge badge-success"><%= __('status.active') %></span>
                         <% } else if (can('canManagePrompts')) { %>
-                          <form method="POST" action="/prompts/set-version/<%= p.id %>/<%= v.id %>" style="display:inline">
+                          <form method="POST" action="/prompts/set-version/<%= p.id %>/<%= v.id %>" class="prm-inline-form">
                             <button type="submit" class="btn btn-sm btn-primary"><%= __('prompts.setActive') %></button>
                           </form>
                         <% } %>
-                        <details style="flex:1;min-width:0">
-                          <summary class="btn btn-sm btn-secondary" style="cursor:pointer;list-style:none;display:inline-flex"><%= __('prompts.preview') %></summary>
-                          <pre class="prompt-text" style="margin-top:.5rem;font-size:.78em"><%= v.promptText %></pre>
+                        <details class="prm-details">
+                          <summary class="btn btn-sm btn-secondary prm-summary"><%= __('prompts.preview') %></summary>
+                          <pre class="prompt-text prm-preview-text"><%= v.promptText %></pre>
                         </details>
                       </div>
                     <% }) %>
@@ -107,7 +107,7 @@
       <% } %>
     </div>
 
-    <div class="card" style="margin-top:1.5rem">
+    <div class="card prm-card-mt">
       <div class="card-header"><h2><%= __('prompts.placeholdersTitle') %></h2></div>
       <div class="table-wrap">
         <table>

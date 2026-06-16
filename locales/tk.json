@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Şowsuz",
     "inspectStatusCancelled": "Ýatyryldy",
     "inspectStatusRetrying": "Täkrarlanýar",
-    "inspectStatusWaiting": "Garaşylýar"
+    "inspectStatusWaiting": "Garaşylýar",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Meniň hasabym",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Kitaphana ýoluny görmegi çäklendirmek üçin ulanylýan kök bukjany sazlap bolar.",
     "tipAutoClearLogs": "Işletilende, köne gündelikleri aşakda görkezilen saklaş döwrüne görä awtomatik pozulýar.",
     "tipDeleteLogsOlderThan": "Bu günlerden köne gündelikleri awtomatik arassalama işjeň bolanda pozulýar.",
-    "tipActiveTheme": "Interfeýsiň ulanýan işjeň reňk temasyny dolandyrýar. Ýörite temalar aşakda döredilip bilner."
+    "tipActiveTheme": "Interfeýsiň ulanýan işjeň reňk temasyny dolandyrýar. Ýörite temalar aşakda döredilip bilner.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Ulanyjylar",
@@ -423,7 +441,18 @@
     "translate": "Terjime et",
     "unknownSeason": "Näbelli möwsüm",
     "season": "Möwsüm ",
-    "episodeCount": "böl"
+    "episodeCount": "böl",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Statistika",

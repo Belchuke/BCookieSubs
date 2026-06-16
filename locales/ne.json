@@ -134,7 +134,13 @@
     "inspectStatusFailed": "असफल भयो",
     "inspectStatusCancelled": "रद्द गरियो",
     "inspectStatusRetrying": "पुनः प्रयास गर्दैछ",
-    "inspectStatusWaiting": "प्रतीक्षामा छ"
+    "inspectStatusWaiting": "प्रतीक्षामा छ",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "मेरो खाता",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "लाइब्रेरी पथ ब्राउजिङ प्रतिबन्धित गर्न मूल फोल्डर कन्फिगर गर्न सकिन्छ। सेट गरिएमा, ब्राउजिङ र नयाँ लाइब्रेरी पथहरू यस फोल्डरमा सीमित हुन्छन्।",
     "tipAutoClearLogs": "सक्षम गरिएमा, पुराना लगहरू तल उल्लेखित अवधारण अवधि अनुसार स्वतः मेटाइन्छन्।",
     "tipDeleteLogsOlderThan": "स्वतः मेटाउनु सक्रिय भएमा यो दिन भन्दा पुराना लगहरू मेटाइन्छन्।",
-    "tipActiveTheme": "इन्टरफेसद्वारा प्रयोग गरिएको सक्रिय रङ थिम नियन्त्रण गर्छ। तलतिर कस्टम थिमहरू सिर्जना गर्न सकिन्छ।"
+    "tipActiveTheme": "इन्टरफेसद्वारा प्रयोग गरिएको सक्रिय रङ थिम नियन्त्रण गर्छ। तलतिर कस्टम थिमहरू सिर्जना गर्न सकिन्छ।",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "प्रयोगकर्ताहरू",
@@ -423,7 +441,18 @@
     "translate": "अनुवाद गर्नुहोस्",
     "unknownSeason": "अज्ञात सिजन",
     "season": "सिजन ",
-    "episodeCount": "ep"
+    "episodeCount": "ep",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "तथ्याङ्क",

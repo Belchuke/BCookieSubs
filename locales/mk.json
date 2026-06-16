@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Неуспешно",
     "inspectStatusCancelled": "Откажано",
     "inspectStatusRetrying": "Повторен обид",
-    "inspectStatusWaiting": "Чекање"
+    "inspectStatusWaiting": "Чекање",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Мојата сметка",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Може да се конфигурира корена папка за ограничување на прелистувањето на патеки на библиотека. Кога е поставена, прелистувањето и новите патеки на библиотека се ограничени на оваа папка.",
     "tipAutoClearLogs": "Кога е овозможено, старите дневници автоматски се бришат според периодот на задржување подолу.",
     "tipDeleteLogsOlderThan": "Дневниците постари од овој број денови се бришат кога автоматското бришење е активно.",
-    "tipActiveTheme": "Ја контролира активната тема на бои која ја користи интерфејсот. Прилагодени теми може да се создадат подолу."
+    "tipActiveTheme": "Ја контролира активната тема на бои која ја користи интерфејсот. Прилагодени теми може да се создадат подолу.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Корисници",
@@ -423,7 +441,18 @@
     "translate": "Преведи",
     "unknownSeason": "Непозната сезона",
     "season": "Сезона ",
-    "episodeCount": "еп."
+    "episodeCount": "еп.",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Статистики",

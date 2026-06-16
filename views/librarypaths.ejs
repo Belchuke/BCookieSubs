@@ -8,14 +8,6 @@
   <link rel="icon" type="image/png" href="/images/icon.png">
   <link rel="stylesheet" href="/static/css/all.min.css">
   <link rel="stylesheet" href="/style.css">
-  <style>
-    summary::-webkit-details-marker { display: none }
-    summary { list-style: none }
-    details.lp-card[open] .lp-chevron { transform: rotate(180deg) }
-    details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg) }
-    .lp-group-cb { width: 1rem; height: 1rem; cursor: pointer; flex-shrink: 0; accent-color: var(--accent); margin-top: .35rem; }
-    .lp-bulk-bar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 200; background: var(--surface-3); border-top: 2px solid var(--accent); padding: .65rem 1.25rem; display: flex; align-items: center; gap: .65rem; flex-wrap: wrap; box-shadow: 0 -4px 20px rgba(0,0,0,.3); }
-  </style>
 </head>
 <body>
   <header class="mobile-topbar">
@@ -38,7 +30,6 @@
     </div>
 
     <%
-      var _missingSrtCount = 0
       var _allGenres = []
       libraryPaths.forEach(function(lp) {
         lp.groups.forEach(function(group) {
@@ -48,18 +39,12 @@
               if (trimmed && _allGenres.indexOf(trimmed) === -1) _allGenres.push(trimmed)
             })
           }
-          group.items.forEach(function(item) {
-            if (item.status === 'no_srts_found' && !item.blacklist) _missingSrtCount++
-          })
         })
       })
       _allGenres.sort()
     %>
-    <div class="tabs" style="display:flex;gap:.5rem;margin-bottom:1rem;border-bottom:1px solid var(--border)">
+    <div class="tabs lpx-tabs">
       <button type="button" id="lp-tab-btn-library" class="tab-btn active" onclick="lpSwitchTab('library')"><%= __('librarypaths.library') %></button>
-      <button type="button" id="lp-tab-btn-missing" class="tab-btn" onclick="lpSwitchTab('missing')">
-        <%= __('librarypaths.missingSrts') %><% if (_missingSrtCount > 0) { %> <span class="badge badge-neutral" style="font-size:.7rem"><%= _missingSrtCount %></span><% } %>
-      </button>
       <button type="button" id="lp-tab-btn-blacklist" class="tab-btn" onclick="lpSwitchTab('blacklist')"><%= __('librarypaths.blacklistedTab') %></button>
     </div>
 
@@ -69,11 +54,11 @@
         <p class="empty-state"><%= __('librarypaths.noPathsConfigured') %></p>
       </div>
     <% } else { %>
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem;align-items:flex-end">
-        <div class="field" style="margin-bottom:0;flex:1;min-width:160px;max-width:420px">
+      <div class="lpx-filter-row">
+        <div class="field lpx-search-field">
           <input type="search" id="lp-search" placeholder="<%= __('libraryrequests.searchPlaceholder') %>">
         </div>
-        <div class="field" style="margin-bottom:0;min-width:140px">
+        <div class="field lpx-genre-field">
           <select id="lp-genre-filter">
             <option value=""><%= __('libraryrequests.allGenres') %></option>
             <% _allGenres.forEach(function(g) { %>
@@ -84,17 +69,17 @@
       </div>
 
       <% libraryPaths.forEach(function(lp) { %>
-        <details class="card lp-card" data-lp-accordion="<%= lp.id %>" style="margin-bottom:1.25rem">
-          <summary class="card-header" style="flex-wrap:wrap;gap:.5rem;cursor:pointer">
-            <div style="flex:1;min-width:0">
+        <details class="card lp-card lpx-card-mb" data-lp-accordion="<%= lp.id %>">
+          <summary class="card-header lpx-card-summary">
+            <div class="lpx-flex1-min0">
               <%
                 var _lpFolderName = lp.path.split('/').filter(Boolean).pop() || lp.path
                 var _lpTotalFiles = lp.groups.reduce(function(sum, g) {
-                  return sum + g.items.filter(function(i){ return !i.blacklist && i.status !== 'no_srts_found' }).length
+                  return sum + g.items.filter(function(i){ return !i.blacklist }).length
                 }, 0)
               %>
-              <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
-                <h2 style="margin:0"><%= lp.name %></h2>
+              <div class="lpx-title-row">
+                <h2 class="lpx-m0"><%= lp.name %></h2>
                 <span class="badge <%= lp.enabled ? 'badge-success' : 'badge-neutral' %>">
                   <%= lp.enabled ? __('librarypaths.enabledBadge') : __('librarypaths.disabledBadge') %>
                 </span>
@@ -103,12 +88,12 @@
                   <%= lp.state %>
                 </span>
               </div>
-              <div class="text-dim" style="font-size:.82rem;margin-top:.2rem;word-break:break-all">
-                <strong style="color:var(--text)"><%= _lpFolderName %></strong>
+              <div class="text-dim lpx-folder-meta">
+                <strong class="lpx-text"><%= _lpFolderName %></strong>
                 &nbsp;·&nbsp;<%= _lpTotalFiles %> file<%= _lpTotalFiles !== 1 ? 's' : '' %>
               </div>
-              <div class="text-dim" style="font-size:.78rem;margin-top:.1rem;word-break:break-all;opacity:.7"><%= lp.path %></div>
-              <div class="text-dim" style="font-size:.78rem;margin-top:.15rem">
+              <div class="text-dim lpx-path-meta"><%= lp.path %></div>
+              <div class="text-dim lpx-source-meta">
                 <% var sourceLang = languages.find(function(l){ return l.id === lp.sourceLangId }) %>
                 Source: <%= sourceLang ? sourceLang.name : 'Unknown' %>
                 &nbsp;·&nbsp;
@@ -118,17 +103,17 @@
                 <% if (lp.lastRunAt) { %>&nbsp;·&nbsp;Last scan: <%= lp.lastRunAt.split(' ')[0] %><% } %>
               </div>
             </div>
-            <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
-              <i class="fa-solid fa-chevron-down lp-chevron" style="color:var(--text-dim);font-size:.85rem;transition:transform .2s;margin-right:.15rem"></i>
+            <div class="lpx-actions-row">
+              <i class="fa-solid fa-chevron-down lp-chevron lpx-chevron"></i>
               <button class="btn btn-sm btn-secondary lp-edit-btn"
                       onclick="event.stopPropagation()"
                       data-lp="<%- JSON.stringify({id:lp.id,name:lp.name,path:lp.path,type:lp.type,sourceLangId:lp.sourceLangId,enabled:lp.enabled,autoTranslate:lp.autoTranslate,autoExtract:lp.autoExtract}).replace(/"/g,'&quot;') %>"><%= __('common.edit') %></button>
-              <form method="POST" action="/library-paths/toggle/<%= lp.id %>" style="display:inline" onclick="event.stopPropagation()">
+              <form method="POST" action="/library-paths/toggle/<%= lp.id %>" class="lpx-inline" onclick="event.stopPropagation()">
                 <button type="submit" class="btn btn-sm btn-secondary">
                   <%= lp.enabled ? __('librarypaths.disable') : __('librarypaths.enable') %>
                 </button>
               </form>
-              <form method="POST" action="/library-paths/delete/<%= lp.id %>" style="display:inline" onclick="event.stopPropagation()"
+              <form method="POST" action="/library-paths/delete/<%= lp.id %>" class="lpx-inline" onclick="event.stopPropagation()"
                     onsubmit="return confirm('Delete library path \'<%= lp.name %>\'? This will also delete all tracked items.')">
                 <button type="submit" class="btn btn-sm btn-danger"><%= __('common.delete') %></button>
               </form>
@@ -136,13 +121,13 @@
           </summary>
 
           <% if (lp.groups.length === 0) { %>
-            <p class="text-dim" style="font-size:.85rem;margin:.75rem 0 0">No items found yet. Scanner will discover files on next run.</p>
+            <p class="text-dim lpx-empty-note">No items found yet. Scanner will discover files on next run.</p>
           <% } else { %>
-            <div style="margin-top:.75rem;display:flex;flex-direction:column;gap:.65rem">
+            <div class="lpx-groups-wrap">
               <% var _groupIdx = 0; lp.groups.forEach(function(group) { _groupIdx++ %>
                 <%
                   var _visibleItems = group.items.filter(function(item) {
-                    return !item.blacklist && item.status !== 'no_srts_found'
+                    return !item.blacklist
                   })
                   var _allItemIds = group.items.map(function(i) { return i.id })
                   var _blacklistableIds = group.items.filter(function(i) { return !i.blacklist }).map(function(i) { return i.id })
@@ -160,10 +145,10 @@
                 <div data-lp-group
                   data-search="<%= ((group.mediaItem ? group.mediaItem.title + ' ' + (group.mediaItem.year || '') : 'unmatched') + ' ' + _visibleItems.map(function(i){ return i.path.split('/').pop() }).join(' ')).toLowerCase() %>"
                   data-genre="<%= group.mediaItem && group.mediaItem.genres ? group.mediaItem.genres.toLowerCase() : '' %>"
-                  style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+                  class="lpx-group-box">
 
                   <%# ── Group header ─────────────────────────────────────────── %>
-                  <div style="display:flex;align-items:flex-start;gap:.85rem;padding:.75rem;background:var(--surface-3); align-items: center;">
+                  <div class="lpx-group-header">
                     <input type="checkbox" class="lp-group-cb"
                       data-group-key="<%= _groupKey %>"
                       data-item-ids="<%- JSON.stringify(_allItemIds) %>"
@@ -173,41 +158,40 @@
                     <% if (showPosters && group.mediaItem && group.mediaItem.mediaItemPhotoPath) { %>
                       <img src="/media-photos/<%= group.mediaItem.mediaItemPhotoPath %>"
                            alt="Poster"
-                           style="width:42px;height:63px;object-fit:cover;border-radius:5px;flex-shrink:0">
+                           class="lpx-poster-sm">
                     <% } else { %>
-                      <div style="width:42px;height:63px;background:var(--surface-2);border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center">
-                        <i class="fa-solid fa-<%= _isSeries ? 'tv' : 'film' %>" style="color:var(--text-dim)"></i>
+                      <div class="lpx-poster-sm-ph">
+                        <i class="fa-solid fa-<%= _isSeries ? 'tv' : 'film' %> lpx-text-dim"></i>
                       </div>
                     <% } %>
-                    <div style="flex:1;min-width:0;padding-top:.1rem">
+                    <div class="lpx-group-info">
                       <% if (group.mediaItem) { %>
-                        <div style="font-weight:700;font-size:.95rem">
+                        <div class="lpx-group-title">
                           <%= group.mediaItem.title %>
                           <% if (group.mediaItem.year) { %>
-                            <span class="text-dim" style="font-weight:400;font-size:.82rem">(<%= group.mediaItem.year %>)</span>
+                            <span class="text-dim lpx-year">(<%= group.mediaItem.year %>)</span>
                           <% } %>
                         </div>
-                        <div class="text-dim" style="font-size:.78rem;margin-top:.1rem">
-                          <% if (_groupFolderName) { %><span style="color:var(--text-dim)"><%= _groupFolderName %></span> &ndash; <% } %><%= _visibleItems.length %> file<%= _visibleItems.length !== 1 ? 's' : '' %>
+                        <div class="text-dim lpx-meta-sm">
+                          <% if (_groupFolderName) { %><span class="lpx-text-dim"><%= _groupFolderName %></span> &ndash; <% } %><%= _visibleItems.length %> file<%= _visibleItems.length !== 1 ? 's' : '' %>
                         </div>
                       <% } else { %>
-                        <div style="font-weight:600;font-size:.9rem;color:var(--text-dim)">Unmatched</div>
-                        <div class="text-dim" style="font-size:.78rem;margin-top:.1rem">
-                          <% if (_groupFolderName) { %><span style="color:var(--text-dim)"><%= _groupFolderName %></span> &ndash; <% } %><%= _visibleItems.length %> file<%= _visibleItems.length !== 1 ? 's' : '' %> — no media match yet
+                        <div class="lpx-unmatched-title">Unmatched</div>
+                        <div class="text-dim lpx-meta-sm">
+                          <% if (_groupFolderName) { %><span class="lpx-text-dim"><%= _groupFolderName %></span> &ndash; <% } %><%= _visibleItems.length %> file<%= _visibleItems.length !== 1 ? 's' : '' %> — no media match yet
                         </div>
                       <% } %>
                     </div>
-                    <div style="display:flex;gap:.35rem;align-items:center;flex-shrink:0;flex-wrap:wrap">
+                    <div class="lpx-group-actions">
                       <% if (group.mediaItemId) { %>
                         <button type="button" class="btn btn-sm btn-secondary lp-group-match-btn"
                           data-group-key="<%= _groupKey %>">Change Match</button>
                       <% } %>
                       <% if (group.mediaItemId && can('canEditLibraryPath')) { %>
-                        <label class="btn btn-sm btn-secondary" style="cursor:pointer;position:relative;margin:0" title="Upload custom poster">
+                        <label class="btn btn-sm btn-secondary lpx-photo-label" title="Upload custom poster">
                           <i class="fa-solid fa-image"></i>
-                          <input type="file" accept="image/*" class="lp-photo-input"
-                                 data-media-item-id="<%= group.mediaItemId %>"
-                                 style="position:absolute;opacity:0;width:1px;height:1px;overflow:hidden">
+                          <input type="file" accept="image/*" class="lp-photo-input lpx-file-hidden"
+                                 data-media-item-id="<%= group.mediaItemId %>">
                         </label>
                       <% } %>
                       <% if (can('canBlackListALibraryPathItem') && _blacklistableIds.length > 0) { %>
@@ -221,10 +205,10 @@
 
                   <%# ── Group-level match picker ─────────────────────────────── %>
                   <div id="lp-group-picker-<%= _groupKey %>"
-                       style="padding:.65rem .85rem;border-top:1px solid var(--border);background:var(--surface-2)"
+                       class="lpx-picker"
                        <% if (group.mediaItemId) { %>hidden<% } %>>
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
-                      <div class="text-dim" style="font-size:.75rem">
+                    <div class="lpx-picker-head">
+                      <div class="text-dim lpx-fs-75">
                         <%= group.mediaItemId ? 'Change the match:' : 'Select the correct match:' %>
                       </div>
                       <% if (group.mediaItemId) { %>
@@ -233,32 +217,31 @@
                       <% } %>
                     </div>
                     <% if (_groupCandidates.length > 0) { %>
-                    <div class="lp-candidate-grid" style="margin-bottom:.5rem">
+                    <div class="lp-candidate-grid lpx-grid-mb">
                       <% _groupCandidates.forEach(function(c) { %>
-                        <button type="button" class="btn btn-secondary lp-select-group-candidate-btn"
+                        <button type="button" class="btn btn-secondary lp-select-group-candidate-btn lpx-candidate-btn"
                           data-group-key="<%= _groupKey %>"
                           data-item-ids="<%- JSON.stringify(_allItemIds) %>"
                           data-media-item-id="<%= c.mediaItemId %>"
-                          style="display:flex;flex-direction:row;align-items:center;gap:.75rem;padding:.6rem .75rem;height:auto;width:100%;text-align:left"
                         >
                           <% if (showPosters && c.mediaPoster) { %>
                             <img src="/media-photos/<%= c.mediaPoster %>"
                                  alt="Poster"
-                                 style="width:54px;height:81px;object-fit:cover;border-radius:4px;flex-shrink:0">
+                                 class="lpx-poster-md">
                           <% } else { %>
-                            <div style="width:54px;height:81px;background:var(--surface-2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-                              <i class="fa-solid fa-film" style="font-size:1.4rem;color:var(--text-dim)"></i>
+                            <div class="lpx-poster-md-ph">
+                              <i class="fa-solid fa-film lpx-icon-md"></i>
                             </div>
                           <% } %>
-                          <span style="font-size:.88rem;line-height:1.35;word-break:break-word;min-width:0">
-                            <strong><%= c.mediaTitle || 'Unknown' %></strong><br><span class="text-dim" style="font-size:.8rem">(<%= c.mediaYear || 'year unknown' %>)</span>
+                          <span class="lpx-candidate-label">
+                            <strong><%= c.mediaTitle || 'Unknown' %></strong><br><span class="text-dim lpx-fs-80">(<%= c.mediaYear || 'year unknown' %>)</span>
                           </span>
                         </button>
                       <% }) %>
                     </div>
                     <% } %>
-                    <div style="border-top:1px dashed var(--border);padding-top:.45rem">
-                      <div class="field" style="margin-bottom:.35rem">
+                    <div class="lpx-tmdb-divider">
+                      <div class="field lpx-field-mb">
                         <input type="search" class="lp-tmdb-search"
                           data-item-id="<%= _firstItemId %>"
                           data-item-ids="<%- JSON.stringify(_allItemIds) %>"
@@ -273,22 +256,13 @@
                   <%# ── File / episode list ─────────────────────────────────── %>
                   <% if (_isSeries) { %>
                     <details class="series-ep-accordion" data-ep-accordion="<%= _groupKey %>">
-                      <summary style="
-                        cursor:pointer;
-                        padding:.5rem .85rem;
-                        border-top:1px solid var(--border);
-                        display:flex;
-                        align-items:center;
-                        gap:.5rem;
-                        background:var(--surface-2);
-                        user-select:none;
-                      ">
-                        <i class="fa-solid fa-chevron-right series-ep-chevron" style="font-size:.72rem;color:var(--text-dim);transition:transform .2s;flex-shrink:0"></i>
-                        <span class="text-dim" style="font-size:.81rem">
+                      <summary class="lpx-ep-summary">
+                        <i class="fa-solid fa-chevron-right series-ep-chevron lpx-ep-chevron"></i>
+                        <span class="text-dim lpx-fs-81">
                           <%= _visibleItems.length %> episode<%= _visibleItems.length !== 1 ? 's' : '' %>
                         </span>
                       </summary>
-                      <div style="display:flex;flex-direction:column">
+                      <div class="lpx-col">
                         <% _visibleItems.forEach(function(item) { %>
                           <%
                             var _si = item.subtitleInfo
@@ -301,48 +275,55 @@
                               return (j.langFlag ? j.langFlag + ' ' : '') + j.langIso.toUpperCase()
                             }).join(', ')
                           %>
-                          <div data-item-row="<%= item.id %>" style="
-                            padding:.6rem .85rem;
-                            border-top:1px solid var(--border);
-                            display:flex;flex-direction:column;gap:.35rem
-                          ">
-                            <div style="min-width:0">
-                              <div style="display:flex;align-items:center;gap:.4rem">
+                          <div data-item-row="<%= item.id %>" class="lpx-item-row">
+                            <div class="lpx-min0">
+                              <div class="lpx-row-center">
                                 <% if (item.season !== null && item.episode !== null) { %>
-                                  <span style="font-weight:600;font-size:.85rem;flex-shrink:0">
+                                  <span class="lpx-se-label">
                                     S<%= String(item.season).padStart(2,'0') %>E<%= String(item.episode).padStart(2,'0') %>
                                   </span>
                                 <% } %>
-                                <span style="font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1" title="<%= item.path %>">
+                                <span class="lpx-filename" title="<%= item.path %>">
                                   <%= item.path.split('/').pop() %>
                                 </span>
                               </div>
-                              <div style="display:flex;gap:.35rem;margin-top:.2rem;flex-wrap:wrap;align-items:center">
-                                <span class="badge <%= item.status === 'completed' ? 'badge-success' : item.status === 'failed' ? 'badge-error' : item.status === 'queued' ? 'badge-warning' : 'badge-neutral' %>" style="font-size:.7rem" data-item-status="<%= item.id %>">
+                              <div class="lpx-badge-row">
+                                <span class="badge <%= item.status === 'completed' ? 'badge-success' : item.status === 'failed' ? 'badge-error' : item.status === 'queued' ? 'badge-warning' : 'badge-neutral' %> lpx-fs-70" data-item-status="<%= item.id %>">
                                   <%= item.status.replace(/_/g,' ') %>
                                 </span>
                                 <% if (_translationDeleted) { %>
-                                  <span class="badge badge-error" style="font-size:.7rem">Translation deleted</span>
+                                  <span class="badge badge-error lpx-fs-70">Translation deleted</span>
                                 <% } else if (_activeJobs.length > 0) { %>
-                                  <span class="text-dim" style="font-size:.75rem"><%= _jobLabel %> · <%= _langList %></span>
+                                  <span class="text-dim lpx-fs-75"><%= _jobLabel %> · <%= _langList %></span>
                                 <% } %>
                               </div>
                             </div>
-                            <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+                            <div class="lpx-item-actions">
                               <% if (item.blacklist) { %>
-                                <span class="badge badge-warning" style="font-size:.7rem" title="<%= item.blacklist.reason || '' %>">Blacklisted</span>
+                                <span class="badge badge-warning lpx-fs-70" title="<%= item.blacklist.reason || '' %>">Blacklisted</span>
                                 <% if (can('canBlackListALibraryPathItem')) { %>
-                                  <form method="POST" action="/library-paths/item/<%= item.id %>/unblacklist" style="display:inline">
+                                  <form method="POST" action="/library-paths/item/<%= item.id %>/unblacklist" class="lpx-inline">
                                     <button type="submit" class="btn btn-sm btn-secondary"><%= __('librarypaths.removeFromBlacklist') %></button>
                                   </form>
                                 <% } %>
                               <% } else { %>
+                                <% if (can('canChangeMatchForLibraryPaths')) { %>
+                                  <button type="button" class="btn btn-sm btn-secondary lp-item-match-btn"
+                                          data-item-id="<%= item.id %>"
+                                          data-type="<%= lp.type %>"
+                                          data-item-name="<%= item.path.split('/').pop() %>"><%= __('librarypaths.changeMatch') %></button>
+                                <% } %>
                                 <% if (_translationDeleted && can('canAddSubtitleToTranslateFromLibrary')) { %>
-                                  <form method="POST" action="/library-paths/item/<%= item.id %>/readd" style="display:inline">
+                                  <form method="POST" action="/library-paths/item/<%= item.id %>/readd" class="lpx-inline">
                                     <button type="submit" class="btn btn-sm btn-secondary"><%= __('librarypaths.readd') %></button>
                                   </form>
-                                <% } else if (can('canAddSubtitleToTranslateFromLibrary') && !_translationDeleted && item.status !== 'queued' && item.status !== 'completed' && item.status !== 'no_srts_found' && (item.candidates.length === 0 || item.mediaItemId)) { %>
-                                  <form method="POST" action="/library-paths/item/<%= item.id %>/translate" style="display:inline">
+                                <% } else if (item.status === 'no_srts_found') { %>
+                                  <% if (can('canCreateSubtitlesWithWhisper')) { %>
+                                    <button type="button" class="btn btn-sm btn-primary lp-create-subtitle-btn"
+                                            data-item-id="<%= item.id %>"><%= __('librarypaths.createSubtitle') %></button>
+                                  <% } %>
+                                <% } else if (can('canAddSubtitleToTranslateFromLibrary') && !_translationDeleted && item.status !== 'queued' && item.status !== 'completed' && (item.candidates.length === 0 || item.mediaItemId)) { %>
+                                  <form method="POST" action="/library-paths/item/<%= item.id %>/translate" class="lpx-inline">
                                     <button type="submit" class="btn btn-sm btn-primary"><%= __('librarypaths.translate') %></button>
                                   </form>
                                 <% } %>
@@ -360,22 +341,13 @@
                     </details>
                   <% } else { %>
                     <details class="series-ep-accordion" data-ep-accordion="<%= _groupKey %>">
-                      <summary style="
-                        cursor:pointer;
-                        padding:.5rem .85rem;
-                        border-top:1px solid var(--border);
-                        display:flex;
-                        align-items:center;
-                        gap:.5rem;
-                        background:var(--surface-2);
-                        user-select:none;
-                      ">
-                        <i class="fa-solid fa-chevron-right series-ep-chevron" style="font-size:.72rem;color:var(--text-dim);transition:transform .2s;flex-shrink:0"></i>
-                        <span class="text-dim" style="font-size:.81rem">
+                      <summary class="lpx-ep-summary">
+                        <i class="fa-solid fa-chevron-right series-ep-chevron lpx-ep-chevron"></i>
+                        <span class="text-dim lpx-fs-81">
                           <%= _visibleItems.length %> translation track<%= _visibleItems.length !== 1 ? 's' : '' %>
                         </span>
                       </summary>
-                      <div style="display:flex;flex-direction:column">
+                      <div class="lpx-col">
                         <% _visibleItems.forEach(function(item) { %>
                           <%
                             var _si = item.subtitleInfo
@@ -388,43 +360,50 @@
                               return (j.langFlag ? j.langFlag + ' ' : '') + j.langIso.toUpperCase()
                             }).join(', ')
                           %>
-                          <div data-item-row="<%= item.id %>" style="
-                            padding:.6rem .85rem;
-                            border-top:1px solid var(--border);
-                            display:flex;flex-direction:column;gap:.35rem
-                          ">
-                            <div style="min-width:0">
-                              <div style="display:flex;align-items:center;gap:.4rem">
-                                <span style="font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1" title="<%= item.path %>">
+                          <div data-item-row="<%= item.id %>" class="lpx-item-row">
+                            <div class="lpx-min0">
+                              <div class="lpx-row-center">
+                                <span class="lpx-filename" title="<%= item.path %>">
                                   <%= item.path.split('/').pop() %>
                                 </span>
                               </div>
-                              <div style="display:flex;gap:.35rem;margin-top:.2rem;flex-wrap:wrap;align-items:center">
-                                <span class="badge <%= item.status === 'completed' ? 'badge-success' : item.status === 'failed' ? 'badge-error' : item.status === 'queued' ? 'badge-warning' : 'badge-neutral' %>" style="font-size:.7rem" data-item-status="<%= item.id %>">
+                              <div class="lpx-badge-row">
+                                <span class="badge <%= item.status === 'completed' ? 'badge-success' : item.status === 'failed' ? 'badge-error' : item.status === 'queued' ? 'badge-warning' : 'badge-neutral' %> lpx-fs-70" data-item-status="<%= item.id %>">
                                   <%= item.status.replace(/_/g,' ') %>
                                 </span>
                                 <% if (_translationDeleted) { %>
-                                  <span class="badge badge-error" style="font-size:.7rem">Translation deleted</span>
+                                  <span class="badge badge-error lpx-fs-70">Translation deleted</span>
                                 <% } else if (_activeJobs.length > 0) { %>
-                                  <span class="text-dim" style="font-size:.75rem"><%= _jobLabel %> · <%= _langList %></span>
+                                  <span class="text-dim lpx-fs-75"><%= _jobLabel %> · <%= _langList %></span>
                                 <% } %>
                               </div>
                             </div>
-                            <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+                            <div class="lpx-item-actions">
                               <% if (item.blacklist) { %>
-                                <span class="badge badge-warning" style="font-size:.7rem" title="<%= item.blacklist.reason || '' %>">Blacklisted</span>
+                                <span class="badge badge-warning lpx-fs-70" title="<%= item.blacklist.reason || '' %>">Blacklisted</span>
                                 <% if (can('canBlackListALibraryPathItem')) { %>
-                                  <form method="POST" action="/library-paths/item/<%= item.id %>/unblacklist" style="display:inline">
+                                  <form method="POST" action="/library-paths/item/<%= item.id %>/unblacklist" class="lpx-inline">
                                     <button type="submit" class="btn btn-sm btn-secondary"><%= __('librarypaths.removeFromBlacklist') %></button>
                                   </form>
                                 <% } %>
                               <% } else { %>
+                                <% if (can('canChangeMatchForLibraryPaths')) { %>
+                                  <button type="button" class="btn btn-sm btn-secondary lp-item-match-btn"
+                                          data-item-id="<%= item.id %>"
+                                          data-type="<%= lp.type %>"
+                                          data-item-name="<%= item.path.split('/').pop() %>"><%= __('librarypaths.changeMatch') %></button>
+                                <% } %>
                                 <% if (_translationDeleted && can('canAddSubtitleToTranslateFromLibrary')) { %>
-                                  <form method="POST" action="/library-paths/item/<%= item.id %>/readd" style="display:inline">
+                                  <form method="POST" action="/library-paths/item/<%= item.id %>/readd" class="lpx-inline">
                                     <button type="submit" class="btn btn-sm btn-secondary"><%= __('librarypaths.readd') %></button>
                                   </form>
-                                <% } else if (can('canAddSubtitleToTranslateFromLibrary') && !_translationDeleted && item.status !== 'queued' && item.status !== 'completed' && item.status !== 'no_srts_found' && (item.candidates.length === 0 || item.mediaItemId)) { %>
-                                  <form method="POST" action="/library-paths/item/<%= item.id %>/translate" style="display:inline">
+                                <% } else if (item.status === 'no_srts_found') { %>
+                                  <% if (can('canCreateSubtitlesWithWhisper')) { %>
+                                    <button type="button" class="btn btn-sm btn-primary lp-create-subtitle-btn"
+                                            data-item-id="<%= item.id %>"><%= __('librarypaths.createSubtitle') %></button>
+                                  <% } %>
+                                <% } else if (can('canAddSubtitleToTranslateFromLibrary') && !_translationDeleted && item.status !== 'queued' && item.status !== 'completed' && (item.candidates.length === 0 || item.mediaItemId)) { %>
+                                  <form method="POST" action="/library-paths/item/<%= item.id %>/translate" class="lpx-inline">
                                     <button type="submit" class="btn btn-sm btn-primary"><%= __('librarypaths.translate') %></button>
                                   </form>
                                 <% } %>
@@ -452,102 +431,55 @@
     <% } %>
     </div>
 
-    <div id="lp-tab-missing" style="display:none">
-      <% if (_missingSrtCount === 0) { %>
-        <div class="card">
-          <p class="empty-state"><%= __('librarypaths.noMissingSrts') %></p>
-        </div>
-      <% } else { %>
-        <% libraryPaths.forEach(function(lp) { %>
-          <%
-            var _missItems = []
-            lp.groups.forEach(function(group) {
-              group.items.forEach(function(item) {
-                if (item.status === 'no_srts_found' && !item.blacklist) _missItems.push(item)
-              })
-            })
-          %>
-          <% if (_missItems.length > 0) { %>
-            <div class="card" style="margin-bottom:1.25rem">
-              <div class="card-header" style="flex-wrap:wrap;gap:.5rem">
-                <h2 style="margin:0"><%= lp.name %></h2>
-                <span class="badge badge-neutral"><%= _missItems.length %> item<%= _missItems.length !== 1 ? 's' : '' %></span>
-              </div>
-              <div style="display:flex;flex-direction:column">
-                <% _missItems.forEach(function(item) { %>
-                  <div style="padding:.6rem .85rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">
-                    <div style="flex:1;min-width:0">
-                      <span style="font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block" title="<%= item.path %>">
-                        <%= item.path.split('/').pop() %>
-                      </span>
-                      <span class="badge badge-neutral" style="font-size:.7rem;margin-top:.25rem;display:inline-block"><%= __('librarypaths.noSrtsFound') %></span>
-                    </div>
-                    <div style="display:flex;gap:.35rem;align-items:center;flex-shrink:0">
-                      <% if (can('canBlackListALibraryPathItem')) { %>
-                        <button type="button" class="btn btn-sm btn-secondary lp-blacklist-btn"
-                                data-item-id="<%= item.id %>"
-                                data-item-name="<%= item.path.split('/').pop() %>"
-                                title="Block this item from translation"><%= __('librarypaths.blacklistBtn') %></button>
-                      <% } %>
-                    </div>
-                  </div>
-                <% }) %>
-              </div>
-            </div>
-          <% } %>
-        <% }) %>
-      <% } %>
-    </div>
-
     <div id="lp-tab-blacklist" style="display:none">
       <div class="card">
         <% if (!blacklisted || blacklisted.length === 0) { %>
           <p class="empty-state"><%= __('librarypaths.noBlacklisted') %></p>
         <% } else { %>
-          <div style="overflow-x:auto">
-            <table class="table" style="width:100%;border-collapse:collapse">
+          <div class="lpx-overflow-x">
+            <table class="table lpx-table">
               <thead>
-                <tr style="text-align:left;border-bottom:1px solid var(--border)">
-                  <th style="padding:.5rem .35rem"><%= __('librarypaths.filesystemPath') %></th>
-                  <th style="padding:.5rem .35rem"><%= __('librarypaths.library') %></th>
-                  <th style="padding:.5rem .35rem"><%= __('common.match') %></th>
-                  <th style="padding:.5rem .35rem"><%= __('librarypaths.blacklistedBy') %></th>
-                  <th style="padding:.5rem .35rem"><%= __('common.when') %></th>
-                  <th style="padding:.5rem .35rem"><%= __('librarypaths.blacklistReason') %></th>
+                <tr class="lpx-thead-row">
+                  <th class="lpx-th"><%= __('librarypaths.filesystemPath') %></th>
+                  <th class="lpx-th"><%= __('librarypaths.library') %></th>
+                  <th class="lpx-th"><%= __('common.match') %></th>
+                  <th class="lpx-th"><%= __('librarypaths.blacklistedBy') %></th>
+                  <th class="lpx-th"><%= __('common.when') %></th>
+                  <th class="lpx-th"><%= __('librarypaths.blacklistReason') %></th>
                   <% if (can('canBlackListALibraryPathItem')) { %>
-                    <th style="padding:.5rem .35rem"><%= __('common.actions') %></th>
+                    <th class="lpx-th"><%= __('common.actions') %></th>
                   <% } %>
                 </tr>
               </thead>
               <tbody>
                 <% blacklisted.forEach(function(b) { %>
-                  <tr style="border-bottom:1px solid var(--border)">
-                    <td style="padding:.55rem .35rem;max-width:340px;word-break:break-all">
+                  <tr class="lpx-tr-border">
+                    <td class="lpx-td-path">
                       <% var _fileName = b.itemPath.split('/').pop() %>
-                      <div style="font-weight:600;font-size:.88rem"><%= _fileName %></div>
+                      <div class="lpx-fw600-88"><%= _fileName %></div>
                       <% if (b.season !== null && b.episode !== null) { %>
-                        <div class="text-dim" style="font-size:.75rem">
+                        <div class="text-dim lpx-fs-75">
                           S<%= String(b.season).padStart(2,'0') %>E<%= String(b.episode).padStart(2,'0') %>
                         </div>
                       <% } %>
-                      <div class="text-dim" style="font-size:.72rem;margin-top:.15rem"><%= b.itemPath %></div>
+                      <div class="text-dim lpx-fs-72-mt"><%= b.itemPath %></div>
                     </td>
-                    <td style="padding:.55rem .35rem"><%= b.libraryPathName || '—' %></td>
-                    <td style="padding:.55rem .35rem">
+                    <td class="lpx-td"><%= b.libraryPathName || '—' %></td>
+                    <td class="lpx-td">
                       <% if (b.mediaTitle) { %>
                         <%= b.mediaTitle %><% if (b.mediaYear) { %> <span class="text-dim">(<%= b.mediaYear %>)</span><% } %>
                       <% } else { %>
                         <span class="text-dim">Unmatched</span>
                       <% } %>
                     </td>
-                    <td style="padding:.55rem .35rem"><%= b.blacklistedByUsername || '—' %></td>
-                    <td style="padding:.55rem .35rem;white-space:nowrap"><%= b.createdAt %></td>
-                    <td style="padding:.55rem .35rem;max-width:280px;word-break:break-word">
+                    <td class="lpx-td"><%= b.blacklistedByUsername || '—' %></td>
+                    <td class="lpx-td-nowrap"><%= b.createdAt %></td>
+                    <td class="lpx-td-reason">
                       <% if (b.reason) { %><%= b.reason %><% } else { %><span class="text-dim">—</span><% } %>
                     </td>
                     <% if (can('canBlackListALibraryPathItem')) { %>
-                      <td style="padding:.55rem .35rem;white-space:nowrap">
-                        <form method="POST" action="/library-paths/item/<%= b.libraryPathItemId %>/unblacklist?from=blacklist" style="display:inline">
+                      <td class="lpx-td-nowrap">
+                        <form method="POST" action="/library-paths/item/<%= b.libraryPathItemId %>/unblacklist?from=blacklist" class="lpx-inline">
                           <button type="submit" class="btn btn-sm btn-secondary"><%= __('librarypaths.removeFromBlacklist') %></button>
                         </form>
                       </td>
@@ -565,47 +497,19 @@
 <div id="lp-config" data-show-posters="<%= showPosters ? '1' : '0' %>" hidden></div>
 
 <div id="dir-browser-panel" style="display:none;margin-top:.5rem">
-  <div style="
-    border:1px solid var(--border);
-    border-radius:8px;
-    overflow:hidden;
-    background:var(--surface-2);
-    font-size:.85rem;
-  ">
-    <div style="
-      display:flex;
-      align-items:center;
-      gap:.4rem;
-      padding:.5rem .75rem;
-      border-bottom:1px solid var(--border);
-      background:var(--surface-3);
-      flex-wrap:wrap;
-      min-height:2.4rem;
-    ">
+  <div class="lpx-dir-box">
+    <div class="lpx-dir-header">
       <button type="button" id="dir-up-btn"
-        class="btn btn-icon btn-sm"
-        style="flex-shrink:0;padding:.2rem .45rem;font-size:.8rem"
+        class="btn btn-icon btn-sm lpx-dir-up-btn"
         title="Go up">↑</button>
       <span id="dir-current-path"
-        class="text-dim"
-        style="font-size:.78rem;word-break:break-all;flex:1;min-width:0"></span>
+        class="text-dim lpx-dir-current"></span>
     </div>
     <div id="dir-list"
-      style="
-        max-height:220px;
-        overflow-y:auto;
-        display:flex;
-        flex-direction:column;
-      ">
-      <div class="text-dim" style="padding:.5rem .75rem;font-size:.8rem">Loading…</div>
+      class="lpx-dir-list">
+      <div class="text-dim lpx-dir-loading">Loading…</div>
     </div>
-    <div style="
-      padding:.5rem .75rem;
-      border-top:1px solid var(--border);
-      display:flex;
-      justify-content:flex-end;
-      gap:.4rem;
-    ">
+    <div class="lpx-dir-footer">
       <button type="button" id="dir-select-btn" class="btn btn-sm btn-primary">
         <%= __('librarypaths.selectThisFolder') %>
       </button>
@@ -615,7 +519,7 @@
 
 <%# ── Bulk action bar ─────────────────────────────────────────────── %>
 <div id="lp-bulk-bar" class="lp-bulk-bar" style="display:none">
-  <span id="lp-bulk-count" style="font-size:.87rem;color:var(--text-dim);flex:1">0 groups selected</span>
+  <span id="lp-bulk-count" class="lpx-bulk-count">0 groups selected</span>
   <button type="button" class="btn btn-primary btn-sm" id="lp-bulk-change-match-btn">
     <i class="fa-solid fa-link"></i> <%= __('librarypaths.bulkChangeMatch') %>
   </button>
@@ -631,12 +535,12 @@
       <h2>Change match — <span id="bulk-modal-count">0</span> groups</h2>
       <button class="btn btn-icon" onclick="closeModal('bulk-match-modal')">✕</button>
     </div>
-    <p class="text-dim" style="font-size:.83rem;margin:.25rem 0 .75rem">Search TheMovieDB and select the correct title. All selected groups will be re-matched.</p>
+    <p class="text-dim lpx-modal-hint">Search TheMovieDB and select the correct title. All selected groups will be re-matched.</p>
     <div class="field">
       <label for="bulk-tmdb-search">Search</label>
       <input type="search" id="bulk-tmdb-search" placeholder="Title…" autocomplete="off">
     </div>
-    <div id="bulk-tmdb-results" style="margin-top:.25rem"></div>
+    <div id="bulk-tmdb-results" class="lpx-mt-25"></div>
     <div class="modal-footer">
       <button type="button" class="btn btn-secondary" onclick="closeModal('bulk-match-modal')"><%= __('common.cancel') %></button>
     </div>
@@ -644,7 +548,7 @@
 </div>
 
 <div class="modal-overlay" id="add-modal" onclick="closeModalOnOverlay(event)">
-  <div class="modal" style="max-width:480px">
+  <div class="modal lpx-modal-480">
     <div class="modal-header">
       <h2><%= __('librarypaths.addPathTitle') %></h2>
       <button class="btn btn-icon" onclick="closeModal('add-modal')">✕</button>
@@ -656,9 +560,9 @@
       </div>
       <div class="field">
         <label for="add-path"><%= __('librarypaths.filesystemPath') %></label>
-        <div style="display:flex;gap:.4rem">
-          <input type="text" id="add-path" name="path" required style="flex:1">
-          <button type="button" class="btn btn-secondary" style="flex-shrink:0"
+        <div class="lpx-path-input-row">
+          <input type="text" id="add-path" name="path" required class="lpx-flex1">
+          <button type="button" class="btn btn-secondary lpx-flex-shrink0"
                   onclick="openDirBrowser('add-path')"><%= __('librarypaths.browse') %></button>
         </div>
         <div id="add-path-browser-anchor"></div>
@@ -700,7 +604,7 @@
 </div>
 
 <div class="modal-overlay" id="edit-modal" onclick="closeModalOnOverlay(event)">
-  <div class="modal" style="max-width:480px">
+  <div class="modal lpx-modal-480">
     <div class="modal-header">
       <h2><%= __('librarypaths.editPathTitle') %></h2>
       <button class="btn btn-icon" onclick="closeModal('edit-modal')">✕</button>
@@ -712,9 +616,9 @@
       </div>
       <div class="field">
         <label for="edit-path"><%= __('librarypaths.filesystemPath') %></label>
-        <div style="display:flex;gap:.4rem">
-          <input type="text" id="edit-path" name="path" required style="flex:1">
-          <button type="button" class="btn btn-secondary" style="flex-shrink:0"
+        <div class="lpx-path-input-row">
+          <input type="text" id="edit-path" name="path" required class="lpx-flex1">
+          <button type="button" class="btn btn-secondary lpx-flex-shrink0"
                   onclick="openDirBrowser('edit-path')"><%= __('librarypaths.browse') %></button>
         </div>
         <div id="edit-path-browser-anchor"></div>
@@ -755,13 +659,13 @@
 </div>
 
 <div class="modal-overlay" id="blacklist-modal" onclick="closeModalOnOverlay(event)">
-  <div class="modal" style="max-width:480px">
+  <div class="modal lpx-modal-480">
     <div class="modal-header">
       <h2><%= __('librarypaths.blacklistTitle') %></h2>
       <button class="btn btn-icon" onclick="closeModal('blacklist-modal')">✕</button>
     </div>
     <form method="POST" id="blacklist-form" action="">
-      <p class="text-dim" style="font-size:.85rem;margin-top:0">
+      <p class="text-dim lpx-warn-note">
         <%= __('librarypaths.blacklistWarningPrefix') %> <strong id="blacklist-target-name"></strong> <%= __('librarypaths.blacklistWarningSuffix') %>
       </p>
       <div class="field">
@@ -773,6 +677,24 @@
         <button type="submit" class="btn btn-danger"><%= __('librarypaths.blacklistBtn') %></button>
       </div>
     </form>
+  </div>
+</div>
+
+<%# ── Per-item change match modal ──────────────────────────────────── %>
+<div class="modal-overlay" id="item-match-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h2><%= __('librarypaths.changeMatch') %> — <span id="item-match-name"></span></h2>
+      <button class="btn btn-icon" onclick="closeModal('item-match-modal')">✕</button>
+    </div>
+    <p class="text-dim lpx-modal-hint"><%= __('librarypaths.changeMatchItemHint') %></p>
+    <div class="field">
+      <input type="search" id="item-match-search" class="lp-tmdb-search" placeholder="Title…" autocomplete="off">
+    </div>
+    <div class="lp-tmdb-results lpx-mt-25" id="item-match-results"></div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="closeModal('item-match-modal')"><%= __('common.cancel') %></button>
+    </div>
   </div>
 </div>
 
@@ -1064,6 +986,61 @@
 
   document.addEventListener('click', function(e) {
 
+    // Per-item "Change match": reuse the TMDB search machinery, scoped to one item.
+    var itemMatchBtn = e.target.closest('.lp-item-match-btn')
+    if (itemMatchBtn) {
+      var imItemId = itemMatchBtn.dataset.itemId
+      var imType = itemMatchBtn.dataset.type || 'movie'
+      var searchEl = document.getElementById('item-match-search')
+      var resultsEl = document.getElementById('item-match-results')
+      searchEl.dataset.itemId = imItemId
+      searchEl.dataset.type = imType
+      delete searchEl.dataset.itemIds
+      delete searchEl.dataset.groupKey
+      resultsEl.dataset.itemId = imItemId
+      searchEl.value = ''
+      resultsEl.innerHTML = ''
+      document.getElementById('item-match-name').textContent = itemMatchBtn.dataset.itemName || ''
+      openModal('item-match-modal')
+      setTimeout(function() { searchEl.focus() }, 50)
+      return
+    }
+
+    // Per-item "Create subtitle" (Whisper) for items with no embedded/companion SRT.
+    var createSubBtn = e.target.closest('.lp-create-subtitle-btn')
+    if (createSubBtn) {
+      var csItemId = createSubBtn.dataset.itemId
+      createSubBtn.disabled = true
+      var prevText = createSubBtn.textContent
+      createSubBtn.textContent = '…'
+      fetch('/library-requests/item/' + csItemId + '/create-whisper-subtitle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      })
+        .then(function(r) { if (redirectIfUnauthorized(r)) return null; return r.json() })
+        .then(function(data) {
+          if (!data) return
+          showLpToast(data.success ? 'success' : 'error', data.msg || (data.success ? 'Queued' : 'Failed'))
+          if (data.success) {
+            var badge = createSubBtn.closest('[data-item-row]')
+            if (badge) {
+              var st = badge.querySelector('[data-item-status]')
+              if (st) { st.className = 'badge badge-warning'; st.textContent = 'queued' }
+            }
+            createSubBtn.remove()
+          } else {
+            createSubBtn.disabled = false
+            createSubBtn.textContent = prevText
+          }
+        })
+        .catch(function() {
+          createSubBtn.disabled = false
+          createSubBtn.textContent = prevText
+          showLpToast('error', 'Request failed')
+        })
+      return
+    }
+
     var openBtn = e.target.closest('.lp-group-match-btn')
     if (openBtn) {
       var picker = document.getElementById('lp-group-picker-' + openBtn.dataset.groupKey)
@@ -1138,6 +1115,7 @@
         })
       } else {
         lpAjaxPost('/library-paths/item/' + itemId + '/select-tmdb-result', bodyParts.join('&'), function(data) {
+          closeModal('item-match-modal')
           reloadWithScrollRestore()
         })
       }
@@ -1258,17 +1236,13 @@
 
   function lpSwitchTab(tab) {
     document.getElementById('lp-tab-library').style.display = tab === 'library' ? '' : 'none'
-    document.getElementById('lp-tab-missing').style.display = tab === 'missing' ? '' : 'none'
     document.getElementById('lp-tab-blacklist').style.display = tab === 'blacklist' ? '' : 'none'
     document.getElementById('lp-tab-btn-library').classList.toggle('active', tab === 'library')
-    document.getElementById('lp-tab-btn-missing').classList.toggle('active', tab === 'missing')
     document.getElementById('lp-tab-btn-blacklist').classList.toggle('active', tab === 'blacklist')
   }
 
   var _initialTab = new URLSearchParams(location.search).get('tab')
-  if (_initialTab === 'missing') {
-    lpSwitchTab('missing')
-  } else if (_initialTab === 'blacklist') {
+  if (_initialTab === 'blacklist') {
     lpSwitchTab('blacklist')
   }
 
@@ -1284,7 +1258,12 @@
     var q = input.value.trim()
     clearTimeout(_tmdbTimers[itemId])
 
-    var resultsEl = document.querySelector('.lp-tmdb-results[data-item-id="' + itemId + '"]')
+    // Scope the results container to the input's own panel (the per-item modal
+    // or the group picker) — a global lookup by item id can match the group
+    // picker even when typing in the modal (same first-item id), rendering
+    // results outside the modal.
+    var scope = input.closest('#item-match-modal') || input.closest('[id^="lp-group-picker-"]') || document
+    var resultsEl = scope.querySelector('.lp-tmdb-results')
     if (!q) { if (resultsEl) resultsEl.innerHTML = ''; return }
 
     _tmdbTimers[itemId] = setTimeout(function() {

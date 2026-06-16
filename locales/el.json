@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Απέτυχε",
     "inspectStatusCancelled": "Ακυρώθηκε",
     "inspectStatusRetrying": "Επανάληψη",
-    "inspectStatusWaiting": "Αναμονή"
+    "inspectStatusWaiting": "Αναμονή",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Ο Λογαριασμός Μου",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Μπορεί να ρυθμίσει τον ριζικό φάκελο που χρησιμοποιείται για την περιορισμένη περιήγηση διαδρομής βιβλιοθήκης.",
     "tipAutoClearLogs": "Όταν είναι ενεργό, τα παλαιά αρχεία διαγράφονται αυτόματα σύμφωνα με την περίοδο διατήρησης.",
     "tipDeleteLogsOlderThan": "Αρχεία παλαιότερα από αυτόν τον αριθμό ημερών διαγράφονται όταν η αυτόματη εκκαθάριση είναι ενεργή.",
-    "tipActiveTheme": "Ελέγχει το ενεργό χρωματικό θέμα που χρησιμοποιείται από τη διεπαφή. Τα προσαρμοσμένα θέματα μπορούν να δημιουργηθούν παρακάτω."
+    "tipActiveTheme": "Ελέγχει το ενεργό χρωματικό θέμα που χρησιμοποιείται από τη διεπαφή. Τα προσαρμοσμένα θέματα μπορούν να δημιουργηθούν παρακάτω.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Χρήστες",
@@ -423,7 +441,18 @@
     "translate": "Μετάφραση",
     "unknownSeason": "Άγνωστη Σεζόν",
     "season": "Σεζόν ",
-    "episodeCount": "επ"
+    "episodeCount": "επ",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Στατιστικά",

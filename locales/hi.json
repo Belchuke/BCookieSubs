@@ -134,7 +134,13 @@
     "inspectStatusFailed": "विफल",
     "inspectStatusCancelled": "रद्द",
     "inspectStatusRetrying": "पुनः प्रयास हो रहा है",
-    "inspectStatusWaiting": "प्रतीक्षा में"
+    "inspectStatusWaiting": "प्रतीक्षा में",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "मेरा खाता",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "लाइब्रेरी पथ ब्राउज़िंग प्रतिबंधित करने के लिए उपयोग किए जाने वाले रूट फ़ोल्डर को कॉन्फ़िगर किया जा सकता है। सेट होने पर ब्राउज़िंग और नए लाइब्रेरी पथ इस फ़ोल्डर तक सीमित हैं।",
     "tipAutoClearLogs": "सक्षम होने पर, पुराने लॉग नीचे दी गई अवधारण अवधि के अनुसार स्वचालित रूप से हटाए जाते हैं।",
     "tipDeleteLogsOlderThan": "स्वतः-साफ़ सक्रिय होने पर इस संख्या के दिनों से पुराने लॉग हटाए जाते हैं।",
-    "tipActiveTheme": "इंटरफ़ेस द्वारा उपयोग की जाने वाली सक्रिय रंग थीम को नियंत्रित करता है। नीचे कस्टम थीम बनाई जा सकती हैं।"
+    "tipActiveTheme": "इंटरफ़ेस द्वारा उपयोग की जाने वाली सक्रिय रंग थीम को नियंत्रित करता है। नीचे कस्टम थीम बनाई जा सकती हैं।",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "उपयोगकर्ता",
@@ -423,7 +441,18 @@
     "translate": "अनुवाद करें",
     "unknownSeason": "अज्ञात सीज़न",
     "season": "सीज़न ",
-    "episodeCount": "एप"
+    "episodeCount": "एप",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "सांख्यिकी",

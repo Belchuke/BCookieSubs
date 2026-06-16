@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Ezighịzi ezi",
     "inspectStatusCancelled": "Akagbuola",
     "inspectStatusRetrying": "Na-agbagharị",
-    "inspectStatusWaiting": "Na-echere"
+    "inspectStatusWaiting": "Na-echere",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Akaụntụ M",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Nwere ike ịtọle folder isi ejiri mwepụ ọchọ ụzọ ọba akwụkwọ. Mgbe etọlara, ọchọ na ụzọ ọba akwụkwọ ọhụụ ndị a gbachiri n'ime folder a.",
     "tipAutoClearLogs": "Mgbe akpachara anya, a na-ehichapụ ndekọ ochie n'ịntanetị dabere na oge nlekọta dị n'okpuru.",
     "tipDeleteLogsOlderThan": "A na-ehichapụ ndekọ ndị karịrị ọnụ ụbọchị a mgbe ihicha n'ịntanetị na-arụ ọrụ.",
-    "tipActiveTheme": "Na-achịkwa ọdịdị agba na-arụ ọrụ ejiri maka interface. Nwere ike ịmepụta ọdịdị pụrụ iche n'okpuru."
+    "tipActiveTheme": "Na-achịkwa ọdịdị agba na-arụ ọrụ ejiri maka interface. Nwere ike ịmepụta ọdịdị pụrụ iche n'okpuru.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Ndị ọrụ",
@@ -423,7 +441,18 @@
     "translate": "Tụgharịa asụsụ",
     "unknownSeason": "Oge Amaghị",
     "season": "Oge ",
-    "episodeCount": "akwụ."
+    "episodeCount": "akwụ.",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Ọnụọgụgụ",

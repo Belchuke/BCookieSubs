@@ -197,6 +197,11 @@ export type DBConfig = {
   selectedThemeId: number
   rootLibraryPath: string | null
   defaultLanguage: string
+  whisperModel: string
+  whisperTimestampsLength: number
+  whisperUseCuda: number
+  whisperModelRootPath: string | null
+  whisperEnabled: number
   createdAt: string
   updatedAt: string
 }
@@ -275,6 +280,15 @@ export type DBSubtitle = {
   sourcePath: string | null
   mediaPath: string | null
   status: "queued" | "running" | "completed" | "failed" | "cancelled" | "paused"
+  whisperTranscriptionStatus: WhisperTranscriptionStatus | null
+  whisperModel: string | null
+  whisperTimestampsLength: number | null
+  whisperUseCuda: number | null
+  season: number | null
+  episode: number | null
+  whisperProgress: number
+  whisperPositionMs: number
+  whisperDurationMs: number
   finishedAt: string | null
   cancelledAt: string | null
   cancelledByUserId: number | null
@@ -283,6 +297,14 @@ export type DBSubtitle = {
   createdAt: string
   updatedAt: string
 }
+
+export type WhisperTranscriptionStatus =
+  | "queued_for_transcription"
+  | "transcribing"
+  | "transcription_failed"
+  | "transcription_completed"
+  | "queued_for_translation"
+  | "translating"
 
 export type DBSubtitleJob = {
   id: number

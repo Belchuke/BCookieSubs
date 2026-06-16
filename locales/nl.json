@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Mislukt",
     "inspectStatusCancelled": "Geannuleerd",
     "inspectStatusRetrying": "Opnieuw proberen",
-    "inspectStatusWaiting": "Wachten"
+    "inspectStatusWaiting": "Wachten",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Mijn Account",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Je kunt de wortelmap configureren om het bladeren in bibliotheekpaden te beperken. Als dit is ingesteld, zijn bladeren en nieuwe bibliotheekpaden beperkt tot deze map.",
     "tipAutoClearLogs": "Wanneer ingeschakeld, worden oude logs automatisch gewist volgens de bewaartermijn hieronder.",
     "tipDeleteLogsOlderThan": "Logs ouder dan dit aantal dagen worden gewist wanneer auto-clear actief is.",
-    "tipActiveTheme": "Bepaalt het actieve kleurthema dat door de interface wordt gebruikt. Aangepaste thema's kunnen hieronder worden gemaakt."
+    "tipActiveTheme": "Bepaalt het actieve kleurthema dat door de interface wordt gebruikt. Aangepaste thema's kunnen hieronder worden gemaakt.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Gebruikers",
@@ -423,7 +441,18 @@
     "translate": "Vertalen",
     "unknownSeason": "Onbekend seizoen",
     "season": "Seizoen ",
-    "episodeCount": "af"
+    "episodeCount": "af",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Statistieken",
@@ -491,7 +520,7 @@
       "libraryScanning": "Bibliotheekscanning",
       "libraryScanningDesc": "Scaant automatisch geconfigureerde bibliotheekpaden op nieuwe video- en ondertitelfilest volgens een schema, en creëert vertaaljobs indien nodig.",
       "autoClearLogs": "Logs automatisch wissen",
-      "autoClearLogsDesc": la la la la laL la l l l l de loggegevens ouder dan een geconfigureerd aantal dagen te wissen om de logtabel beheersbaar te houden.",
+      "autoClearLogsDesc": "Verwijdert loggegevens ouder dan een geconfigureerd aantal dagen om de logtabel beheersbaar te houden.",
       "languagesTitle": "Vertalingstalen",
       "defaultTargetLangs": "Standaard Doeltalen",
       "systemWide": "(systeembreed)",

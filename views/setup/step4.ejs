@@ -34,7 +34,7 @@
     <div class="alert alert-warning"><%= ollamaError %></div>
   <% } %>
 
-  <div class="card" style="margin-bottom:1.5rem">
+  <div class="card s4-card-mb">
     <div class="card-header">
       <h2><%= __('setup.step4.recommendedTitle') %></h2>
       <small class="text-dim"><%= recommendedModels.length %> <%= __('setup.step4.availableCount').replace('{{count}}', recommendedModels.length) %></small>
@@ -49,13 +49,13 @@
             var isInstalled = ollamaModels.indexOf(r.name) !== -1
             var isCloud = r.provider === 'ollama cloud' || r.provider === 'chatgpt' || r.provider === 'claude'
           %>
-          <div class="model-row" style="flex-wrap:wrap;gap:.5rem;align-items:center">
-            <div style="flex:1;min-width:160px">
+          <div class="model-row s4-model-row">
+            <div class="s4-model-main">
               <code class="model-name"><%= r.name %></code>
               <% if (r.requireOllamaSubscription) { %>
-                <span class="badge badge-warning" style="margin-left:.3rem;font-size:.72rem"><%= __('setup.step4.subscription') %></span>
+                <span class="badge badge-warning s4-sub-badge"><%= __('setup.step4.subscription') %></span>
               <% } %>
-              <div class="text-dim" style="font-size:.78rem;margin-top:.2rem">
+              <div class="text-dim s4-model-meta">
                 <%= r.provider %> · <%= r.score %>
                 <% if (r.roles) { %> · <%= r.roles %><% } %>
               </div>
@@ -81,9 +81,9 @@
     <% } %>
   </div>
 
-  <div id="pull-container" class="card" style="margin-bottom:1.5rem;display:none">
+  <div id="pull-container" class="card s4-card-mb s4-pull-hidden">
     <div class="card-header"><h2><%= __('setup.step4.installTitle') %></h2></div>
-    <div id="pull-rows" style="display:flex;flex-direction:column;gap:.75rem;padding:.75rem 1rem"></div>
+    <div id="pull-rows" class="s4-pull-rows"></div>
   </div>
 
   <div class="card" id="installed-card" style="margin-bottom:1.5rem<% if (dbModels.length === 0) { %>;display:none<% } %>">
@@ -98,17 +98,17 @@
             <span class="model-display-name"><%= m.name %></span>
             <code class="model-name text-dim"><%= m.modelName %></code>
           </div>
-          <span class="badge badge-neutral text-dim" style="font-size:.75rem"><%= __('setup.step4.rolesConfiguredHint') %></span>
+          <span class="badge badge-neutral text-dim s4-roles-badge"><%= __('setup.step4.rolesConfiguredHint') %></span>
         </div>
       <% }) %>
     </div>
   </div>
 
-  <div class="card" style="margin-bottom:1.5rem">
+  <div class="card s4-card-mb">
     <div class="card-header"><h2><%= __('setup.step4.customAddTitle') %></h2></div>
-    <form method="POST" action="/setup/4/add" style="padding:.75rem 1rem">
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.75rem;align-items:end">
-        <div class="field" style="margin:0">
+    <form method="POST" action="/setup/4/add" class="s4-add-form">
+      <div class="s4-add-grid">
+        <div class="field s4-field">
           <label><%= __('common.provider') %></label>
           <select name="provider">
             <option value="ollama">Ollama (local)</option>
@@ -118,23 +118,23 @@
             <option value="custom">Custom</option>
           </select>
         </div>
-        <div class="field" style="margin:0">
+        <div class="field s4-field">
           <label><%= __('setup.step4.modelName') %></label>
           <input type="text" name="modelName" placeholder="e.g. gpt-4o or llama3.1:8b" required>
         </div>
-        <div class="field" style="margin:0">
+        <div class="field s4-field">
           <label><%= __('setup.step4.displayName') %> <span class="hint"><%= __('setup.step4.displayNameHint') %></span></label>
           <input type="text" name="name" placeholder="My Model">
         </div>
       </div>
-      <p style="font-size:.8rem;margin:.6rem 0 .35rem" class="text-dim"><%= __('setup.step4.rolesHint') %></p>
-      <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-top:.25rem">
-        <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-          <label class="checkbox-label" style="font-size:.85rem"><input type="checkbox" name="roles" value="translation" checked> Translation</label>
-          <label class="checkbox-label" style="font-size:.85rem"><input type="checkbox" name="roles" value="judge"> Judge</label>
-          <label class="checkbox-label" style="font-size:.85rem"><input type="checkbox" name="roles" value="nameFormatter"> Name Formatter</label>
+      <p class="s4-roles-hint text-dim"><%= __('setup.step4.rolesHint') %></p>
+      <div class="s4-roles-row">
+        <div class="s4-roles-checks">
+          <label class="checkbox-label s4-check-label"><input type="checkbox" name="roles" value="translation" checked> Translation</label>
+          <label class="checkbox-label s4-check-label"><input type="checkbox" name="roles" value="judge"> Judge</label>
+          <label class="checkbox-label s4-check-label"><input type="checkbox" name="roles" value="nameFormatter"> Name Formatter</label>
         </div>
-        <button type="submit" class="btn btn-primary" style="margin-left:auto">+ Add</button>
+        <button type="submit" class="btn btn-primary s4-add-btn">+ Add</button>
       </div>
     </form>
   </div>

@@ -134,7 +134,13 @@
     "inspectStatusFailed": "失败",
     "inspectStatusCancelled": "已取消",
     "inspectStatusRetrying": "重试中",
-    "inspectStatusWaiting": "等待中"
+    "inspectStatusWaiting": "等待中",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "我的账户",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "可配置根文件夹以限制库路径浏览。设置后，浏览和新库路径将被限制在此文件夹内。",
     "tipAutoClearLogs": "启用后，旧日志将根据以下保留期自动删除。",
     "tipDeleteLogsOlderThan": "自动清理激活时，早于此天数的日志将被删除。",
-    "tipActiveTheme": "控制界面使用的活动配色主题。可以在下方创建自定义主题。"
+    "tipActiveTheme": "控制界面使用的活动配色主题。可以在下方创建自定义主题。",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "用户",
@@ -423,7 +441,18 @@
     "translate": "翻译",
     "unknownSeason": "未知季",
     "season": "第 ",
-    "episodeCount": "集"
+    "episodeCount": "集",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "统计",

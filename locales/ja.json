@@ -134,7 +134,13 @@
     "inspectStatusFailed": "失敗",
     "inspectStatusCancelled": "キャンセル済み",
     "inspectStatusRetrying": "再試行中",
-    "inspectStatusWaiting": "待機中"
+    "inspectStatusWaiting": "待機中",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "マイアカウント",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "ライブラリパスのブラウジングを制限するために使用されるルートフォルダを設定できます。設定すると、ブラウジングと新しいライブラリパスはこのフォルダ内に制限されます。",
     "tipAutoClearLogs": "有効な場合、古いログは以下の保持期間に従って自動的に削除されます。",
     "tipDeleteLogsOlderThan": "自動クリアが有効な場合、この日数より古いログが削除されます。",
-    "tipActiveTheme": "インターフェースで使用されるアクティブなカラーテーマを制御します。以下でカスタムテーマを作成できます。"
+    "tipActiveTheme": "インターフェースで使用されるアクティブなカラーテーマを制御します。以下でカスタムテーマを作成できます。",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "ユーザー",
@@ -423,7 +441,18 @@
     "translate": "翻訳",
     "unknownSeason": "不明なシーズン",
     "season": "シーズン ",
-    "episodeCount": "話"
+    "episodeCount": "話",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "統計",

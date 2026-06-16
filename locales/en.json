@@ -135,7 +135,14 @@
     "inspectStatusFailed": "Failed",
     "inspectStatusCancelled": "Cancelled",
     "inspectStatusRetrying": "Retrying",
-    "inspectStatusWaiting": "Waiting"
+    "inspectStatusWaiting": "Waiting",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating",
+    "whispering": "Whispering"
   },
   "account": {
     "title": "My Account",
@@ -221,7 +228,19 @@
     "tipRootLibraryFolder": "Can configure the root folder used to restrict library path browsing. When set, browsing and new library paths are confined to this folder.",
     "tipAutoClearLogs": "When enabled, old logs are automatically deleted according to the retention period below.",
     "tipDeleteLogsOlderThan": "Logs older than this number of days are deleted when auto-clear is active.",
-    "tipActiveTheme": "Controls the active color theme used by the interface. Custom themes can be created below."
+    "tipActiveTheme": "Controls the active color theme used by the interface. Custom themes can be created below.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Users",
@@ -390,7 +409,10 @@
     "browse": "Browse",
     "blacklistedBy": "Blacklisted by",
     "bulkChangeMatch": "Change match for selected",
-    "bulkClear": "Clear selection"
+    "bulkClear": "Clear selection",
+    "changeMatch": "Change match",
+    "changeMatchItemHint": "Search TheMovieDB and pick the correct title for this item.",
+    "createSubtitle": "Create subtitle"
   },
   "schedules": {
     "title": "Schedules",
@@ -425,9 +447,18 @@
     "noSeries": "No series episodes need translation right now.",
     "translate": "Translate",
     "translateSeason": "Translate season",
+    "seasonPickTracks": "Pick the subtitle track to translate from for each episode.",
+    "noTracksWhisper": "No subtitle tracks — use Create subtitle",
     "addMissingLang": "Add",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
     "selectSource": "Select subtitle source",
     "chooseSubtitleSource": "Choose a subtitle source for this video:",
+    "changeMatch": "Change match",
+    "searchMatchPlaceholder": "Search TMDB or local media…",
+    "noMatchesFound": "No matches found.",
+    "loadingMatches": "Loading matches…",
     "embeddedSubtitle": "Embedded",
     "externalSubtitle": "External",
     "noOtherSources": "No other sources available — using detected source.",
@@ -437,7 +468,15 @@
     "season": "Season ",
     "episodeCount": "ep",
     "queued": "Queued",
-    "translateAll": "Translate all episodes"
+    "translateAll": "Translate all episodes",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "offset": {
     "title": "Offset",

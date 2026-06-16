@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Muvaffaqiyatsiz",
     "inspectStatusCancelled": "Bekor qilindi",
     "inspectStatusRetrying": "Qayta urinilmoqda",
-    "inspectStatusWaiting": "Kutilmoqda"
+    "inspectStatusWaiting": "Kutilmoqda",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Mening hisobim",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Kutubxona yo'llarini ko'rib chiqishni cheklash uchun ishlatiladigan asosiy papkani sozlash mumkin. O'rnatilganda, ko'rib chiqish va yangi kutubxona yo'llari ushbu papka bilan cheklanadi.",
     "tipAutoClearLogs": "Yoqilganda, eski jurnallar quyidagi saqlash muddatiga ko'ra avtomatik o'chiriladi.",
     "tipDeleteLogsOlderThan": "Avtomatik tozalash faol bo'lganda, ushbu kundan eski jurnallar o'chiriladi.",
-    "tipActiveTheme": "Interfeys tomonidan ishlatiladigan faol rang mavzusini boshqaradi. Maxsus mavzular quyida yaratilishi mumkin."
+    "tipActiveTheme": "Interfeys tomonidan ishlatiladigan faol rang mavzusini boshqaradi. Maxsus mavzular quyida yaratilishi mumkin.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Foydalanuvchilar",
@@ -423,7 +441,18 @@
     "translate": "Tarjima qilish",
     "unknownSeason": "Noma'lum fasl",
     "season": "Fasl ",
-    "episodeCount": "q"
+    "episodeCount": "q",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Statistika",

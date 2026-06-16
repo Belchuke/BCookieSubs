@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Thất bại",
     "inspectStatusCancelled": "Đã hủy",
     "inspectStatusRetrying": "Đang thử lại",
-    "inspectStatusWaiting": "Đang chờ"
+    "inspectStatusWaiting": "Đang chờ",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Tài khoản của tôi",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Có thể cấu hình thư mục gốc để giới hạn việc duyệt đường dẫn thư viện. Khi được thiết lập, việc duyệt và các đường dẫn thư viện mới sẽ bị giới hạn trong thư mục này.",
     "tipAutoClearLogs": "Khi bật, các nhật ký cũ sẽ tự động bị xóa theo thời hạn lưu trữ bên dưới.",
     "tipDeleteLogsOlderThan": "Nhật ký cũ hơn số ngày này sẽ bị xóa khi tự động dọn dẹp được kích hoạt.",
-    "tipActiveTheme": "Điều khiển chủ đề màu sắc đang hoạt động của giao diện. Có thể tạo chủ đề tùy chỉnh bên dưới."
+    "tipActiveTheme": "Điều khiển chủ đề màu sắc đang hoạt động của giao diện. Có thể tạo chủ đề tùy chỉnh bên dưới.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Người dùng",
@@ -423,7 +441,18 @@
     "translate": "Dịch",
     "unknownSeason": "Mùa không xác định",
     "season": "Mùa ",
-    "episodeCount": "tập"
+    "episodeCount": "tập",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Thống kê",

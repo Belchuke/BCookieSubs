@@ -409,6 +409,12 @@ const createTables = (db: Database.Database) => {
 
     defaultLanguage TEXT NOT NULL DEFAULT 'en',
 
+    whisperModel TEXT NOT NULL DEFAULT 'large-v3-turbo',
+    whisperTimestampsLength INTEGER NOT NULL DEFAULT 80,
+    whisperUseCuda INTEGER NOT NULL DEFAULT 0,
+    whisperModelRootPath TEXT DEFAULT NULL,
+    whisperEnabled INTEGER NOT NULL DEFAULT 1,
+
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`)
@@ -422,8 +428,8 @@ const createTables = (db: Database.Database) => {
     const defaultLanguage = isSupportedLocale(rawEnvLang) ? rawEnvLang : "en"
 
     db.prepare(
-      `INSERT INTO config (id, defaultChunkSize, theMovieDbActive, showPosters, rootLibraryPath, scanLibraryPaths, defaultLanguage)
-       VALUES (1, 12, ?, ?, ?, ?, ?)
+      `INSERT INTO config (id, defaultChunkSize, theMovieDbActive, showPosters, rootLibraryPath, scanLibraryPaths, defaultLanguage, whisperModel, whisperTimestampsLength)
+       VALUES (1, 12, ?, ?, ?, ?, ?, 'large-v3-turbo', 80)
        ON CONFLICT(id) DO NOTHING`,
     ).run(theMovieDbActiveDefault, showPostersDefault, rootLibraryPathDefault, scanLibraryPathsDefault, defaultLanguage)
 
@@ -582,12 +588,24 @@ const createTables = (db: Database.Database) => {
     orderNumber INTEGER NOT NULL DEFAULT 0,
     hide INTEGER NOT NULL DEFAULT 0,
 
-    source TEXT DEFAULT NULL,
+    source TEXT DEFAULT NULL
+      CHECK (source IN (NULL, 'upload', 'library', 'whisper')),
     sourcePath TEXT DEFAULT NULL,
     mediaPath TEXT DEFAULT NULL,
 
     status TEXT NOT NULL DEFAULT 'queued'
       CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled', 'paused')),
+
+    whisperTranscriptionStatus TEXT DEFAULT NULL
+      CHECK (whisperTranscriptionStatus IN (NULL, 'queued_for_transcription', 'transcribing', 'transcription_failed', 'transcription_completed', 'queued_for_translation', 'translating')),
+    whisperModel TEXT DEFAULT NULL,
+    whisperTimestampsLength INTEGER DEFAULT NULL,
+    whisperUseCuda INTEGER DEFAULT NULL,
+    season INTEGER DEFAULT NULL,
+    episode INTEGER DEFAULT NULL,
+    whisperProgress INTEGER NOT NULL DEFAULT 0,
+    whisperPositionMs INTEGER NOT NULL DEFAULT 0,
+    whisperDurationMs INTEGER NOT NULL DEFAULT 0,
 
     finishedAt DATETIME DEFAULT NULL,
     cancelledAt DATETIME DEFAULT NULL,
@@ -768,13 +786,7 @@ const validateDb = (db: Database.Database) => {
   }
 }
 
-const runMigrations = (db: Database.Database): void => {
-  try {
-    db.exec(`ALTER TABLE config ADD COLUMN setupCompleted INTEGER NOT NULL DEFAULT 0`)
-  } catch {
-    // column already exists
-  }
-}
+const runMigrations = (db: Database.Database): void => {}
 
 export function getDb(): Database.Database {
   const dbExists = fs.existsSync(dbName)

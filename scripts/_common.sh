@@ -55,6 +55,14 @@ ensure_env_file() {
     mv "$tmp" "$env_file"
     ok "Generated random AES_KEY in .env"
   fi
+
+  # Ensure Whisper environment placeholders exist so the file is complete.
+  if ! grep -Eq '^WHISPER_MODEL_ROOT_PATH=' "$env_file"; then
+    printf '\n# Whisper model cache directory.\nWHISPER_MODEL_ROOT_PATH=\n' >> "$env_file"
+  fi
+  if ! grep -Eq '^WHISPER_GPU_AVAILABLE=' "$env_file"; then
+    printf '\n# Set to 1 to allow CUDA for Whisper (added by setup-with-gpu.sh).\nWHISPER_GPU_AVAILABLE=\n' >> "$env_file"
+  fi
 }
 
 # Print a "what's next" footer.

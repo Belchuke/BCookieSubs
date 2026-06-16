@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express"
 import { validateSession } from "../repositories/sessionRepository"
 import { DBUser, DBConfig } from "../types/dbTypes"
 import { getUserPermissions } from "../services/permissionService"
+import { getConfig } from "../repositories/configRepository"
 import { PermissionKey } from "../constants/permissions"
 import { resolveLocale, translate, SUPPORTED_LOCALES, LOCALE_LABELS, LOCALE_FLAGS, SupportedLocale } from "../i18n"
 
@@ -40,7 +41,7 @@ export const loadSession = (req: Request, res: Response, next: NextFunction): vo
   }
 
   try {
-    res.locals.appConfig = db.prepare(`SELECT * FROM config LIMIT 1`).get() as DBConfig | undefined
+    res.locals.appConfig = getConfig(db)
   } catch {
   }
 

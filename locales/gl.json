@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Fallado",
     "inspectStatusCancelled": "Cancelado",
     "inspectStatusRetrying": "Reintentando",
-    "inspectStatusWaiting": "Agardando"
+    "inspectStatusWaiting": "Agardando",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "A miña conta",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Pode configurar o cartafol raíz usado para restrinxir a navegación de rutas de biblioteca.",
     "tipAutoClearLogs": "Cando está activado, os rexistros antigos elimínanse automaticamente segundo o período de retención.",
     "tipDeleteLogsOlderThan": "Os rexistros máis antigos deste número de días elimínanse cando o borrado automático está activo.",
-    "tipActiveTheme": "Controla o tema de cor activo usado pola interface. Os temas personalizados pódense crear a continuación."
+    "tipActiveTheme": "Controla o tema de cor activo usado pola interface. Os temas personalizados pódense crear a continuación.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Usuarios",
@@ -423,7 +441,18 @@
     "translate": "Traducir",
     "unknownSeason": "Tempada descoñecida",
     "season": "Tempada ",
-    "episodeCount": "ep"
+    "episodeCount": "ep",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Estatísticas",

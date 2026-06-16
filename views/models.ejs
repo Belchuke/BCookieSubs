@@ -32,9 +32,9 @@
     </div>
 
     <% if (ollamaRunning === false) { %>
-      <div class="alert alert-error" style="margin-bottom:1.5rem"><%= __('models.ollamaNotRunning') %></div>
+      <div class="alert alert-error mdl-alert-mb"><%= __('models.ollamaNotRunning') %></div>
     <% } else if (ollamaError) { %>
-      <div class="alert alert-warning" style="margin-bottom:1.5rem"><%= ollamaError %></div>
+      <div class="alert alert-warning mdl-alert-mb"><%= ollamaError %></div>
     <% } %>
 
     
@@ -80,9 +80,9 @@
                   </td>
                   <td>
                     <% if (roleNames.length === 0) { %><span class="text-dim">—</span><% } %>
-                    <% if (roleNames.includes('translation')) { %><span class="badge badge-info" style="margin-right:.25rem"><%= __('models.roleTranslation') %></span><% } %>
-                    <% if (roleNames.includes('judge')) { %><span class="badge badge-warning" style="margin-right:.25rem"><%= __('models.roleJudge') %></span><% } %>
-                    <% if (roleNames.includes('fallbackJudge')) { %><span class="badge badge-warning" style="margin-right:.25rem;opacity:.7"><%= __('models.roleFallbackJudge') %></span><% } %>
+                    <% if (roleNames.includes('translation')) { %><span class="badge badge-info mdl-mr-qtr"><%= __('models.roleTranslation') %></span><% } %>
+                    <% if (roleNames.includes('judge')) { %><span class="badge badge-warning mdl-mr-qtr"><%= __('models.roleJudge') %></span><% } %>
+                    <% if (roleNames.includes('fallbackJudge')) { %><span class="badge badge-warning mdl-mr-qtr-dim"><%= __('models.roleFallbackJudge') %></span><% } %>
                     <% if (roleNames.includes('nameFormatter')) { %><span class="badge badge-neutral"><%= __('models.roleNameFormatter') %></span><% } %>
                   </td>
                   <td>
@@ -107,7 +107,7 @@
                     </button>
                     <% } %>
                     <% if (can('canRemoveAndDeleteModels')) { %>
-                    <form method="POST" action="/models/delete/<%= m.id %>" style="display:inline"
+                    <form method="POST" action="/models/delete/<%= m.id %>" class="mdl-inline"
                           onsubmit="return confirm('<%= __('models.removeModel') %><%= m.name.replace(/'/g, '\\\'') %>?')">
                       <button type="submit" class="btn btn-sm btn-danger"><%= __('common.remove') %></button>
                     </form>
@@ -128,18 +128,18 @@
               <div class="model-card-header">
                 <div>
                   <strong><%= m.name %></strong>
-                  <span class="badge <%= m.active ? 'badge-success' : 'badge-neutral' %>" style="margin-left:.4rem">
+                  <span class="badge <%= m.active ? 'badge-success' : 'badge-neutral' %> mdl-ml-sm">
                     <%= m.active ? __('status.active') : __('status.inactive') %>
                   </span>
                 </div>
-                <span class="text-dim" style="font-size:.8rem"><%= provider %></span>
+                <span class="text-dim mdl-fs-80"><%= provider %></span>
               </div>
               <div class="model-card-name text-dim"><code><%= m.modelName %></code><% if (m.parameterSize) { %> · <%= m.parameterSize %><% } %></div>
-              <div class="model-card-roles" style="margin:1rem 0;display:flex;flex-wrap:wrap;gap:.25rem">
-                <% if (roleNames.length === 0) { %><span class="text-dim" style="font-size:.82rem"><%= __('common.noRole') %></span><% } %>
+              <div class="model-card-roles mdl-card-roles">
+                <% if (roleNames.length === 0) { %><span class="text-dim mdl-fs-82"><%= __('common.noRole') %></span><% } %>
                 <% if (roleNames.includes('translation')) { %><span class="badge badge-info"><%= __('models.roleTranslation') %></span><% } %>
                 <% if (roleNames.includes('judge')) { %><span class="badge badge-warning"><%= __('models.roleJudge') %></span><% } %>
-                <% if (roleNames.includes('fallbackJudge')) { %><span class="badge badge-warning" style="opacity:.7"><%= __('models.roleFallbackJudge') %></span><% } %>
+                <% if (roleNames.includes('fallbackJudge')) { %><span class="badge badge-warning mdl-dim-soft"><%= __('models.roleFallbackJudge') %></span><% } %>
                 <% if (roleNames.includes('nameFormatter')) { %><span class="badge badge-neutral"><%= __('models.roleNameFormatter') %></span><% } %>
               </div>
               <% if (can('canEditModels') || can('canManageModelRoles') || can('canRemoveAndDeleteModels')) { %>
@@ -159,7 +159,7 @@
                 </button>
                 <% } %>
                 <% if (can('canRemoveAndDeleteModels')) { %>
-                <form method="POST" action="/models/delete/<%= m.id %>" style="display:inline"
+                <form method="POST" action="/models/delete/<%= m.id %>" class="mdl-inline"
                       onsubmit="return confirm('<%= __('models.removeModel') %><%= m.name.replace(/'/g, '\\\'') %>?')">
                   <button type="submit" class="btn btn-sm btn-danger"><%= __('common.remove') %></button>
                 </form>
@@ -173,7 +173,7 @@
     </div>
 
     <% if (ollamaModels.length > 0) { %>
-    <div class="card" style="margin-top:1.5rem">
+    <div class="card mdl-card-mt">
       <div class="card-header">
         <h2><%= __('models.ollamaAvailable') %></h2>
         <small class="text-dim"><%= ollamaModels.length %> <%= __('models.modelCountFound') %></small>
@@ -181,7 +181,7 @@
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th><%= __('models.colModel') %></th><th><%= __('models.colSize') %></th><th><%= __('models.colParams') %></th><th><%= __('models.colUpdated') %></th><% if (can('canAddOrInstallAModel') || can('canRemoveAndDeleteModels')) { %><th style="text-align: center;"><%= __('common.actions') %></th><% } %></tr>
+            <tr><th><%= __('models.colModel') %></th><th><%= __('models.colSize') %></th><th><%= __('models.colParams') %></th><th><%= __('models.colUpdated') %></th><% if (can('canAddOrInstallAModel') || can('canRemoveAndDeleteModels')) { %><th class="mdl-th-actions"><%= __('common.actions') %></th><% } %></tr>
           </thead>
           <tbody>
             <% ollamaModels.forEach(function(m) { %>
@@ -192,11 +192,11 @@
                 <td class="text-dim"><%= m.parameterSize || '—' %></td>
                 <td class="text-dim"><%= m.modifiedAt %></td>
                 <% if (can('canAddOrInstallAModel') || can('canRemoveAndDeleteModels')) { %>
-                <td style="text-align: center; padding-right: 1rem;">
+                <td class="mdl-td-actions">
                   <% if (alreadyAdded) { %>
                     <span class="badge badge-success">Added</span>
                   <% } else { %>
-                    <div style="display:flex;gap:.35rem;justify-content:center;flex-wrap:wrap">
+                    <div class="mdl-actions-row">
                       <% if (can('canAddOrInstallAModel')) { %>
                       <button class="btn btn-sm btn-primary"
                               data-ollama-model="<%= m.model %>">
@@ -204,8 +204,8 @@
                       </button>
                       <% } %>
                       <% if (can('canRemoveAndDeleteModels')) { %>
-                      <form method="POST" action="/models/remove-ollama" style="display:inline"
-                            class="ollama-remove-form">
+                      <form method="POST" action="/models/remove-ollama"
+                            class="ollama-remove-form mdl-inline">
                         <input type="hidden" name="modelName" value="<%= m.model %>">
                         <button type="submit" class="btn btn-sm btn-danger"
                                 data-model-name="<%= m.model %>"><%= __('common.remove') %></button>
@@ -224,7 +224,7 @@
     <% } %>
 
     <% if (recommendedModels && recommendedModels.length > 0) { %>
-    <div class="card" style="margin-top:1.5rem">
+    <div class="card mdl-card-mt">
       <div class="card-header">
         <h2><%= __('models.recommendedTitle') %></h2>
         <small class="text-dim"><%= recommendedModels.length %> <%= __('common.modelCount') %></small>
@@ -237,7 +237,7 @@
               <th><%= __('common.provider') %></th>
               <th><%= __('models.rolesHeader') %></th>
               <th><%= __('models.colScore') %></th>
-              <% if (can('canAddOrInstallAModel')) { %><th style="text-align:center"><%= __('common.actions') %></th><% } %>
+              <% if (can('canAddOrInstallAModel')) { %><th class="mdl-tac"><%= __('common.actions') %></th><% } %>
             </tr>
           </thead>
           <tbody>
@@ -246,7 +246,7 @@
                 <td>
                   <code><%= r.name %></code>
                   <% if (r.requireOllamaSubscription) { %>
-                    <span class="badge badge-warning" style="margin-left:.35rem"><%= __('setup.step4.subscription') %></span>
+                    <span class="badge badge-warning mdl-ml-35"><%= __('setup.step4.subscription') %></span>
                   <% } %>
                 </td>
                 <td>
@@ -256,10 +256,10 @@
                     <span class="text-dim">Ollama</span>
                   <% } %>
                 </td>
-                <td class="text-dim" style="font-size:.82rem"><%= r.roles || '—' %></td>
+                <td class="text-dim mdl-fs-82"><%= r.roles || '—' %></td>
                 <td><span class="badge badge-neutral"><%= r.score %></span></td>
                 <% if (can('canAddOrInstallAModel')) { %>
-                <td style="text-align:center">
+                <td class="mdl-tac">
                   <button class="btn btn-sm btn-primary"
                           data-recommended-model="<%- JSON.stringify({id:r.id,name:r.name,provider:r.provider,baseUrl:r.baseUrl,roles:r.roles}).replace(/"/g,'&quot;') %>">
                     + Add
@@ -311,7 +311,7 @@
       </div>
 
       <div class="field" id="add-apikey-hint-field" style="display:none">
-        <div class="alert alert-warning" style="margin:0;font-size:.82em" id="add-apikey-hint"></div>
+        <div class="alert alert-warning mdl-alert-inline" id="add-apikey-hint"></div>
       </div>
 
       <div class="field">
@@ -321,7 +321,7 @@
 
       <div class="field">
         <label><%= __('models.roles') %></label>
-        <div class="checkbox-group" style="max-height:none">
+        <div class="checkbox-group mdl-maxh-none">
           <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="translation" checked> <%= __('models.roleTranslation') %></label>
           <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="judge"> <%= __('models.roleJudge') %></label>
           <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="fallbackJudge"> <%= __('models.roleFallbackJudge') %></label>
@@ -342,13 +342,13 @@
 
       
       <div id="pull-progress-wrap" style="display:none;padding:.75rem 0">
-        <div style="font-size:.85rem;margin-bottom:.4rem">
+        <div class="mdl-pull-status">
           <strong id="pull-status-text">Installing…</strong>
         </div>
-        <div style="background:var(--surface-2);border-radius:var(--radius-sm);height:10px;overflow:hidden;border:1px solid var(--border)">
+        <div class="mdl-pull-track">
           <div id="pull-progress-bar" style="height:100%;width:0%;background:var(--accent);transition:width .3s ease"></div>
         </div>
-        <small id="pull-progress-label" class="text-dim" style="margin-top:.25rem;display:block"></small>
+        <small id="pull-progress-label" class="text-dim mdl-pull-label"></small>
       </div>
 
       <div class="modal-footer">
@@ -384,7 +384,7 @@
       </div>
 
       <div class="field" id="edit-apikey-hint-field" style="display:none">
-        <div class="alert alert-warning" style="margin:0;font-size:.82em" id="edit-apikey-hint"></div>
+        <div class="alert alert-warning mdl-alert-inline" id="edit-apikey-hint"></div>
       </div>
 
       <div class="field">
@@ -416,12 +416,12 @@
       <h2><%= __('models.manageRoles') %> — <span id="role-modal-name"></span></h2>
       <button class="btn btn-icon" onclick="closeModal('role-modal')">✕</button>
     </div>
-    <div id="role-modal-body" style="padding:.25rem 0 .5rem"></div>
+    <div id="role-modal-body" class="mdl-role-body"></div>
   </div>
 </div>
 <% } %>
 
-<div id="ollama-models-data" style="display:none" data-models="<%= JSON.stringify(ollamaModels.map(function(m){ return m.model })) %>"></div>
+<div id="ollama-models-data" class="mdl-hidden" data-models="<%= JSON.stringify(ollamaModels.map(function(m){ return m.model })) %>"></div>
 
 <script src="/app.js"></script>
 <% if (can('canAddOrInstallAModel') || can('canEditModels') || can('canManageModelRoles') || can('canRemoveAndDeleteModels')) { %>

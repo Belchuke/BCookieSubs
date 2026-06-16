@@ -53,17 +53,17 @@
                 <span class="badge badge-success">Added</span>
               </div>
             <% } else { %>
-              <form method="POST" action="/setup/5/add" class="model-row" style="flex-wrap:wrap;gap:.5rem">
+              <form method="POST" action="/setup/5/add" class="model-row s5-model-form">
                 <input type="hidden" name="provider" value="ollama">
-                <code class="model-name" style="flex:1"><%= m.model %></code>
-                <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
-                  <label class="checkbox-label" style="font-size:.8rem">
+                <code class="model-name s5-model-name"><%= m.model %></code>
+                <div class="s5-roles-row">
+                  <label class="checkbox-label s5-check-label">
                     <input type="checkbox" name="roles" value="translation" checked> Translation
                   </label>
-                  <label class="checkbox-label" style="font-size:.8rem">
+                  <label class="checkbox-label s5-check-label">
                     <input type="checkbox" name="roles" value="judge"> Judge
                   </label>
-                  <label class="checkbox-label" style="font-size:.8rem">
+                  <label class="checkbox-label s5-check-label">
                     <input type="checkbox" name="roles" value="nameFormatter"> Name Fmt
                   </label>
                   <input type="hidden" name="modelName" value="<%= m.model %>">
@@ -86,12 +86,12 @@
       <% } else { %>
         <div class="model-list">
           <% dbModels.forEach(function(m) { %>
-            <div class="model-row" style="flex-wrap:wrap;gap:.5rem;align-items:flex-start">
-              <div class="model-info" style="min-width:120px;flex:1">
+            <div class="model-row s5-config-row">
+              <div class="model-info s5-model-info">
                 <span class="model-display-name"><%= m.name %></span>
                 <code class="model-name text-dim"><%= m.modelName %></code>
               </div>
-              <div style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">
+              <div class="s5-role-badges">
                 <% var roleNames = (m.roles || []).map(function(r){ return r.role }) %>
                 <%
                   var roleDefs = [
@@ -102,11 +102,10 @@
                 %>
                 <% roleDefs.forEach(function(rd) { %>
                   <% var hasRole = roleNames.includes(rd.key) %>
-                  <form method="POST" action="/setup/5/role/<%= m.id %>" style="display:inline">
+                  <form method="POST" action="/setup/5/role/<%= m.id %>" class="s5-inline">
                     <input type="hidden" name="role" value="<%= rd.key %>">
                     <input type="hidden" name="action" value="<%= hasRole ? 'remove' : 'add' %>">
-                    <button type="submit" class="btn btn-sm <%= hasRole ? 'btn-primary' : 'btn-secondary' %>"
-                            style="font-size:.75rem;padding:.2rem .5rem">
+                    <button type="submit" class="btn btn-sm <%= hasRole ? 'btn-primary' : 'btn-secondary' %> s5-role-btn">
                       <% if (hasRole) { %>✓ <% } %><%= rd.label %>
                     </button>
                   </form>
@@ -119,11 +118,11 @@
     </div>
   </div>
 
-  <div class="card" style="margin-top:1.5rem">
+  <div class="card s5-card-mt">
     <div class="card-header"><h2><%= __('setup.step5.manualAddTitle') %></h2></div>
-    <form method="POST" action="/setup/5/add" style="padding:.75rem 1rem">
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.75rem;align-items:end">
-        <div class="field" style="margin:0">
+    <form method="POST" action="/setup/5/add" class="s5-add-form">
+      <div class="s5-add-grid">
+        <div class="field s5-field">
           <label><%= __('common.provider') %></label>
           <select name="provider">
             <option value="ollama">Ollama (local)</option>
@@ -133,22 +132,22 @@
             <option value="custom">Custom</option>
           </select>
         </div>
-        <div class="field" style="margin:0">
+        <div class="field s5-field">
           <label><%= __('setup.step5.modelName') %></label>
           <input type="text" name="modelName" placeholder="e.g. llama3.1:8b" required>
         </div>
-        <div class="field" style="margin:0">
+        <div class="field s5-field">
           <label><%= __('setup.step5.displayName') %> <span class="hint"><%= __('setup.step5.displayNameHint') %></span></label>
           <input type="text" name="name" placeholder="My Model">
         </div>
       </div>
-      <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-top:.75rem">
-        <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-          <label class="checkbox-label" style="font-size:.85rem"><input type="checkbox" name="roles" value="translation" checked> Translation</label>
-          <label class="checkbox-label" style="font-size:.85rem"><input type="checkbox" name="roles" value="judge"> Judge</label>
-          <label class="checkbox-label" style="font-size:.85rem"><input type="checkbox" name="roles" value="nameFormatter"> Name Formatter</label>
+      <div class="s5-roles-row-mt">
+        <div class="s5-roles-checks">
+          <label class="checkbox-label s5-check-label-lg"><input type="checkbox" name="roles" value="translation" checked> Translation</label>
+          <label class="checkbox-label s5-check-label-lg"><input type="checkbox" name="roles" value="judge"> Judge</label>
+          <label class="checkbox-label s5-check-label-lg"><input type="checkbox" name="roles" value="nameFormatter"> Name Formatter</label>
         </div>
-        <button type="submit" class="btn btn-primary" style="margin-left:auto">+ Add</button>
+        <button type="submit" class="btn btn-primary s5-add-btn">+ Add</button>
       </div>
     </form>
   </div>

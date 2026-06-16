@@ -46,6 +46,18 @@ export const getMediaItems = (db: Database.Database): DBMediaItem[] => {
   return db.prepare(`SELECT * FROM mediaItem ORDER BY title ASC`).all() as DBMediaItem[]
 }
 
+export const getMediaItemByTmdbId = (
+  db: Database.Database,
+  tmdbId: number | string,
+  type: "movie" | "series",
+): DBMediaItem | null => {
+  return (
+    (db
+      .prepare(`SELECT * FROM mediaItem WHERE theMovieDbId = ? AND type = ?`)
+      .get(String(tmdbId), type) as DBMediaItem | undefined) ?? null
+  )
+}
+
 export const getMediaItemByKeys = (
   db: Database.Database,
   title: string,

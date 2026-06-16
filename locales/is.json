@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Mistókst",
     "inspectStatusCancelled": "Hætt við",
     "inspectStatusRetrying": "Reynir aftur",
-    "inspectStatusWaiting": "Bíður"
+    "inspectStatusWaiting": "Bíður",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Minn reikningur",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Getur stillt rótarmöppuna sem notuð er til að takmarka vafur safnstigar.",
     "tipAutoClearLogs": "Þegar virkjað, eru gamlir kladdar sjálfkrafa eyddir í samræmi við varðveislutímabilið.",
     "tipDeleteLogsOlderThan": "Kladdar eldri en þessum fjölda daga er eytt þegar sjálfvirk hreinsun er virk.",
-    "tipActiveTheme": "Stjórnar virka litaþemanu sem viðmótið notar. Sérsniðin þema er hægt að búa til hér að neðan."
+    "tipActiveTheme": "Stjórnar virka litaþemanu sem viðmótið notar. Sérsniðin þema er hægt að búa til hér að neðan.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Notendur",
@@ -423,7 +441,18 @@
     "translate": "Þýða",
     "unknownSeason": "Óþekkt þáttaröð",
     "season": "Þáttaröð ",
-    "episodeCount": "þá"
+    "episodeCount": "þá",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Tölfræði",

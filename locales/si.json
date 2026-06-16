@@ -134,7 +134,13 @@
     "inspectStatusFailed": "අසාර්ථකයි",
     "inspectStatusCancelled": "අවලංගු කරන ලදි",
     "inspectStatusRetrying": "නැවත උත්සාහ කෙරෙමින්",
-    "inspectStatusWaiting": "රැඳී සිටිමින්"
+    "inspectStatusWaiting": "රැඳී සිටිමින්",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "මගේ ගිණුම",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "පුස්තකාල ගමන් මග දිරිගැනීම සීමා කිරීමට භාවිතා කළ මූල ෆෝල්ඩරය වින්‍යාස කළ හැකිය.",
     "tipAutoClearLogs": "සක්‍රිය වූ විට, පහත ධාරණ කාලය අනුව පැරණි ලොග ස්වයංක්‍රීයව මකා දැමේ.",
     "tipDeleteLogsOlderThan": "ස්වයංක්‍රීය ඉවත්කිරීම ක්‍රියාකාරී වූ විට මෙම දිනවලට වඩා පැරණි ලොග මකා දැමේ.",
-    "tipActiveTheme": "අතුරුමුහුණත භාවිතා කරන ක්‍රියාකාරී වර්ණ තේමාව පාලනය කරයි. අභිරුචි තේමා පහතින් සාදා ගත හැකිය."
+    "tipActiveTheme": "අතුරුමුහුණත භාවිතා කරන ක්‍රියාකාරී වර්ණ තේමාව පාලනය කරයි. අභිරුචි තේමා පහතින් සාදා ගත හැකිය.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "පරිශීලකයන්",
@@ -423,7 +441,18 @@
     "translate": "පරිවර්තනය කරන්න",
     "unknownSeason": "නොදන්නා සීසන්",
     "season": "සීසන් ",
-    "episodeCount": "ep"
+    "episodeCount": "ep",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "සංඛ්‍යාලේඛන",

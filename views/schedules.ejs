@@ -35,25 +35,25 @@
       <% if (schedules.length === 0) { %>
         <p class="empty-state"><%= __('schedules.noSchedules') %></p>
       <% } else { %>
-        <div style="display:flex;flex-direction:column;gap:.75rem">
+        <div class="sch-list">
           <% var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] %>
           <% schedules.forEach(function(s) { %>
-            <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.75rem 1rem">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+            <div class="sch-item">
+              <div class="sch-item-head">
                 <strong><%= s.taskName %></strong>
-                <div style="display:flex;gap:.4rem;align-items:center">
+                <div class="sch-item-actions">
                   <span class="badge <%= s.enabled ? 'badge-success' : 'badge-neutral' %>"><%= s.enabled ? __('common.on') : __('common.off') %></span>
                   <% if (can('canManageSchedules')) { %>
                   <button class="btn btn-sm btn-secondary sched-edit-btn"
                           data-sched="<%- JSON.stringify(s).replace(/"/g, '&quot;') %>"><%= __('schedules.edit') %></button>
-                  <form method="POST" action="/schedules/delete/<%= s.id %>" style="display:inline"
-                        class="sched-delete-form">
+                  <form method="POST" action="/schedules/delete/<%= s.id %>"
+                        class="sched-delete-form sch-inline">
                     <button type="submit" class="btn btn-sm btn-danger"><%= __('schedules.delete') %></button>
                   </form>
                   <% } %>
                 </div>
               </div>
-              <div class="text-dim" style="font-size:.82rem">
+              <div class="text-dim sch-item-meta">
                 Every <%= s.repeatInterval %> <%= s.repeatUnit %><%= s.repeatInterval > 1 ? 's' : '' %>
                 <% if (s.repeatUnit === 'week') { %> on <%= days[s.dayOfTheWeek] %><% } %>,
                 starting <%= String(s.startTimeHour).padStart(2,'0') %>:<%= String(s.startTimeMinute).padStart(2,'0') %>

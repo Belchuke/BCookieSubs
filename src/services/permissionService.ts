@@ -2,64 +2,41 @@ import Database from "better-sqlite3"
 import { Request, Response, NextFunction } from "express"
 import { DBRole, DBUser } from "../types/dbTypes"
 import { PermissionKey } from "../constants/permissions"
+import {
+  selectUserHasPermission,
+  selectUserPermissionKeys,
+  selectUserRoles,
+  selectUserHighestRole,
+  selectRoleLevel,
+} from "../repositories/permissionRepository"
 
 export const userHasPermission = (
   db: Database.Database,
   userId: number,
   permission: string,
 ): { hasPermission: boolean; user: DBUser | null } => {
-  const row = db.prepare(`
-    SELECT 1
-    FROM userRole ur
-    JOIN rolePermission rp ON rp.roleId = ur.roleId
-    JOIN permission p ON p.id = rp.permissionId
-    WHERE ur.userId = ? AND p.key = ?
-    LIMIT 1
-  `).get(userId, permission)
-  return { hasPermission: !!row, user: null }
+  return { hasPermission: selectUserHasPermission(db, userId, permission), user: null }
 }
 
 export const getUserPermissions = (
   db: Database.Database,
   userId: number,
 ): Set<string> => {
-  const rows = db.prepare(`
-    SELECT DISTINCT p.key
-    FROM userRole ur
-    JOIN rolePermission rp ON rp.roleId = ur.roleId
-    JOIN permission p ON p.id = rp.permissionId
-    WHERE ur.userId = ?
-  `).all(userId) as { key: string }[]
-  return new Set(rows.map((r) => r.key))
+  return new Set(selectUserPermissionKeys(db, userId))
 }
 
 export const getUserRoles = (
   db: Database.Database,
   userId: number,
 ): DBRole[] => {
-  return db.prepare(`
-    SELECT r.*
-    FROM userRole ur
-    JOIN role r ON r.id = ur.roleId
-    WHERE ur.userId = ?
-    ORDER BY r.level DESC
-  `).all(userId) as DBRole[]
+  return selectUserRoles(db, userId)
 }
 
 export const getUserHighestRole = (
   db: Database.Database,
   userId: number,
 ): DBRole | null => {
-  return (
-    db.prepare(`
-      SELECT r.*
-      FROM userRole ur
-      JOIN role r ON r.id = ur.roleId
-      WHERE ur.userId = ?
-      ORDER BY r.level DESC
-      LIMIT 1
-    `).get(userId) as DBRole | null
-  )
+  return selectUserHighestRole(db, userId)
 }
 
 export const getUserHighestRoleLevel = (
@@ -76,9 +53,9 @@ export const canAssignRole = (
   roleId: number,
 ): boolean => {
   const actorLevel = getUserHighestRoleLevel(db, actorUserId)
-  const role = db.prepare(`SELECT level FROM role WHERE id = ?`).get(roleId) as { level: number } | null
-  if (!role) return false
-  return actorLevel >= role.level
+  const roleLevel = selectRoleLevel(db, roleId)
+  if (roleLevel === null) return false
+  return actorLevel >= roleLevel
 }
 
 export const canManageTargetUser = (

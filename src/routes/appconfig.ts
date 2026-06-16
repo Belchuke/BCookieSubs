@@ -1,12 +1,14 @@
 import { Router } from "express"
 import Database from "better-sqlite3"
 import multer from "multer"
-import { getConfig, updateConfig, updateRootLibraryPath, updateDefaultLanguage } from "../repositories/configRepository"
+import { getConfig, updateConfig, updateWhisperConfig, updateRootLibraryPath, updateDefaultLanguage, isWhisperGpuAvailable } from "../repositories/configRepository"
 import { isSupportedLocale } from "../i18n"
 import { addConfigTranslationLanguage, getConfigTranslationLanguages, getLanguages, removeConfigTranslationLanguage, reorderConfigTranslationLanguages } from "../repositories/languageRepository"
 import { setOrUpdateSecret } from "../repositories/movieDbRepository"
 import { getListOfSecretsToAdd, getSecrets } from "../repositories/secretRepository"
+import { getWhisperModels } from "../services/whisperService"
 import { createTheme, deleteTheme, getActiveTheme, getThemes, setSelectedTheme } from "../repositories/themeRepository"
+import { updateUserSelectedTheme } from "../repositories/userRepository"
 import { requireAuth } from "../middleware/auth"
 import { requirePermission } from "../services/permissionService"
 
@@ -43,6 +45,8 @@ export function appconfigRouter(db: Database.Database) {
       themes,
       supportedLocales: res.locals.supportedLocales,
       localeLabels: res.locals.localeLabels,
+      whisperModels: getWhisperModels(),
+      whisperGpuAvailable: isWhisperGpuAvailable(),
     })
   })
 
@@ -64,6 +68,10 @@ export function appconfigRouter(db: Database.Database) {
       rootLibraryPath,
     } = req.body as Record<string, string>
 
+    // Preserve the Whisper settings (they live in a separate form posted to
+    // /config/whisper) so saving the general settings doesn't reset them.
+    const cur = getConfig(db)
+
     const result = updateConfig(
       db,
       user,
@@ -78,6 +86,11 @@ export function appconfigRouter(db: Database.Database) {
       clearLogs === "1",
       parseInt(clearLogsOlderThanDays) || 30,
       parseInt(sessionTimeoutMinutes) || 120,
+      cur.whisperModel,
+      cur.whisperTimestampsLength,
+      cur.whisperUseCuda === 1,
+      cur.whisperModelRootPath,
+      cur.whisperEnabled === 1,
     )
 
     if (!result.success) {
@@ -89,6 +102,34 @@ export function appconfigRouter(db: Database.Database) {
     }
 
     res.redirect("/config?toast=success&msg=" + encodeURIComponent("Configuration saved"))
+  })
+
+  // Whisper settings live in their own form so they can be saved independently
+  // without clobbering the general configuration (and vice-versa).
+  router.post("/whisper", requireAuth, requirePermission("canManageSettings"), upload.none(), (req, res) => {
+    const user = res.locals.user!
+    const { whisperModel, whisperTimestampsLength, whisperUseCuda, whisperModelRootPath, whisperEnabled } =
+      req.body as Record<string, string>
+
+    const parsedTimestamps = parseInt(whisperTimestampsLength)
+    const validTimestamps =
+      isNaN(parsedTimestamps) || parsedTimestamps < 1 || parsedTimestamps > 500 ? 80 : parsedTimestamps
+    const requestedCuda = isWhisperGpuAvailable() && whisperUseCuda === "1"
+
+    const result = updateWhisperConfig(
+      db,
+      user,
+      whisperModel || "large-v3-turbo",
+      validTimestamps,
+      requestedCuda,
+      whisperModelRootPath?.trim() || null,
+      whisperEnabled === "1",
+    )
+
+    if (!result.success) {
+      return res.redirect("/config?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed to save Whisper settings"))
+    }
+    res.redirect("/config?toast=success&msg=" + encodeURIComponent("Whisper settings saved"))
   })
 
   router.post("/rootpath", requireAuth, requirePermission("canManageSettings"), upload.none(), (req, res) => {
@@ -163,6 +204,9 @@ export function appconfigRouter(db: Database.Database) {
     if (!result.success) {
       return res.redirect("/config?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed to set theme"))
     }
+    // Also apply it as the logged-in user's personal theme — otherwise the user's
+    // own selectedThemeId (which takes precedence) would hide the change for them.
+    updateUserSelectedTheme(db, user.id, parseInt(themeId))
     res.redirect("/config?toast=success&msg=" + encodeURIComponent("Theme updated"))
   })
 

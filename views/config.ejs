@@ -28,7 +28,7 @@
 
     <div class="config-layout">
 
-      <div style="display:flex;flex-direction:column;gap:1.5rem">
+      <div class="cfg-col-gap-lg">
 
 
         <div class="card">
@@ -73,10 +73,10 @@
             <% if (config.scanLibraryPaths && can('canManageSettings')) { %>
             <div class="field">
               <label for="rootLibraryPath"><%= __('config.rootLibraryFolder') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipRootLibraryFolder') %>"></i></label>
-              <div style="display:flex;gap:.4rem">
+              <div class="cfg-flex-gap-sm">
                 <input type="text" id="rootLibraryPath" name="rootLibraryPath" value="<%= config.rootLibraryPath || '' %>"
-                       placeholder="e.g. /mnt/media" style="flex:1">
-                <button type="button" class="btn btn-secondary" style="flex-shrink:0"
+                       placeholder="e.g. /mnt/media" class="cfg-flex-1">
+                <button type="button" class="btn btn-secondary cfg-flex-shrink-0"
                         onclick="openConfigDirBrowser()"><%= __('config.browse') %></button>
               </div>
               <div id="config-path-browser-anchor"></div>
@@ -91,15 +91,81 @@
               <label for="clearLogsOlderThanDays"><%= __('config.deleteLogsOlderThan') %> <span class="hint"><%= __('config.daysHint') %></span> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipDeleteLogsOlderThan') %>"></i></label>
               <input type="number" id="clearLogsOlderThanDays" name="clearLogsOlderThanDays"value="<%= config.clearLogsOlderThanDays %>" min="1" required>
             </div>
-            <button type="submit" class="btn btn-primary" style="margin-top:.25rem; float: right;"><%= __('config.saveConfiguration') %></button>
+            <button type="submit" class="btn btn-primary cfg-save-btn"><%= __('config.saveConfiguration') %></button>
           </form>
         </div>
 
+        <% if (can('canManageSettings')) { %>
+        <div class="card">
+          <div class="card-header">
+            <h2><%= __('config.theme') %></h2>
+          </div>
+
+
+          <form method="POST" action="/config/theme/select" class="cfg-flex-end-mb">
+            <div class="field cfg-field-flex-mb0">
+              <label for="themeId"><%= __('config.activeTheme') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipActiveTheme') %>"></i></label>
+              <select id="themeId" name="themeId">
+                <% themes.forEach(function(t) { %>
+                  <option value="<%= t.id %>" <%= t.id === configTheme.id ? 'selected' : '' %>><%= t.name %><%= !t.isPublic ? ' ✏' : '' %></option>
+                <% }) %>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary cfg-flex-shrink-0"><%= __('common.apply') %></button>
+          </form>
+
+
+          <% var userThemes = themes.filter(function(t){ return !t.isPublic }) %>
+          <% if (userThemes.length > 0) { %>
+            <div class="cfg-theme-chips">
+              <% userThemes.forEach(function(t) { %>
+                <form method="POST" action="/config/theme/delete/<%= t.id %>" onsubmit="return confirm('Delete theme \'<%= t.name %>\'?')">
+                  <button type="submit" class="btn btn-sm btn-danger"><%= t.name %> ✕</button>
+                </form>
+              <% }) %>
+            </div>
+          <% } %>
+
+
+          <details>
+            <summary class="cfg-summary"><%= __('config.createCustomTheme') %></summary>
+            <form method="POST" action="/config/theme/create" class="cfg-mt">
+              <div class="field">
+                <label><%= __('config.themeName') %></label>
+                <input type="text" name="name" required placeholder="My Theme" value="<%= configTheme.name %> (copy)">
+              </div>
+              <div class="color-grid cfg-color-grid">
+                <% var colorFields = [
+                  ['bg','Background'],['surface','Surface'],['surface2','Surface 2'],['surface3','Surface 3'],['borderColor','Border'],
+                  ['textColor','Text'],['textDim','Text Dim'],['textHint','Text Hint'],
+                  ['accent','Accent'],['accentDim','Accent Dim'],
+                  ['success','Success'],['successDim','Success Dim'],
+                  ['warning','Warning'],['warningDim','Warning Dim'],
+                  ['error','Error'],['errorDim','Error Dim'],['infoDim','Info Dim']
+                ] %>
+                <% colorFields.forEach(function(f) { %>
+                  <div class="field cfg-field-mb">
+                    <label class="cfg-space-between"><%= f[1] %> <span class="text-hint cfg-field-hint"><%= f[0] %></span></label>
+                    <div class="cfg-flex-gap-sm-center">
+                      <input type="color" name="<%= f[0] %>" value="<%= configTheme[f[0]] %>" class="cfg-color-input">
+                      <input type="text" name="_<%= f[0] %>_hex" value="<%= configTheme[f[0]] %>" placeholder="#000000" class="cfg-hex-input" oninput="syncColor(this,'<%= f[0] %>')">
+                    </div>
+                  </div>
+                <% }) %>
+              </div>
+              <div class="cfg-mt">
+                <button type="submit" class="btn btn-primary"><%= __('config.createAndApply') %></button>
+              </div>
+            </form>
+          </details>
+        </div>
+        <% } %>
+
       </div>
 
-      <div style="display:flex;flex-direction:column;gap:1.5rem; height: 100%;">
+      <div class="cfg-col-gap-lg-full">
 
-        <div class="card" style="height:70%;display:flex;flex-direction:column;">
+        <div class="card cfg-card-70">
           <div class="card-header">
             <h2><%= __('config.defaultTargetLanguages') %></h2>
             <small class="text-dim"><%= __('config.preSelectedOnUpload') %></small>
@@ -108,25 +174,25 @@
           <% if (configLangs.length === 0) { %>
             <p class="empty-state"><%= __('account.noDefaultsSet') %></p>
           <% } else { %>
-            <div style="display:flex;flex-direction:column;gap:.35rem;flex:1">
+            <div class="cfg-col-gap-xs-flex">
               <% configLangs.forEach(function(cl, idx) { %>
                 <% var lang = languages.find(function(l){ return l.id === cl.languageId }) %>
-                <div style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border)">
-                  <span class="text-dim" style="width:1.5rem;text-align:right;font-size:.8rem"><%= idx + 1 %>.</span>
-                  <span style="flex:1;display:flex;align-items:center;gap:.35rem"><% if (lang && lang.flagCode) { %><span class="fi fi-<%= lang.flagCode %>" style="flex-shrink:0"></span><% } %><%= lang ? lang.name : 'Unknown' %></span>
+                <div class="cfg-lang-row">
+                  <span class="text-dim cfg-lang-idx"><%= idx + 1 %>.</span>
+                  <span class="cfg-lang-name"><% if (lang && lang.flagCode) { %><span class="fi fi-<%= lang.flagCode %> cfg-flex-shrink-0"></span><% } %><%= lang ? lang.name : 'Unknown' %></span>
 
                   <% if (can('canManageSettings')) { %>
-                    <form method="POST" action="/config/translationlangs/move/<%= cl.languageId %>" style="display:inline">
+                    <form method="POST" action="/config/translationlangs/move/<%= cl.languageId %>" class="cfg-inline">
                       <input type="hidden" name="direction" value="up">
                       <button type="submit" class="btn btn-icon btn-sm" <%= idx === 0 ? 'disabled' : '' %> title="Move up">↑</button>
                     </form>
 
-                    <form method="POST" action="/config/translationlangs/move/<%= cl.languageId %>" style="display:inline">
+                    <form method="POST" action="/config/translationlangs/move/<%= cl.languageId %>" class="cfg-inline">
                       <input type="hidden" name="direction" value="down">
                       <button type="submit" class="btn btn-icon btn-sm" <%= idx === configLangs.length - 1 ? 'disabled' : '' %> title="Move down">↓</button>
                     </form>
 
-                    <form method="POST" action="/config/translationlangs/remove/<%= cl.languageId %>" style="display:inline">
+                    <form method="POST" action="/config/translationlangs/remove/<%= cl.languageId %>" class="cfg-inline">
                       <button type="submit" class="btn btn-sm btn-danger">✕</button>
                     </form>
                   <% } %>
@@ -148,7 +214,7 @@
                 <%= configLangs.length === 0 ? 'border-top:1px solid var(--border);' : '' %>
               "
             >
-              <div class="field" style="flex:1;margin:0">
+              <div class="field cfg-field-flex">
                 <label><%= __('config.addDefaultLanguage') %></label>
                 <select name="languageId">
                   <% languages.forEach(function(l) { %>
@@ -167,97 +233,64 @@
           <div class="card-header">
             <h2><%= __('config.defaultLanguage') %></h2>
           </div>
-          <p class="text-dim" style="font-size:.85rem;margin-bottom:.75rem"><%= __('config.defaultLanguageDescription') %></p>
-          <form method="POST" action="/config/language" style="display:flex;gap:.5rem;align-items:flex-end">
-            <div class="field" style="flex:1;margin-bottom:0">
+          <p class="text-dim cfg-desc"><%= __('config.defaultLanguageDescription') %></p>
+          <form method="POST" action="/config/language" class="cfg-flex-end">
+            <div class="field cfg-field-flex-mb0">
               <select name="defaultLanguage">
                 <% supportedLocales.forEach(function(lc) { %>
                   <option value="<%= lc %>" <%= config.defaultLanguage === lc ? 'selected' : '' %>><%= localeFlags[lc] %> <%= localeLabels[lc] %></option>
                 <% }) %>
               </select>
             </div>
-            <button type="submit" class="btn btn-primary" style="flex-shrink:0"><%= __('config.saveLanguage') %></button>
+            <button type="submit" class="btn btn-primary cfg-flex-shrink-0"><%= __('config.saveLanguage') %></button>
           </form>
         </div>
         <% } %>
 
-        <% if (can('canManageSettings')) { %>
         <div class="card">
-          <div class="card-header">
-            <h2><%= __('config.theme') %></h2>
-          </div>
-
-
-          <form method="POST" action="/config/theme/select" style="display:flex;gap:.5rem;align-items:flex-end;margin-bottom:1rem">
-            <div class="field" style="flex:1;margin-bottom:0">
-              <label for="themeId"><%= __('config.activeTheme') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipActiveTheme') %>"></i></label>
-              <select id="themeId" name="themeId">
-                <% themes.forEach(function(t) { %>
-                  <option value="<%= t.id %>" <%= t.id === configTheme.id ? 'selected' : '' %>><%= t.name %><%= !t.isPublic ? ' ✏' : '' %></option>
+          <div class="card-header"><h2><%= __('config.whisper') %></h2></div>
+          <form method="POST" action="/config/whisper">
+            <div class="field">
+              <label for="whisperModel"><%= __('config.whisperModel') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipWhisperModel') %>"></i></label>
+              <select id="whisperModel" name="whisperModel">
+                <% whisperModels.forEach(function(m) { %>
+                  <option value="<%= m %>" <%= config.whisperModel === m ? 'selected' : '' %>><%= m %></option>
                 <% }) %>
               </select>
             </div>
-            <button type="submit" class="btn btn-primary" style="flex-shrink:0"><%= __('common.apply') %></button>
-          </form>
-
-
-          <% var userThemes = themes.filter(function(t){ return !t.isPublic }) %>
-          <% if (userThemes.length > 0) { %>
-            <div style="display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:1rem">
-              <% userThemes.forEach(function(t) { %>
-                <form method="POST" action="/config/theme/delete/<%= t.id %>" onsubmit="return confirm('Delete theme \'<%= t.name %>\'?')">
-                  <button type="submit" class="btn btn-sm btn-danger"><%= t.name %> ✕</button>
-                </form>
-              <% }) %>
+            <div class="field">
+              <label for="whisperTimestampsLength"><%= __('config.whisperTimestampsLength') %> <span class="hint">(1–500)</span> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipWhisperTimestampsLength') %>"></i></label>
+              <input type="number" id="whisperTimestampsLength" name="whisperTimestampsLength" value="<%= config.whisperTimestampsLength %>" min="1" max="500" required>
             </div>
-          <% } %>
-
-
-          <details>
-            <summary style="cursor:pointer;font-size:.85rem;font-weight:600;color:var(--text-dim);margin-bottom:.75rem"><%= __('config.createCustomTheme') %></summary>
-            <form method="POST" action="/config/theme/create" style="margin-top:.75rem">
-              <div class="field">
-                <label><%= __('config.themeName') %></label>
-                <input type="text" name="name" required placeholder="My Theme" value="<%= configTheme.name %> (copy)">
+            <% if (whisperGpuAvailable) { %>
+              <div class="field field-checkbox">
+                <input type="checkbox" id="whisperUseCuda" name="whisperUseCuda" value="1" <%= config.whisperUseCuda ? 'checked' : '' %>>
+                <label for="whisperUseCuda"><%= __('config.whisperUseCuda') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipWhisperUseCuda') %>"></i></label>
               </div>
-              <div class="color-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem 1rem">
-                <% var colorFields = [
-                  ['bg','Background'],['surface','Surface'],['surface2','Surface 2'],['surface3','Surface 3'],['borderColor','Border'],
-                  ['textColor','Text'],['textDim','Text Dim'],['textHint','Text Hint'],
-                  ['accent','Accent'],['accentDim','Accent Dim'],
-                  ['success','Success'],['successDim','Success Dim'],
-                  ['warning','Warning'],['warningDim','Warning Dim'],
-                  ['error','Error'],['errorDim','Error Dim'],['infoDim','Info Dim']
-                ] %>
-                <% colorFields.forEach(function(f) { %>
-                  <div class="field" style="margin-bottom:.35rem">
-                    <label style="display:flex;justify-content:space-between"><%= f[1] %> <span class="text-hint" style="font-size:.75rem;font-weight:400"><%= f[0] %></span></label>
-                    <div style="display:flex;gap:.4rem;align-items:center">
-                      <input type="color" name="<%= f[0] %>" value="<%= configTheme[f[0]] %>" style="width:2.2rem;height:2rem;padding:.1rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);cursor:pointer;flex-shrink:0">
-                      <input type="text" name="_<%= f[0] %>_hex" value="<%= configTheme[f[0]] %>" placeholder="#000000" style="flex:1;font-family:var(--font-mono);font-size:.8rem" oninput="syncColor(this,'<%= f[0] %>')">
-                    </div>
-                  </div>
-                <% }) %>
-              </div>
-              <div style="margin-top:.75rem">
-                <button type="submit" class="btn btn-primary"><%= __('config.createAndApply') %></button>
-              </div>
-            </form>
-          </details>
+            <% } %>
+            <div class="field field-checkbox">
+              <input type="checkbox" id="whisperEnabled" name="whisperEnabled" value="1" <%= config.whisperEnabled ? 'checked' : '' %>>
+              <label for="whisperEnabled"><%= __('config.whisperEnabled') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipWhisperEnabled') %>"></i></label>
+            </div>
+            <div class="field">
+              <label for="whisperModelRootPath"><%= __('config.whisperModelRootPath') %> <span class="hint"><%= __('config.optional') %></span> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipWhisperModelRootPath') %>"></i></label>
+              <input type="text" id="whisperModelRootPath" name="whisperModelRootPath" value="<%= config.whisperModelRootPath || '' %>" placeholder="e.g. /data/whisper-models">
+            </div>
+            <button type="submit" class="btn btn-primary cfg-save-btn"><%= __('config.saveConfiguration') %></button>
+          </form>
         </div>
-        <% } %>
 
       </div>
     </div>
 
     <% if (canSeeSecrets) { %>
-    <div class="card" style="margin-top: 1.5rem;">
+    <div class="card cfg-card-mt">
       <div class="card-header">
         <h2><%= __('config.secrets') %></h2>
         <small class="text-dim"><%= __('config.manageSecrets') %></small>
       </div>
 
-      <div style="display:flex;flex-direction:column;gap:1rem;">
+      <div class="cfg-col-gap-md">
         <% keys.forEach(function(key) { %>
           <%
             var existingSecret = secrets
@@ -269,57 +302,29 @@
           %>
 
           <div
-            class="secret-row"
-            style="
-              border:1px solid var(--border);
-              border-radius:12px;
-              padding:1rem;
-              display:flex;
-              flex-direction:column;
-              gap:.85rem;
-            "
+            class="secret-row cfg-secret-row"
           >
             <div
-              style="
-                display:flex;
-                justify-content:space-between;
-                align-items:flex-start;
-                gap:1rem;
-                flex-wrap:wrap;
-              "
+              class="cfg-secret-head"
             >
-              <div style="flex:1;min-width:0;">
-                <div style="font-weight:700;font-size:1rem;"><%= key.displayName %></div>
-                <div class="text-dim" style="margin-top:.35rem;">
+              <div class="cfg-secret-info">
+                <div class="cfg-secret-title"><%= key.displayName %></div>
+                <div class="text-dim cfg-secret-desc">
                   <%= key.description %>
                 </div>
               </div>
 
               <div
-                style="
-                  display:flex;
-                  align-items:center;
-                  gap:.5rem;
-                  flex-wrap:wrap;
-                  min-width:0;
-                  justify-content:flex-end;
-                "
+                class="cfg-secret-actions"
               >
-                <div style="display:flex;align-items:center;gap:.5rem;min-width:0;">
+                <div class="cfg-secret-input-wrap">
                   <input
                     type="password"
                     value="<%= hasSecret ? secretValue : '' %>"
                     readonly
                     data-secret-input="<%= key.secretName %>"
                     placeholder="<%= hasSecret ? '' : __('config.noSecretSet') %>"
-                    style="
-                      width:min(310px,100%);
-                      padding:.55rem .75rem;
-                      border:1px solid var(--border);
-                      border-radius:8px;
-                      background:var(--panel);
-                      color:var(--text);
-                    "
+                    class="cfg-secret-input"
                   />
 
                   <% if (hasSecret) { %>
@@ -347,7 +352,7 @@
                   <form
                     method="POST"
                     action="/config/secrets/delete/<%= key.secretName %>"
-                    style="display:inline"
+                    class="cfg-inline"
                     onsubmit="return confirm('Delete this secret?')"
                   >
                     <button type="submit" class="btn btn-icon btn-danger" title="Delete">
@@ -369,22 +374,16 @@
 
             <div
               id="secret-form-<%= key.secretName %>"
-              style="display:none;padding-top:.25rem;"
+              class="cfg-secret-form-wrap"
             >
               <form
                 method="POST"
                 action="/config/secrets/set"
-                style="
-                  display:flex;
-                  flex-direction:column;
-                  gap:.75rem;
-                  border-top:1px solid var(--border);
-                  padding-top:.9rem;
-                "
+                class="cfg-secret-form"
               >
                 <input type="hidden" name="secretName" value="<%= key.secretName %>" />
 
-                <div class="field" style="margin:0;">
+                <div class="field cfg-m0">
                   <label>
                     <%= hasSecret ? 'New value for ' + key.displayName : 'Value for ' + key.displayName %>
                   </label>
@@ -393,11 +392,11 @@
                     name="secretValue"
                     autocomplete="off"
                     placeholder="<%= hasSecret ? __('config.enterNewValue') : __('config.enterSecretValue') %>"
-                    style="width:100%;"
+                    class="cfg-w-full"
                   />
                 </div>
 
-                <div style="display:flex;gap:.5rem;justify-content:flex-end;flex-wrap:wrap;">
+                <div class="cfg-form-actions">
                   <button
                     type="button"
                     class="btn"
@@ -419,16 +418,16 @@
   </main>
 </div>
 
-<div id="config-dir-browser-panel" style="display:none;margin-top:.5rem">
-  <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface-2);font-size:.85rem">
-    <div style="display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border-bottom:1px solid var(--border);background:var(--surface-3);flex-wrap:wrap;min-height:2.4rem">
-      <button type="button" id="config-dir-up-btn" class="btn btn-icon btn-sm" style="flex-shrink:0;padding:.2rem .45rem;font-size:.8rem" title="Go up">↑</button>
-      <span id="config-dir-current-path" class="text-dim" style="font-size:.78rem;word-break:break-all;flex:1;min-width:0"></span>
+<div id="config-dir-browser-panel" class="cfg-browser-panel">
+  <div class="cfg-browser-box">
+    <div class="cfg-browser-head">
+      <button type="button" id="config-dir-up-btn" class="btn btn-icon btn-sm cfg-browser-up" title="Go up">↑</button>
+      <span id="config-dir-current-path" class="text-dim cfg-browser-path"></span>
     </div>
-    <div id="config-dir-list" style="max-height:200px;overflow-y:auto;display:flex;flex-direction:column">
-      <div class="text-dim" style="padding:.5rem .75rem;font-size:.8rem"><%= __('common.loading') %></div>
+    <div id="config-dir-list" class="cfg-browser-list">
+      <div class="text-dim cfg-browser-loading"><%= __('common.loading') %></div>
     </div>
-    <div style="padding:.5rem .75rem;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:.4rem">
+    <div class="cfg-browser-foot">
       <button type="button" id="config-dir-select-btn" class="btn btn-sm btn-primary"><%= __('config.selectFolder') %></button>
       <button type="button" class="btn btn-sm btn-secondary" onclick="closeConfigDirBrowser()"><%= __('common.cancel') %></button>
     </div>

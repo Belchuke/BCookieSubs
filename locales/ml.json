@@ -134,7 +134,13 @@
     "inspectStatusFailed": "പരാജയപ്പെട്ടു",
     "inspectStatusCancelled": "റദ്ദാക്കി",
     "inspectStatusRetrying": "വീണ്ടും ശ്രമിക്കുന്നു",
-    "inspectStatusWaiting": "കാത്തിരിക്കുന്നു"
+    "inspectStatusWaiting": "കാത്തിരിക്കുന്നു",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "എന്റെ അക്കൗണ്ട്",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "ലൈബ്രറി പാത്ത് ബ്രൗസിംഗ് പരിമിതപ്പെടുത്താൻ ഉപയോഗിക്കുന്ന റൂട്ട് ഫോൾഡർ കോൺഫിഗർ ചെയ്യാൻ കഴിയും. സജ്ജമാക്കുമ്പോൾ, ബ്രൗസിംഗും പുതിയ ലൈബ്രറി പാത്തുകളും ഈ ഫോൾഡറിൽ ഒതുക്കും.",
     "tipAutoClearLogs": "പ്രവർത്തനക്ഷമമാക്കുമ്പോൾ, ചുവടെ നൽകിയ കാലഹരണ കാലം അനുസരിച്ച് പഴയ ലോഗുകൾ സ്വയംചലിതമായി ഇല്ലാതാക്കും.",
     "tipDeleteLogsOlderThan": "ഓട്ടോ-ക്ലിയർ സജീവമാകുമ്പോൾ ഇത്ര ദിവസങ്ങളേക്കാൾ പഴക്കമുള്ള ലോഗുകൾ ഇല്ലാതാക്കും.",
-    "tipActiveTheme": "ഇന്റർഫേസ് ഉപയോഗിക്കുന്ന സജീവ നിറ തീം നിയന്ത്രിക്കുന്നു. ഇഷ്‌ടാനുസൃത തീമുകൾ ചുവടെ സൃഷ്ടിക്കാം."
+    "tipActiveTheme": "ഇന്റർഫേസ് ഉപയോഗിക്കുന്ന സജീവ നിറ തീം നിയന്ത്രിക്കുന്നു. ഇഷ്‌ടാനുസൃത തീമുകൾ ചുവടെ സൃഷ്ടിക്കാം.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "ഉപയോക്താക്കൾ",
@@ -423,7 +441,18 @@
     "translate": "വിവർത്തനം ചെയ്യുക",
     "unknownSeason": "അജ്ഞാത സീസൺ",
     "season": "സീസൺ ",
-    "episodeCount": "ep"
+    "episodeCount": "ep",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "സ്ഥിതിവിവരക്കണക്കുകൾ",

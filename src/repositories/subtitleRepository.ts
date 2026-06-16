@@ -12,8 +12,15 @@ import { DefaultResponse, FinishedSubtitle } from "../types/modelTypes"
 import SrtParser2 from "srt-parser-2"
 import { createLog } from "./logRepository"
 import { userHasPermission } from "./userRepository"
-import { getLanguageById, getLanguages, getConfigTranslationLanguageByLanguageId } from "./languageRepository"
+import {
+  getLanguageById,
+  getLanguages,
+  getConfigTranslationLanguageByLanguageId,
+  getUserConfigTranslationLanguages,
+  getConfigTranslationLanguages,
+} from "./languageRepository"
 import { getFileHash, parseLLMResponse } from "./shared"
+import { serializeSrt, SrtEntry } from "../services/srtService"
 
 function chunkArray<T>(items: T[], size: number): T[][] {
   if (size <= 0) return [items.slice()]
@@ -36,6 +43,67 @@ export const getSubtitleByFileHash = (db: Database.Database, fileHash: string): 
   )
 }
 
+// Next whisper-source subtitle awaiting transcription, in queue order.
+export const getNextWhisperSubtitleForTranscription = (db: Database.Database): DBSubtitle | null => {
+  return (
+    (db
+      .prepare(
+        `SELECT * FROM subtitle
+         WHERE source = 'whisper'
+           AND deletedAt IS NULL
+           AND status NOT IN ('cancelled', 'failed')
+           AND whisperTranscriptionStatus NOT IN ('transcription_completed', 'transcription_failed')
+         ORDER BY orderNumber ASC, id ASC
+         LIMIT 1`,
+      )
+      .get() as DBSubtitle | undefined) ?? null
+  )
+}
+
+// Number of completed chunks for a job (drives job progress).
+export const countCompletedChunks = (db: Database.Database, jobId: number): number => {
+  const row = db
+    .prepare(`SELECT COUNT(*) as cnt FROM subtitleChunk WHERE subtitleJobId = ? AND status = 'completed'`)
+    .get(jobId) as { cnt: number }
+  return row.cnt
+}
+
+// Release worker-claimed chunks back to the queue: drop their candidate rows and
+// reset any still-running chunk to 'queued'.
+export const releaseRunningChunks = (db: Database.Database, chunkIds: number[]): void => {
+  if (chunkIds.length === 0) return
+  const placeholders = chunkIds.map(() => "?").join(",")
+  db.prepare(`DELETE FROM subtitleChunkCandidate WHERE subtitleChunkId IN (${placeholders})`).run(...chunkIds)
+  db.prepare(
+    `UPDATE subtitleChunk SET status = 'queued', startedAt = NULL, updatedAt = datetime('now') WHERE id IN (${placeholders}) AND status = 'running'`,
+  ).run(...chunkIds)
+}
+
+// Completed subtitles that originate from a library path item (for auto-export).
+export const getCompletedLibrarySubtitlesForExport = (
+  db: Database.Database,
+): { id: number; libraryPathItemId: number; mediaItemId: number | null }[] => {
+  return db
+    .prepare(
+      `SELECT DISTINCT s.id, s.libraryPathItem as libraryPathItemId, s.mediaItemId
+       FROM subtitle s
+       INNER JOIN subtitleJob sj ON sj.subtitleId = s.id
+       WHERE s.libraryPathItem IS NOT NULL AND sj.status = 'completed'`,
+    )
+    .all() as { id: number; libraryPathItemId: number; mediaItemId: number | null }[]
+}
+
+// Per-target-language job status for a subtitle (used to decide which languages
+// are still missing/active for a library item).
+export const getJobLangStatusBySubtitle = (
+  db: Database.Database,
+  subtitleId: number,
+): { targetLangId: number; status: string }[] => {
+  return db
+    .prepare(`SELECT sj.targetLangId, sj.status FROM subtitleJob sj WHERE sj.subtitleId = ? AND sj.deletedAt IS NULL`)
+    .all(subtitleId) as { targetLangId: number; status: string }[]
+}
+
 export const getActiveSubtitleForLibraryPathItem = (
   db: Database.Database,
   libraryPathItemId: number,
@@ -45,6 +113,317 @@ export const getActiveSubtitleForLibraryPathItem = (
       .prepare(`SELECT * FROM subtitle WHERE libraryPathItem = ? AND deletedAt IS NULL ORDER BY id DESC LIMIT 1`)
       .get(libraryPathItemId) as DBSubtitle | undefined) ?? null
   )
+}
+
+export const getActiveWhisperSubtitleForMediaItem = (
+  db: Database.Database,
+  mediaItemId: number,
+): DBSubtitle | null => {
+  return (
+    (db
+      .prepare(
+        `SELECT * FROM subtitle WHERE mediaItemId = ? AND source = 'whisper' AND deletedAt IS NULL AND status NOT IN ('cancelled', 'failed') ORDER BY id DESC LIMIT 1`,
+      )
+      .get(mediaItemId) as DBSubtitle | undefined) ?? null
+  )
+}
+
+export const setWhisperTranscriptionStatus = (
+  db: Database.Database,
+  subtitleId: number,
+  status: DBSubtitle["whisperTranscriptionStatus"],
+): void => {
+  db.prepare(
+    `UPDATE subtitle SET whisperTranscriptionStatus = ?, updatedAt = datetime('now') WHERE id = ?`,
+  ).run(status, subtitleId)
+}
+
+export const setWhisperProgress = (
+  db: Database.Database,
+  subtitleId: number,
+  progress: number,
+  positionMs = 0,
+  durationMs = 0,
+): void => {
+  db.prepare(
+    `UPDATE subtitle SET whisperProgress = ?, whisperPositionMs = ?, whisperDurationMs = ?, updatedAt = datetime('now') WHERE id = ?`,
+  ).run(
+    Math.max(0, Math.min(100, Math.round(progress))),
+    Math.max(0, Math.round(positionMs)),
+    Math.max(0, Math.round(durationMs)),
+    subtitleId,
+  )
+}
+
+export const getWhisperProgress = (db: Database.Database, subtitleId: number): number => {
+  const row = db.prepare(`SELECT whisperProgress FROM subtitle WHERE id = ?`).get(subtitleId) as
+    | { whisperProgress: number }
+    | undefined
+  return row?.whisperProgress ?? 0
+}
+
+export const resetWhisperProgress = (db: Database.Database, subtitleId: number): void => {
+  db.prepare(
+    `UPDATE subtitle SET whisperProgress = 0, whisperPositionMs = 0, whisperDurationMs = 0, updatedAt = datetime('now') WHERE id = ?`,
+  ).run(subtitleId)
+}
+
+export const createWhisperSubtitle = (
+  db: Database.Database,
+  user: DBUser,
+  mediaItemId: number,
+  libraryPathItemId: number | null,
+  mediaPath: string,
+  sourceLangId: number,
+  srtFileName: string,
+  displayName: string,
+  model: string,
+  timestampsLength: number,
+  useCuda: boolean,
+  season: number | null,
+  episode: number | null,
+): { subtitle: DBSubtitle; success: boolean; msg: string | null } => {
+  const existing = getActiveWhisperSubtitleForMediaItem(db, mediaItemId)
+  if (existing) {
+    return { subtitle: existing, success: true, msg: "Existing Whisper subtitle workflow found" }
+  }
+
+  const nextOrderNumber = getNextOrderNumberForSubtitle(db)
+
+  const result = db
+    .prepare(
+      `INSERT INTO subtitle (
+        userId, sourceLangId, mediaItemId, libraryPathItem, name, originalFileHash,
+        originalTextSRTName, originalText, orderNumber, source, sourcePath, mediaPath,
+        status, whisperTranscriptionStatus, whisperModel, whisperTimestampsLength, whisperUseCuda,
+        season, episode
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      user.id,
+      sourceLangId,
+      mediaItemId,
+      libraryPathItemId,
+      displayName,
+      "",
+      srtFileName,
+      "",
+      nextOrderNumber,
+      "whisper",
+      null,
+      mediaPath,
+      "queued",
+      "queued_for_transcription",
+      model,
+      timestampsLength,
+      useCuda ? 1 : 0,
+      season,
+      episode,
+    )
+
+  const subtitleId = result.lastInsertRowid as number
+  const subtitle = getSubtitleById(db, subtitleId)
+  if (!subtitle) {
+    return { subtitle: null as any, success: false, msg: "Failed to create Whisper subtitle" }
+  }
+  createLog(db, "info", "subtitle", subtitle.id, "Created Whisper subtitle workflow", {
+    mediaItemId,
+    libraryPathItemId,
+    model,
+  })
+  return { subtitle, success: true, msg: "Whisper subtitle workflow created" }
+}
+
+export const getTargetLanguagesForWhisperWorkflow = (
+  db: Database.Database,
+  userId: number,
+): number[] => {
+  const userTargetLangs = getUserConfigTranslationLanguages(db, userId)
+  if (userTargetLangs.length > 0) {
+    return userTargetLangs.map((tl) => tl.languageId)
+  }
+  return getConfigTranslationLanguages(db).map((cl) => cl.languageId)
+}
+
+export const finalizeWhisperTranscription = (
+  db: Database.Database,
+  subtitleId: number,
+  rawSrt: string,
+  entries: SrtEntry[],
+  srtFileName: string,
+): void => {
+  // Persist the de-duplicated/normalized SRT (runs of >3 identical consecutive
+  // lines grouped with an extended duration). `entries` is already deduped and
+  // re-numbered by deduplicateSrtEntries; the raw whisper output is only used
+  // for the file hash so re-runs of identical media stay idempotent.
+  const dedupedSrt = serializeSrt(entries)
+  const originalFileHash = getFileHash(rawSrt)
+  db.prepare(
+    `UPDATE subtitle SET
+      originalText = ?,
+      originalFileHash = ?,
+      originalTextSRTName = ?,
+      whisperTranscriptionStatus = 'transcription_completed',
+      updatedAt = datetime('now')
+     WHERE id = ?`,
+  ).run(dedupedSrt, originalFileHash, srtFileName, subtitleId)
+}
+
+export const createPlaceholderTranslationJobs = (
+  db: Database.Database,
+  user: DBUser,
+  subtitleId: number,
+  targetLangIds: number[],
+  season: number | null,
+  episode: number | null,
+): { success: boolean; msg: string | null } => {
+  const subtitle = getSubtitleById(db, subtitleId)
+  if (!subtitle) return { success: false, msg: "Subtitle not found" }
+
+  const existingJobs = getSubtitleJobsBySubtitleId(db, subtitleId)
+  const existingLangIds = new Set(existingJobs.map((j) => j.targetLangId))
+  const newLangs = targetLangIds
+    .map((id) => getLanguageById(db, id))
+    .filter((l): l is DBLanguage => !!l && !existingLangIds.has(l.id))
+
+  if (newLangs.length === 0) return { success: true, msg: "All requested languages already exist" }
+
+  const maxOrder = existingJobs.reduce((max, j) => (j.orderNumber > max ? j.orderNumber : max), -1)
+
+  const transaction = db.transaction(() => {
+    newLangs.forEach((lang, index) => {
+      db.prepare(
+        `INSERT INTO subtitleJob (subtitleId, userId, targetLangId, chunkSetting, chunkSizeTotal, chunkCurrent, season, episode, orderNumber, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        subtitle.id,
+        user.id,
+        lang.id,
+        10,
+        0,
+        0,
+        season,
+        episode,
+        maxOrder + 1 + index,
+        "queued",
+      )
+    })
+  })
+  transaction()
+
+  createLog(db, "info", "subtitle", subtitle.id, "Created placeholder translation jobs for Whisper workflow", {
+    addedLangs: newLangs.map((l) => l.name),
+  })
+  return { success: true, msg: `Added ${newLangs.length} placeholder translation job(s)` }
+}
+
+export const createTranslationJobsForSubtitle = (
+  db: Database.Database,
+  user: DBUser,
+  subtitleId: number,
+  targetLangIds: number[],
+  chunkSetting: number,
+  season: number | null,
+  episode: number | null,
+): DefaultResponse => {
+  const subtitle = getSubtitleById(db, subtitleId)
+  if (!subtitle) return { success: false, msg: "Subtitle not found" }
+
+  const srtParser = new SrtParser2()
+  const parsedSubtitles = srtParser.fromSrt(subtitle.originalText)
+  if (parsedSubtitles.length === 0) {
+    return { success: false, msg: "Original SRT could not be parsed" }
+  }
+
+  const chunks = chunkArray(parsedSubtitles, chunkSetting)
+  const existingJobs = getSubtitleJobsBySubtitleId(db, subtitleId)
+  const existingLangIds = new Set(existingJobs.map((j) => j.targetLangId))
+
+  const targetLangs = targetLangIds
+    .map((id) => getLanguageById(db, id))
+    .filter((l): l is DBLanguage => !!l)
+
+  const newLangs = targetLangs.filter((l) => !existingLangIds.has(l.id))
+  const placeholderJobs = existingJobs.filter(
+    (j) => j.status === "queued" && j.chunkSizeTotal === 0 && targetLangIds.includes(j.targetLangId),
+  )
+
+  if (newLangs.length === 0 && placeholderJobs.length === 0) {
+    return { success: true, msg: "All requested languages already exist" }
+  }
+
+  const maxOrder = existingJobs.reduce((max, j) => (j.orderNumber > max ? j.orderNumber : max), -1)
+
+  const transaction = db.transaction(() => {
+    // Convert placeholder jobs into real jobs by adding chunks.
+    placeholderJobs.forEach((job) => {
+      db.prepare(
+        `UPDATE subtitleJob SET chunkSetting = ?, chunkSizeTotal = ?, chunkCurrent = 0, season = ?, episode = ?, updatedAt = datetime('now') WHERE id = ?`,
+      ).run(chunkSetting, chunks.length, season, episode, job.id)
+
+      chunks.forEach((chunk, chunkIndex) => {
+        db.prepare(
+          `INSERT INTO subtitleChunk (subtitleId, subtitleJobId, targetLangId, chunkIndex, srtIdFrom, srtIdTo, chunkTextRaw) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          subtitle.id,
+          job.id,
+          job.targetLangId,
+          chunkIndex,
+          parseInt(chunk[0].id),
+          parseInt(chunk[chunk.length - 1].id),
+          JSON.stringify(chunk),
+        )
+      })
+    })
+
+    // Create brand new jobs for languages that weren't placeholders.
+    newLangs.forEach((lang, index) => {
+      const jobResult = db
+        .prepare(
+          `INSERT INTO subtitleJob (subtitleId, userId, targetLangId, chunkSetting, chunkSizeTotal, season, episode, orderNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          subtitle.id,
+          user.id,
+          lang.id,
+          chunkSetting,
+          chunks.length,
+          season,
+          episode,
+          maxOrder + 1 + index,
+        )
+
+      const subtitleJobId = jobResult.lastInsertRowid as number
+
+      chunks.forEach((chunk, chunkIndex) => {
+        db.prepare(
+          `INSERT INTO subtitleChunk (subtitleId, subtitleJobId, targetLangId, chunkIndex, srtIdFrom, srtIdTo, chunkTextRaw) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          subtitle.id,
+          subtitleJobId,
+          lang.id,
+          chunkIndex,
+          parseInt(chunk[0].id),
+          parseInt(chunk[chunk.length - 1].id),
+          JSON.stringify(chunk),
+        )
+      })
+    })
+
+    db.prepare(
+      `UPDATE subtitle SET status = 'queued', updatedAt = datetime('now') WHERE id = ? AND status IN ('completed', 'cancelled', 'failed')`,
+    ).run(subtitle.id)
+  })
+  transaction()
+
+  const allAdded = [...placeholderJobs.map((j) => j.targetLangId), ...newLangs.map((l) => l.id)]
+  const addedLangNames = targetLangs
+    .filter((l) => allAdded.includes(l.id))
+    .map((l) => l.name)
+
+  createLog(db, "info", "subtitle", subtitle.id, "Created translation jobs from Whisper-generated SRT", {
+    addedLangs: addedLangNames,
+  })
+  return { success: true, msg: `Added ${addedLangNames.length} translation job(s)` }
 }
 
 export const getSubtitleJobById = (db: Database.Database, id: number): DBSubtitleJob | null => {
@@ -484,7 +863,8 @@ export const getDashboardData = (db: Database.Database) => {
   const subtitles = db
     .prepare(
       `SELECT id, userId, sourceLangId, mediaItemId, libraryPathItem, name, originalFileHash, originalTextSRTName,
-              orderNumber, hide, source, sourcePath, mediaPath, status,
+              orderNumber, hide, source, sourcePath, mediaPath, status, whisperTranscriptionStatus,
+              whisperModel, whisperTimestampsLength, whisperUseCuda, whisperProgress,
               finishedAt, cancelledAt, cancelledByUserId, deletedAt, deletedByUserId, createdAt, updatedAt
        FROM subtitle WHERE deletedAt IS NULL AND hide = 0 ORDER BY orderNumber ASC, createdAt DESC`,
     )

@@ -7,6 +7,7 @@ import { getDb } from "./setup"
 import { syncSecretsFromEnv } from "./repositories/movieDbRepository"
 import { taskMain, cleanupRunningChunks } from "./tasks/translateTask"
 import { cleanupExtractTempDir } from "./services/libraryPathService"
+import { cleanupWhisperTempDir } from "./services/whisperService"
 import { libraryScannerMain } from "./tasks/libraryTask"
 import { loadSession } from "./middleware/auth"
 import { requireInternalToken } from "./middleware/internalAuth"
@@ -117,6 +118,7 @@ process.on("SIGINT", () => {
   console.log("\nShutting down gracefully…")
   cleanupRunningChunks(db)
   cleanupExtractTempDir()
+  cleanupWhisperTempDir()
   stopOllamaServe()
   process.exit(0)
 })
@@ -124,6 +126,7 @@ process.on("SIGINT", () => {
 process.on("SIGTERM", () => {
   cleanupRunningChunks(db)
   cleanupExtractTempDir()
+  cleanupWhisperTempDir()
   stopOllamaServe()
   process.exit(0)
 })

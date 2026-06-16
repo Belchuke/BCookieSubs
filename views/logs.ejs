@@ -30,7 +30,7 @@
     <% } %>
 
     <% if (pagination && pagination.total > 0) { %>
-    <div class="pagination-container" style="margin-bottom: 1.5rem">
+    <div class="pagination-container lg-pagination">
       <span class="pagination-info">
        <%= __('logs.showing') %> <%= pagination.page * pagination.limit + 1 %>-<%= Math.min((pagination.page + 1) * pagination.limit, pagination.total) %> <%= __('logs.of') %> <%= pagination.total %> <%= __('logs.logs') %>
       </span>

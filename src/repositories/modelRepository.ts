@@ -10,6 +10,16 @@ export const getModelById = (db: Database.Database, id: number): DBModel | null 
   return result ?? null
 }
 
+// True if the model still exists and has not been soft-deleted.
+export const isModelActive = (db: Database.Database, id: number): boolean => {
+  return !!db.prepare(`SELECT 1 FROM model WHERE id = ? AND deletedAt IS NULL`).get(id)
+}
+
+// True if a model row exists at all (regardless of soft-delete state).
+export const modelExists = (db: Database.Database, id: number): boolean => {
+  return !!db.prepare(`SELECT 1 FROM model WHERE id = ?`).get(id)
+}
+
 export const getRolesForModel = (db: Database.Database, modelId: number): DBModelRole[] => {
   return db.prepare(`SELECT * FROM modelRole WHERE modelId = ? AND deletedAt IS NULL`).all(modelId) as DBModelRole[]
 }

@@ -134,7 +134,13 @@
     "inspectStatusFailed": "Neuspešno",
     "inspectStatusCancelled": "Preklicano",
     "inspectStatusRetrying": "Ponavljanje",
-    "inspectStatusWaiting": "Čakanje"
+    "inspectStatusWaiting": "Čakanje",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "Moj račun",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "Mogoče je konfigurirati korensko mapo, ki se uporablja za omejitev brskanja po poteh knjižnice. Ko je nastavljena, sta brskanje in nove poti knjižnice omejeni na to mapo.",
     "tipAutoClearLogs": "Ko je omogočeno, so stari dnevniki samodejno izbrisani v skladu s spodnjim obdobjem hrambe.",
     "tipDeleteLogsOlderThan": "Dnevniki, starejši od tega števila dni, se izbrišejo, ko je samodejno brisanje aktivno.",
-    "tipActiveTheme": "Nadzoruje aktivno barvno temo, ki jo uporablja vmesnik. Teme po meri je mogoče ustvariti spodaj."
+    "tipActiveTheme": "Nadzoruje aktivno barvno temo, ki jo uporablja vmesnik. Teme po meri je mogoče ustvariti spodaj.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "Uporabniki",
@@ -423,7 +441,18 @@
     "translate": "Prevedi",
     "unknownSeason": "Neznana sezona",
     "season": "Sezona ",
-    "episodeCount": "ep."
+    "episodeCount": "ep.",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "Statistike",

@@ -134,7 +134,13 @@
     "inspectStatusFailed": "ವಿಫಲವಾಗಿದೆ",
     "inspectStatusCancelled": "ರದ್ದುಗೊಳಿಸಲಾಗಿದೆ",
     "inspectStatusRetrying": "ಮರುಪ್ರಯತ್ನ ಮಾಡಲಾಗುತ್ತಿದೆ",
-    "inspectStatusWaiting": "ಕಾಯಲಾಗುತ್ತಿದೆ"
+    "inspectStatusWaiting": "ಕಾಯಲಾಗುತ್ತಿದೆ",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "ನನ್ನ ಖಾತೆ",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "ಲೈಬ್ರರಿ ಪಾತ್ ಬ್ರೌಸಿಂಗ್ ನಿರ್ಬಂಧಿಸಲು ಬಳಸುವ ರೂಟ್ ಫೋಲ್ಡರ್ ಕಾನ್ಫಿಗರ್ ಮಾಡಬಹುದು. ಸೆಟ್ ಮಾಡಿದಾಗ, ಬ್ರೌಸಿಂಗ್ ಮತ್ತು ಹೊಸ ಲೈಬ್ರರಿ ಪಾತ್‌ಗಳು ಈ ಫೋಲ್ಡರ್‌ಗೆ ಸೀಮಿತವಾಗಿರುತ್ತವೆ.",
     "tipAutoClearLogs": "ಸಕ್ರಿಯಗೊಳಿಸಿದಾಗ, ಕೆಳಗಿನ ಧಾರಣ ಅವಧಿಯ ಪ್ರಕಾರ ಹಳೆಯ ಲಾಗ್‌ಗಳನ್ನು ಸ್ವಯಂಚಾಲಿತವಾಗಿ ಅಳಿಸಲಾಗುತ್ತದೆ.",
     "tipDeleteLogsOlderThan": "ಆಟೋ-ಕ್ಲಿಯರ್ ಸಕ್ರಿಯವಾಗಿರುವಾಗ ಈ ದಿನಗಳಿಗಿಂತ ಹಳೆಯ ಲಾಗ್‌ಗಳನ್ನು ಅಳಿಸಲಾಗುತ್ತದೆ.",
-    "tipActiveTheme": "ಇಂಟರ್‌ಫೇಸ್ ಬಳಸುವ ಸಕ್ರಿಯ ಬಣ್ಣ ಥೀಮ್ ನಿಯಂತ್ರಿಸುತ್ತದೆ. ಕಸ್ಟಮ್ ಥೀಮ್‌ಗಳನ್ನು ಕೆಳಗೆ ರಚಿಸಬಹುದು."
+    "tipActiveTheme": "ಇಂಟರ್‌ಫೇಸ್ ಬಳಸುವ ಸಕ್ರಿಯ ಬಣ್ಣ ಥೀಮ್ ನಿಯಂತ್ರಿಸುತ್ತದೆ. ಕಸ್ಟಮ್ ಥೀಮ್‌ಗಳನ್ನು ಕೆಳಗೆ ರಚಿಸಬಹುದು.",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "ಬಳಕೆದಾರರು",
@@ -423,7 +441,18 @@
     "translate": "ಅನುವಾದಿಸಿ",
     "unknownSeason": "ಅಜ್ಞಾತ ಸೀಸನ್",
     "season": "ಸೀಸನ್ ",
-    "episodeCount": "ep"
+    "episodeCount": "ep",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "ಅಂಕಿಅಂಶಗಳು",

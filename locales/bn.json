@@ -134,7 +134,13 @@
     "inspectStatusFailed": "ব্যর্থ",
     "inspectStatusCancelled": "বাতিল",
     "inspectStatusRetrying": "পুনরায় চেষ্টা হচ্ছে",
-    "inspectStatusWaiting": "অপেক্ষায়"
+    "inspectStatusWaiting": "অপেক্ষায়",
+    "whisperStatusQueuedForTranscription": "Transcription queued",
+    "whisperStatusTranscribing": "Transcribing",
+    "whisperStatusTranscriptionFailed": "Transcription failed",
+    "whisperStatusTranscriptionCompleted": "Transcription completed",
+    "whisperStatusQueuedForTranslation": "Translation queued",
+    "whisperStatusTranslating": "Translating"
   },
   "account": {
     "title": "আমার অ্যাকাউন্ট",
@@ -220,7 +226,19 @@
     "tipRootLibraryFolder": "লাইব্রেরি পাথ ব্রাউজিং সীমাবদ্ধ করতে ব্যবহৃত রুট ফোল্ডার কনফিগার করা যায়। সেট করা হলে ব্রাউজিং ও নতুন লাইব্রেরি পাথ এই ফোল্ডারে সীমাবদ্ধ থাকে।",
     "tipAutoClearLogs": "সক্ষম হলে, নিচের ধারণ সময়কাল অনুযায়ী পুরনো লগ স্বয়ংক্রিয়ভাবে মুছে যায়।",
     "tipDeleteLogsOlderThan": "স্বয়ংক্রিয়-সাফ সক্রিয় থাকলে এই সংখ্যার দিনের চেয়ে পুরনো লগ মুছে যায়।",
-    "tipActiveTheme": "ইন্টারফেস ব্যবহৃত সক্রিয় রঙ থিম নিয়ন্ত্রণ করে। নিচে কাস্টম থিম তৈরি করা যায়।"
+    "tipActiveTheme": "ইন্টারফেস ব্যবহৃত সক্রিয় রঙ থিম নিয়ন্ত্রণ করে। নিচে কাস্টম থিম তৈরি করা যায়।",
+    "whisper": "Whisper",
+    "whisperModel": "Whisper model",
+    "whisperTimestampsLength": "Whisper timestamps length",
+    "whisperUseCuda": "Use CUDA for Whisper",
+    "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperModelRootPath": "Whisper model root path",
+    "optional": "optional",
+    "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
+    "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
+    "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
+    "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {
     "title": "ব্যবহারকারীগণ",
@@ -423,7 +441,18 @@
     "translate": "অনুবাদ করুন",
     "unknownSeason": "অজানা সিজন",
     "season": "সিজন ",
-    "episodeCount": "এপি"
+    "episodeCount": "এপি",
+    "createSubtitle": "Create subtitle",
+    "creatingSubtitle": "Creating subtitle…",
+    "retryTranscription": "Retry transcription",
+    "whisperStatus": {
+      "queued_for_transcription": "Transcription queued",
+      "transcribing": "Transcribing",
+      "transcription_failed": "Transcription failed",
+      "transcription_completed": "Transcription completed",
+      "queued_for_translation": "Translation queued",
+      "translating": "Translating"
+    }
   },
   "stats": {
     "title": "পরিসংখ্যান",

@@ -36,6 +36,16 @@ export const getLanguageById = (db: Database.Database, id: number): DBLanguage |
   return result ? withFlagCode(result) : null
 }
 
+// Look up a language by its ISO 639-1 (or fall back to 639-2/B) code, e.g. "da".
+export const getLanguageByIso = (db: Database.Database, iso: string): DBLanguage | null => {
+  const code = iso.trim().toLowerCase()
+  if (!code) return null
+  const result = db
+    .prepare(`SELECT * FROM language WHERE lower(iso639) = ? OR lower(iso6392b) = ? LIMIT 1`)
+    .get(code, code) as DBLanguage | undefined
+  return result ? withFlagCode(result) : null
+}
+
 export const addLanguage = (
   db: Database.Database,
   user: DBUser,
