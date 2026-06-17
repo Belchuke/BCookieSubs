@@ -156,9 +156,9 @@
                       data-lp-type="<%= lp.type %>"
                       title="Select for bulk action">
                     <% if (showPosters && group.mediaItem && group.mediaItem.mediaItemPhotoPath) { %>
-                      <img src="/media-photos/<%= group.mediaItem.mediaItemPhotoPath %>"
+                      <img data-src="/media-photos/<%= group.mediaItem.mediaItemPhotoPath %>"
                            alt="Poster"
-                           class="lpx-poster-sm">
+                           class="lpx-poster-sm lp-lazy-img" loading="lazy" decoding="async">
                     <% } else { %>
                       <div class="lpx-poster-sm-ph">
                         <i class="fa-solid fa-<%= _isSeries ? 'tv' : 'film' %> lpx-text-dim"></i>
@@ -225,9 +225,9 @@
                           data-media-item-id="<%= c.mediaItemId %>"
                         >
                           <% if (showPosters && c.mediaPoster) { %>
-                            <img src="/media-photos/<%= c.mediaPoster %>"
+                            <img data-src="/media-photos/<%= c.mediaPoster %>"
                                  alt="Poster"
-                                 class="lpx-poster-md">
+                                 class="lpx-poster-md lp-lazy-img" loading="lazy" decoding="async">
                           <% } else { %>
                             <div class="lpx-poster-md-ph">
                               <i class="fa-solid fa-film lpx-icon-md"></i>
@@ -759,14 +759,21 @@
     var key = 'lp-' + el.getAttribute('data-lp-accordion')
     var state = getAccordionState()
     if (state[key] === true) el.open = true
-    el.addEventListener('toggle', function() { saveAccordionOpen(key, el.open) })
+    el.addEventListener('toggle', function() {
+      saveAccordionOpen(key, el.open)
+      // Re-arm lazy-load for posters revealed by opening the accordion.
+      if (el.open && window.lpInitLazyLoad) window.lpInitLazyLoad(el)
+    })
   })
 
   document.querySelectorAll('details[data-ep-accordion]').forEach(function(el) {
     var key = 'ep-' + el.getAttribute('data-ep-accordion')
     var state = getAccordionState()
     if (state[key] === true) el.open = true
-    el.addEventListener('toggle', function() { saveAccordionOpen(key, el.open) })
+    el.addEventListener('toggle', function() {
+      saveAccordionOpen(key, el.open)
+      if (el.open && window.lpInitLazyLoad) window.lpInitLazyLoad(el)
+    })
   })
 
   ;(function() {
@@ -1044,7 +1051,7 @@
     var openBtn = e.target.closest('.lp-group-match-btn')
     if (openBtn) {
       var picker = document.getElementById('lp-group-picker-' + openBtn.dataset.groupKey)
-      if (picker) picker.hidden = false
+      if (picker) { picker.hidden = false; if (window.lpInitLazyLoad) window.lpInitLazyLoad(picker) }
       return
     }
 
