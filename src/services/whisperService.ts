@@ -2,8 +2,8 @@ import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
 import { spawn } from "child_process"
+import axios from "axios"
 import Database from "better-sqlite3"
-import autoDownloadModel from "nodejs-whisper/dist/autoDownloadModel"
 import { createLog } from "../repositories/logRepository"
 import { getConfig } from "../repositories/configRepository"
 import { parseSrt, SrtEntry, serializeSrt } from "./srtService"
@@ -11,6 +11,15 @@ import { parseSrt, SrtEntry, serializeSrt } from "./srtService"
 let whisperCliPathCache: string | null = null
 
 const WHISPER_CPP_PATH = path.join(process.cwd(), "node_modules", "nodejs-whisper", "cpp", "whisper.cpp")
+
+// Direct download source for ggml Whisper models. This mirrors the URL the
+// Dockerfile uses to preload the default model, and the same source
+// nodejs-whisper's download-ggml-model.sh pulls from. We download directly
+// instead of calling nodejs-whisper's autoDownloadModel because that helper
+// shells out with `cd` + a relative `./download-ggml-model.sh` (which breaks
+// when the cwd isn't the models dir) and then tries to rebuild whisper.cpp
+// from source via cmake at runtime — neither of which belongs in a container.
+const WHISPER_MODEL_DOWNLOAD_BASE = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
 
 const WHISPER_MODELS = [
   "tiny",
@@ -113,6 +122,49 @@ function getWhisperModelPath(model: WhisperModelName, modelRootPath?: string): s
     return path.join(modelRootPath, modelFile)
   }
   return path.join(WHISPER_CPP_PATH, "models", modelFile)
+}
+
+// Stream ggml-<model>.bin directly from HuggingFace into targetDir, writing to
+// a .part file first and renaming on success so a partial download never leaves
+// a half-written model that the next run would mistake for a complete one.
+async function downloadWhisperModel(model: WhisperModelName, targetDir: string): Promise<void> {
+  const modelFile = MODEL_FILE_NAMES[model]
+  if (!modelFile) throw new Error(`Unknown Whisper model: ${model}`)
+  const targetPath = path.join(targetDir, modelFile)
+  const tmpPath = `${targetPath}.part`
+  const url = `${WHISPER_MODEL_DOWNLOAD_BASE}/${modelFile}`
+
+  safeUnlink(tmpPath)
+  const res = await axios.get(url, {
+    responseType: "stream",
+    maxRedirects: 10,
+    // Models are multi-GB; apply no overall timeout — rely on socket inactivity.
+    timeout: 0,
+  })
+  if (res.status !== 200) {
+    throw new Error(`HTTP ${res.status} downloading ${modelFile} from ${url}`)
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const file = fs.createWriteStream(tmpPath)
+    const fail = (err: unknown): void => {
+      file.destroy()
+      safeUnlink(tmpPath)
+      reject(err)
+    }
+    res.data.pipe(file)
+    file.on("finish", () => {
+      file.close((closeErr) => {
+        if (closeErr) return fail(closeErr)
+        fs.rename(tmpPath, targetPath, (renameErr) => {
+          if (renameErr) return fail(renameErr)
+          resolve()
+        })
+      })
+    })
+    file.on("error", fail)
+    res.data.on("error", fail)
+  })
 }
 
 function escapeShellArg(arg: string): string {
@@ -231,7 +283,8 @@ export async function transcribeMediaWithWhisper(
     const modelPath = getWhisperModelPath(model, modelRootPathRaw)
     if (!fs.existsSync(modelPath)) {
       createLog(db, "info", "whisper", mediaItemId, `Whisper model ${model} not found; downloading`, { modelPath })
-      await autoDownloadModel(console, model, useCuda, modelRootPathRaw)
+      const downloadDir = modelRootPathRaw || path.join(WHISPER_CPP_PATH, "models")
+      await downloadWhisperModel(model, downloadDir)
       if (!fs.existsSync(modelPath)) {
         throw new Error(`Whisper model file not found at ${modelPath} after download`)
       }

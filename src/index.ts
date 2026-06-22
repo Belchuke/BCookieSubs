@@ -3,12 +3,12 @@ import cookieParser from "cookie-parser"
 import path from "path"
 import dotenv from "dotenv"
 import { spawn, ChildProcess } from "node:child_process"
+import { Worker } from "node:worker_threads"
 import { getDb } from "./setup"
 import { syncSecretsFromEnv } from "./repositories/movieDbRepository"
-import { taskMain, cleanupRunningChunks } from "./tasks/translateTask"
 import { cleanupExtractTempDir } from "./services/libraryPathService"
 import { cleanupWhisperTempDir } from "./services/whisperService"
-import { libraryScannerMain } from "./tasks/libraryTask"
+import { getTranslateWorkerBridge } from "./tasks/translateWorkerBridge"
 import { loadSession } from "./middleware/auth"
 import { requireInternalToken } from "./middleware/internalAuth"
 import { authRouter } from "./routes/auth"
@@ -114,22 +114,93 @@ export function stopOllamaServe() {
   ollamaProcess?.kill("SIGTERM")
 }
 
-process.on("SIGINT", () => {
-  console.log("\nShutting down gracefully…")
-  cleanupRunningChunks(db)
-  cleanupExtractTempDir()
-  cleanupWhisperTempDir()
-  stopOllamaServe()
-  process.exit(0)
-})
+// ── background workers (run in worker_threads so they don't block the UI) ──
+let translateWorker: Worker | null = null
+let libraryWorker: Worker | null = null
+let shuttingDown = false
 
-process.on("SIGTERM", () => {
-  cleanupRunningChunks(db)
+// Bounded respawn for the translate worker: max 3 restarts within 10 min so a
+// broken ollama/DB doesn't get hammered forever. The scanner is idempotent and
+// self-throttling, so it respawns freely.
+const TRANSLATE_RESPAWN_MAX = 3
+const TRANSLATE_RESPAWN_WINDOW_MS = 10 * 60 * 1000
+const translateRespawns: number[] = []
+
+function workerScriptPath(name: string): string {
+  // __dirname is dist/ after tsc, so this resolves to dist/tasks/<name>.js
+  return path.join(__dirname, "tasks", `${name}.js`)
+}
+
+function spawnTranslateWorker(): Worker {
+  const w = new Worker(workerScriptPath("translateWorker"))
+  translateWorker = w
+  getTranslateWorkerBridge().setWorker(w)
+  w.on("error", (err) => console.error("[translate-worker] error:", err))
+  w.on("exit", (code) => {
+    console.log(`[translate-worker] exited (code=${code})`)
+    translateWorker = null
+    if (shuttingDown) return
+    // Drop respawns outside the rolling 10-min window.
+    const now = Date.now()
+    while (translateRespawns.length && now - translateRespawns[0] > TRANSLATE_RESPAWN_WINDOW_MS) {
+      translateRespawns.shift()
+    }
+    if (translateRespawns.length >= TRANSLATE_RESPAWN_MAX) {
+      console.error("[translate-worker] max restarts reached in 10 min — giving up; restart the process to resume")
+      return
+    }
+    translateRespawns.push(now)
+    console.log(`[translate-worker] restarting in 5s…`)
+    setTimeout(() => {
+      if (!shuttingDown) spawnTranslateWorker()
+    }, 5000)
+  })
+  return w
+}
+
+function spawnLibraryWorker(): Worker {
+  const w = new Worker(workerScriptPath("libraryScannerWorker"))
+  libraryWorker = w
+  w.on("error", (err) => console.error("[library-scanner-worker] error:", err))
+  w.on("exit", (code) => {
+    console.log(`[library-scanner-worker] exited (code=${code})`)
+    libraryWorker = null
+    if (shuttingDown) return
+    console.log(`[library-scanner-worker] restarting in 5s…`)
+    setTimeout(() => {
+      if (!shuttingDown) spawnLibraryWorker()
+    }, 5000)
+  })
+  return w
+}
+
+async function shutdown(): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log("\nShutting down gracefully…")
+  // Release any in-flight claimed chunks in the translate worker before it exits.
+  try {
+    await getTranslateWorkerBridge().cleanupRunningChunks()
+  } catch (e) {
+    console.error("[shutdown] cleanup error:", e)
+  }
+  if (translateWorker) translateWorker.postMessage({ type: "shutdown" })
+  if (libraryWorker) libraryWorker.postMessage({ type: "shutdown" })
+  await Promise.race([
+    Promise.all([
+      translateWorker ? translateWorker.terminate() : Promise.resolve(),
+      libraryWorker ? libraryWorker.terminate() : Promise.resolve(),
+    ]),
+    new Promise((r) => setTimeout(r, 5000)),
+  ])
   cleanupExtractTempDir()
   cleanupWhisperTempDir()
   stopOllamaServe()
   process.exit(0)
-})
+}
+
+process.on("SIGINT", shutdown)
+process.on("SIGTERM", shutdown)
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 4849
 
@@ -202,13 +273,7 @@ app.listen(PORT, () => {
 
 console.log(`[startup] Waiting ${STARTUP_DELAY_MS / 1000}s for Ollama to start before launching workers…`)
 setTimeout(() => {
-  console.log("[startup] Starting background workers")
-
-  taskMain(db).catch((err) => {
-    console.error("[worker] Fatal error:", err)
-  })
-
-  libraryScannerMain(db).catch((err) => {
-    console.error("[library-scanner] Fatal error:", err)
-  })
+  console.log("[startup] Starting background workers (worker_threads)")
+  spawnTranslateWorker()
+  spawnLibraryWorker()
 }, STARTUP_DELAY_MS)

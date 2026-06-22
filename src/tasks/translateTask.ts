@@ -1,6 +1,9 @@
 import Database from "better-sqlite3"
 import SrtParser2 from "srt-parser-2"
 import * as fs from "fs"
+// parentPort is `null` when this module runs outside a worker_threads Worker
+// (e.g. if ever imported on the main thread), so the calls below are no-ops there.
+import { parentPort } from "worker_threads"
 import { getConfig, isWhisperGpuAvailable } from "../repositories/configRepository"
 import { cleanupWhisperTempDir, transcribeMediaWithWhisper } from "../services/whisperService"
 import {
@@ -111,6 +114,12 @@ const claimedChunkIds = new Set<number>()
 let workerPaused = false
 let currentAbortController: AbortController | null = null
 
+// Push paused-state changes to the main thread so the control bridge can mirror
+// `workerPaused` without polling. No-op when not running inside a Worker.
+function notifyPausedState(paused: boolean): void {
+  if (parentPort) parentPort.postMessage({ type: "state", paused })
+}
+
 export function cleanupRunningChunks(db: Database.Database): void {
   if (claimedChunkIds.size === 0) return
   const ids = Array.from(claimedChunkIds)
@@ -128,6 +137,7 @@ export function pauseWorker(db: Database.Database, actingUsername: string | null
   const who = actingUsername ?? "unknown user"
   createLog(db, "info", "worker", null, `Worker paused by user: ${who}`, { username: actingUsername })
   console.log(`[worker] Worker paused by user: ${who}`)
+  notifyPausedState(true)
 }
 
 export function resumeWorker(db?: Database.Database, actingUsername: string | null = null): void {
@@ -137,6 +147,7 @@ export function resumeWorker(db?: Database.Database, actingUsername: string | nu
     createLog(db, "info", "worker", null, `Worker resumed by user: ${who}`, { username: actingUsername })
   }
   console.log(`[worker] Worker resumed by user: ${who}`)
+  notifyPausedState(false)
 }
 
 export function isWorkerPaused(): boolean {
@@ -173,6 +184,7 @@ async function runOnce(db: Database.Database): Promise<void> {
         scheduleId: scheduleResult.scheduleId,
       })
       console.log("[worker] Paused — outside schedule window")
+      notifyPausedState(true)
     }
     await sleep(IDLE_INTERVAL_MS - TASK_INTERVAL_MS)
     return
@@ -185,6 +197,7 @@ async function runOnce(db: Database.Database): Promise<void> {
       scheduleActive: scheduleResult.scheduleActive,
     })
     console.log("[worker] Active")
+    notifyPausedState(false)
   }
 
   const config = getConfig(db)

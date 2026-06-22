@@ -23,9 +23,6 @@ const createTables = (db: Database.Database) => {
   console.log("Creating new database...")
 
   const setup = db.transaction(() => {
-    db.pragma("foreign_keys = ON")
-    db.pragma("busy_timeout = 5000")
-
     db.exec(`CREATE TABLE IF NOT EXISTS user (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
@@ -791,6 +788,16 @@ const runMigrations = (db: Database.Database): void => {}
 export function getDb(): Database.Database {
   const dbExists = fs.existsSync(dbName)
   const db = new Database(dbName)
+
+  // Pragmas applied on every connection (main process + worker_threads).
+  // WAL allows concurrent readers + a writer across threads/processes without
+  // SQLITE_BUSY errors; synchronous=NORMAL is the safe pairing for WAL.
+  // foreign_keys + busy_timeout were previously only set on new-DB creation —
+  // setting them here fixes existing-DB connections too.
+  db.pragma("journal_mode = WAL")
+  db.pragma("synchronous = NORMAL")
+  db.pragma("foreign_keys = ON")
+  db.pragma("busy_timeout = 5000")
 
   if (!dbExists) {
     createTables(db)

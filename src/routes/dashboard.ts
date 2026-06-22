@@ -11,7 +11,7 @@ import { getActiveTheme } from "../repositories/themeRepository"
 import { requireAuth } from "../middleware/auth"
 import { requirePermission } from "../services/permissionService"
 import { NameFormatterResult } from "../types/modelTypes"
-import { pauseWorker, resumeWorker, isWorkerPaused } from "../tasks/translateTask"
+import { getTranslateWorkerBridge } from "../tasks/translateWorkerBridge"
 import { addCreditToSrt } from "../services/subtitleExportService"
 
 const upload = multer({ storage: multer.memoryStorage() })
@@ -35,7 +35,7 @@ export function dashboardRouter(db: Database.Database) {
       languages,
       configLangs,
       userConfigLangs,
-      workerPaused: isWorkerPaused(),
+      workerPaused: getTranslateWorkerBridge().isWorkerPaused(),
       showPosters: config.showPosters && user.showPosters !== 0,
       toast: req.query.toast ?? null,
       msg: req.query.msg ?? null,
@@ -48,21 +48,29 @@ export function dashboardRouter(db: Database.Database) {
     try {
       const { subtitles, languageMap } = getDashboardData(db)
       const { logs } = getLogs(db, res.locals.user!, 20)
-      res.json({ subtitles, languageMap, logs: logs ?? [], workerPaused: isWorkerPaused() })
+      res.json({ subtitles, languageMap, logs: logs ?? [], workerPaused: getTranslateWorkerBridge().isWorkerPaused() })
     } catch (e) {
       res.status(500).json({ error: String(e) })
     }
   })
 
   
-  router.post("/worker/pause", requireAuth, requirePermission("canManageWorker"), (_req, res) => {
-    pauseWorker(db, res.locals.user!.username)
-    res.json({ success: true, workerPaused: true })
+  router.post("/worker/pause", requireAuth, requirePermission("canManageWorker"), async (_req, res) => {
+    try {
+      await getTranslateWorkerBridge().pauseWorker(res.locals.user!.username)
+      res.json({ success: true, workerPaused: getTranslateWorkerBridge().isWorkerPaused() })
+    } catch (e) {
+      res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) })
+    }
   })
 
-  router.post("/worker/resume", requireAuth, requirePermission("canManageWorker"), (_req, res) => {
-    resumeWorker(db, res.locals.user!.username)
-    res.json({ success: true, workerPaused: false })
+  router.post("/worker/resume", requireAuth, requirePermission("canManageWorker"), async (_req, res) => {
+    try {
+      await getTranslateWorkerBridge().resumeWorker(res.locals.user!.username)
+      res.json({ success: true, workerPaused: getTranslateWorkerBridge().isWorkerPaused() })
+    } catch (e) {
+      res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) })
+    }
   })
 
         
