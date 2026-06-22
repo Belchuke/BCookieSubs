@@ -1063,12 +1063,15 @@ async function processWhisperTranscription(db: Database.Database, subtitle: DBSu
     const onWhisperProgress = (progress: number, positionMs: number, durationMs: number): void => {
       setWhisperProgress(db, subtitle.id, progress, positionMs, durationMs)
     }
+    const whisperMediaItem = subtitle.mediaItemId ? getMediaItemById(db, subtitle.mediaItemId) : null
+    const whisperDisplayName = whisperMediaItem?.title ?? subtitle.name
     const result = await transcribeMediaWithWhisper(
       db,
       mediaPath,
       subtitle.mediaItemId ?? subtitle.id,
       config.whisperModel,
       onWhisperProgress,
+      whisperDisplayName,
     )
 
     if (workerPaused) {

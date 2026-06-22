@@ -172,12 +172,14 @@ export async function transcribeMediaWithWhisper(
   mediaItemId: number,
   overrideModel?: string,
   onProgress?: WhisperTranscriptionProgress,
+  displayName?: string,
 ): Promise<WhisperTranscriptionResult> {
   const config = getConfig(db)
   const model = validateWhisperModel(overrideModel || config.whisperModel || "large-v3-turbo")
   const timestampsLength = validateTimestampsLength(config.whisperTimestampsLength ?? 80)
   const useCuda = isWhisperGpuAvailable() && config.whisperUseCuda === 1
-  const modelRootPathRaw = (config.whisperModelRootPath || process.env.WHISPER_MODEL_ROOT_PATH || "").trim() || undefined
+  const modelRootPathRaw =
+    (config.whisperModelRootPath || process.env.WHISPER_MODEL_ROOT_PATH || "").trim() || undefined
   if (modelRootPathRaw) {
     try {
       fs.mkdirSync(modelRootPathRaw, { recursive: true })
@@ -236,30 +238,37 @@ export async function transcribeMediaWithWhisper(
       createLog(db, "info", "whisper", mediaItemId, `Whisper model ${model} downloaded`, { modelPath })
     }
 
-    const flags = [
-      "-osrt",
-      "-pp",
-      "-sow",
-      "true",
-      "-ml",
-      String(timestampsLength),
-      useCuda ? undefined : "-ng",
-    ].filter((f): f is string => f !== undefined)
+    const flags = ["-osrt", "-pp", "-sow", "true", "-ml", String(timestampsLength), useCuda ? undefined : "-ng"].filter(
+      (f): f is string => f !== undefined,
+    )
 
-    const command = [
-      cliPath,
-      ...flags,
-      "-l",
-      "auto",
-      "-m",
-      modelPath,
-      "-f",
-      wavMediaPath,
-    ]
+    const command = [cliPath, ...flags, "-l", "auto", "-m", modelPath, "-f", wavMediaPath]
 
-    createLog(db, "info", "whisper", mediaItemId, `Running whisper-cli`, { command: command.map(escapeShellArg).join(" ") })
+    createLog(db, "info", "whisper", mediaItemId, `Running whisper-cli`, {
+      command: command.map(escapeShellArg).join(" "),
+    })
 
-    await runWhisperCli(command, wavDurationMs, onProgress)
+    // Emit a progress log for every 15 minutes of audio transcribed, e.g.
+    // "Whispered 15 min for The Matrix". positionMs is the latest transcribed
+    // segment's end time, so this tracks transcribed-audio time, not wall-clock.
+    const LOG_INTERVAL_MS = 15 * 60 * 1000
+    const name = displayName || path.basename(mediaPath)
+    let lastLoggedMark = 0
+    const onProgressWithLog: WhisperTranscriptionProgress = (progress, positionMs, durationMs) => {
+      const mark = Math.floor(positionMs / LOG_INTERVAL_MS)
+      if (mark > lastLoggedMark) {
+        lastLoggedMark = mark
+        const minutes = mark * 15
+        createLog(db, "info", "whisper", mediaItemId, `Whispered ${minutes} min for ${name}`, {
+          mediaBasename,
+          positionMs,
+          durationMs,
+        })
+      }
+      onProgress?.(progress, positionMs, durationMs)
+    }
+
+    await runWhisperCli(command, wavDurationMs, onProgressWithLog)
 
     if (!fs.existsSync(expectedSrtPath)) {
       throw new Error("Whisper finished but no SRT file was generated")
@@ -340,7 +349,6 @@ function runWhisperCli(
       stdio: ["ignore", "pipe", "pipe"],
     })
 
-    let stdout = ""
     let stderr = ""
     let lastProgress = -1
     let latestEndMs = 0
@@ -369,9 +377,7 @@ function runWhisperCli(
     }
 
     proc.stdout?.on("data", (chunk) => {
-      const text = chunk.toString()
-      stdout += text
-      handleChunk(text)
+      handleChunk(chunk.toString())
     })
 
     proc.stderr?.on("data", (chunk) => {
@@ -382,10 +388,12 @@ function runWhisperCli(
 
     proc.on("close", (code) => {
       if (code === 0) {
-        if (stdout.toLowerCase().includes("error:") || stderr.toLowerCase().includes("error:")) {
-          reject(new Error(`Whisper reported an error:\n${stdout}\n${stderr}`))
-          return
-        }
+        // whisper-cli exits 0 on success. Do NOT scan stdout for "error:" —
+        // stdout IS the transcription text, which legitimately contains words
+        // like "error:" in dialogue. That heuristic caused successful 99%
+        // transcriptions to be falsely rejected (and then the SRT deleted in
+        // the finally block, losing hours of work). The downstream SRT file
+        // existence + parse checks validate that real output was produced.
         resolve()
       } else {
         reject(new Error(stderr || `whisper-cli exited with code ${code}`))

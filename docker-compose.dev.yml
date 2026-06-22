@@ -1,0 +1,44 @@
+# BCookieSubs — dev override (live source reload, no image rebuild per change)
+#
+# Layer this on top of either base compose file:
+#   docker compose -f docker-compose.yml       -f docker-compose.dev.yml up
+#   docker compose -f docker-compose.macos.yml -f docker-compose.dev.yml up
+#
+# What it does:
+#   - Builds the `dev` Dockerfile target (has tsc + watch tooling). This image
+#     is built ONCE; you only rebuild it when package.json / lockfile / Dockerfile
+#     change — not on every source edit.
+#   - Bind-mounts your local src/views/public/locales/tsconfig.json into the
+#     container, so edits are reflected live.
+#   - NODE_ENV=development disables EJS view caching -> view edits show up on the
+#     next request with no restart; public/* edits show up on a browser refresh.
+#   - src/*.ts edits are watch-compiled (tsc --watch) and the server auto-restarts
+#     (node --watch) — see the `dev` stage CMD in the Dockerfile.
+#
+# What is deliberately NOT bind-mounted (to keep things fast + correct):
+#   - node_modules : the image's Linux-compiled native modules (better-sqlite3,
+#     bcrypt) are used. Mounting the host's macOS node_modules would break them.
+#   - dist         : tsc writes it inside the container; mounting a host dist
+#     would race with the in-container watcher.
+#   - /data        : the DB stays on the app-data named volume (defined in the
+#     base compose file), so your database persists and lives in the container.
+
+services:
+  app:
+    build:
+      context: .
+      target: dev
+    image: bcookiesubs:dev
+    # In dev we don't want the container auto-restarting on every watch restart
+    # or crash — let the watch loop handle restarts and surface errors in the log.
+    restart: "no"
+    environment:
+      NODE_ENV: development
+    volumes:
+      # Only ADD bind mounts here; the base file already mounts app-data,
+      # whisper-models, app-photos (where applicable) and the media library.
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./views:/app/views
+      - ./locales:/app/locales
+      - ./tsconfig.json:/app/tsconfig.json

@@ -19,17 +19,17 @@ import {
   deleteLibraryPath,
   getBlacklistedItems,
   getLibraryPathById,
-  getLibraryPaths,
   getLibraryPathItemById,
-  getLibraryPathItemCandidates,
-  getLibraryPathItemsWithDetails,
-  getActiveLibraryPathItemStatuses,
   isLibraryPathItemBlacklisted,
   toggleLibraryPath,
   unblacklistLibraryPathItem,
   updateLibraryPath,
   updateLibraryPathItemMediaItem,
   updateLibraryPathItemStatus,
+  getLibraryPathsViewData,
+  getActiveLibraryPathItemStatusesByType,
+  getLibraryPathItemsByIds,
+  getLibraryPathsByType,
 } from "../repositories/libraryPathRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
 import { autoTranslateItem, findCompanionSrt } from "../services/libraryPathService"
@@ -91,60 +91,78 @@ export function libraryPathsRouter(db: Database.Database) {
 
   router.get("/", (req, res) => {
     const user = res.locals.user!
-    const libraryPaths = getLibraryPaths(db)
     const languages = getLanguages(db)
     const theme = getActiveTheme(db, user.id)
-
-    const enriched = libraryPaths.map((lp) => {
-      const items = getLibraryPathItemsWithDetails(db, lp.id)
-
-      const buckets = new Map<number | null, typeof items>()
-      for (const item of items) {
-        const key = item.mediaItemId ?? null
-        if (!buckets.has(key)) buckets.set(key, [])
-        buckets.get(key)!.push(item)
-      }
-
-      const groups = Array.from(buckets.entries()).map(([mediaItemId, grpItems]) => {
-        const sorted = [...grpItems].sort((a, b) => {
-          if (a.season != null && b.season != null) {
-            if (a.season !== b.season) return a.season - b.season
-            return (a.episode ?? 0) - (b.episode ?? 0)
-          }
-          return a.path.localeCompare(b.path)
-        })
-        return {
-          mediaItemId,
-          mediaItem: sorted[0]?.mediaItem ?? null,
-          items: sorted,
-        }
-      })
-
-      groups.sort((a, b) => {
-        if (a.mediaItem && !b.mediaItem) return -1
-        if (!a.mediaItem && b.mediaItem) return 1
-        if (a.mediaItem && b.mediaItem) return a.mediaItem.title.localeCompare(b.mediaItem.title)
-        return 0
-      })
-
-      return { ...lp, groups }
-    })
-
     const config = getConfig(db)
     const showPosters = config.showPosters && user.showPosters !== 0
-    const blacklisted = getBlacklistedItems(db)
+
+    const __ = res.locals.__ as (key: string) => string
+    const can = res.locals.can as (key: string) => boolean
+    const i18n = {
+      searchPlaceholder: __("libraryrequests.searchPlaceholder"),
+      allGenres: __("libraryrequests.allGenres"),
+      enabledBadge: __("librarypaths.enabledBadge"),
+      disabledBadge: __("librarypaths.disabledBadge"),
+      enable: __("librarypaths.enable"),
+      disable: __("librarypaths.disable"),
+      edit: __("common.edit"),
+      delete: __("common.delete"),
+      blacklistBtn: __("librarypaths.blacklistBtn"),
+      changeMatch: __("librarypaths.changeMatch"),
+      removeFromBlacklist: __("librarypaths.removeFromBlacklist"),
+      readd: __("librarypaths.readd"),
+      translate: __("librarypaths.translate"),
+      createSubtitle: __("librarypaths.createSubtitle"),
+      noBlacklisted: __("librarypaths.noBlacklisted"),
+      noPathsConfigured: __("librarypaths.noPathsConfigured"),
+      filesystemPath: __("librarypaths.filesystemPath"),
+      library: __("librarypaths.library"),
+      match: __("common.match"),
+      blacklistedBy: __("librarypaths.blacklistedBy"),
+      when: __("common.when"),
+      blacklistReason: __("librarypaths.blacklistReason"),
+      actions: __("common.actions"),
+    }
+    const perms = {
+      canEditLibraryPath: can("canEditLibraryPath"),
+      canBlackListALibraryPathItem: can("canBlackListALibraryPathItem"),
+      canChangeMatchForLibraryPaths: can("canChangeMatchForLibraryPaths"),
+      canAddSubtitleToTranslateFromLibrary: can("canAddSubtitleToTranslateFromLibrary"),
+      canCreateSubtitlesWithWhisper: can("canCreateSubtitlesWithWhisper"),
+    }
+
     res.render("librarypaths", {
       user,
       activeNav: "library-paths",
-      libraryPaths: enriched,
       languages,
       rootLibraryPath: config.rootLibraryPath ?? null,
       showPosters,
-      blacklisted,
       toast: req.query.toast ?? null,
       msg: req.query.msg ?? null,
       theme,
+      i18n,
+      perms,
     })
+  })
+
+  // Tab data: all library paths of a media type with groups/items, batched.
+  router.get("/data", (req, res) => {
+    const type = req.query.type === "series" ? "series" : "movie"
+    res.json({ paths: getLibraryPathsViewData(db, type) })
+  })
+
+  // Blacklist tab data (rendered client-side).
+  router.get("/blacklist-data", (_req, res) => {
+    res.json({ blacklisted: getBlacklistedItems(db) })
+  })
+
+  // Full enriched items by id — used to render newly-discovered items from the poll.
+  router.get("/items", (req, res) => {
+    const ids = String(req.query.ids || "")
+      .split(",")
+      .map((s) => parseInt(s.trim()))
+      .filter((n) => !isNaN(n) && n > 0)
+    res.json({ items: getLibraryPathItemsByIds(db, ids) })
   })
 
   router.post("/create", upload.none(), (req, res) => {
@@ -541,9 +559,10 @@ export function libraryPathsRouter(db: Database.Database) {
   })
 
   router.get("/poll", (req, res) => {
-    const paths = getLibraryPaths(db).map((lp) => ({ id: lp.id, state: lp.state }))
-    const items = getActiveLibraryPathItemStatuses(db)
-    res.json({ paths, items })
+    const type = req.query.type === "series" ? "series" : "movie"
+    const pathStates = getLibraryPathsByType(db, type).map((lp) => ({ id: lp.id, state: lp.state }))
+    const items = getActiveLibraryPathItemStatusesByType(db, type)
+    res.json({ pathStates, items })
   })
 
   router.get("/blacklist", (req, res) => {

@@ -120,3 +120,37 @@ EXPOSE 4850
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "dist/index.js"]
+
+
+# ─── Dev stage: live reload without rebuilding the image ─────────────────────
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#   (or:  docker compose -f docker-compose.macos.yml -f docker-compose.dev.yml up)
+#
+# Extends the `build` stage (which already has devDependencies + tsc + the
+# pre-compiled whisper.cpp) so no npm install / native compile runs here.
+# docker-compose.dev.yml bind-mounts your local src/views/public/locales, so:
+#   - EJS view / public JS edits  -> picked up immediately (no restart, just
+#     refresh; NODE_ENV=development disables EJS view caching).
+#   - src/*.ts edits              -> tsc --watch recompiles dist, node --watch
+#     restarts the server. ~1-2s loop, no image rebuild.
+# The DB stays on the app-data named volume (/data) — it is never bind-mounted.
+FROM build AS dev
+
+# Runtime system deps the scanner/extractor/whisper need (the build stage only
+# has build tooling, not ffmpeg/mkvtoolnix).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      mkvtoolnix \
+      ffmpeg \
+      tini \
+      ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+ENV NODE_ENV=development
+EXPOSE 4850
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+# 1) one-shot compile so dist exists before node starts,
+# 2) tsc --watch recompiles src -> dist on every save,
+# 3) node --watch restarts the server whenever dist changes.
+CMD ["sh", "-c", "./node_modules/.bin/tsc && ./node_modules/.bin/tsc --watch --preserveWatchOutput & exec node --watch dist/index.js"]

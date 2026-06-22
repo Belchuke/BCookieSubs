@@ -5,10 +5,12 @@ import { requireAuth } from "../middleware/auth"
 import { requirePermission } from "../services/permissionService"
 import { getConfig, isWhisperGpuAvailable } from "../repositories/configRepository"
 import {
-  getLibraryPaths,
+  getLibraryPathsByType,
+  getLibraryPathItemsForPaths,
   getLibraryPathItemsWithDetails,
   getLibraryPathItemById,
   getLibraryPathById,
+  enrichItems,
   updateLibraryPathItemMediaItem,
 } from "../repositories/libraryPathRepository"
 import {
@@ -24,9 +26,11 @@ import {
   getActiveSubtitleForLibraryPathItem,
   createWhisperSubtitle,
   getActiveWhisperSubtitleForMediaItem,
+  getActiveWhisperSubtitlesForMediaItems,
   createPlaceholderTranslationJobs,
   getTargetLanguagesForWhisperWorkflow,
   getJobLangStatusBySubtitle,
+  getJobLangStatusBySubtitles,
 } from "../repositories/subtitleRepository"
 import { getHighestRoleUser } from "../repositories/userRepository"
 import {
@@ -57,7 +61,7 @@ type RequestGroup = {
   year: number | null
   genres: string | null
   posterPath: string | null
-  type: "movie" | "series"
+  type: "movie" | "series" | "unmatched"
   items: RequestGroupItem[]
 }
 
@@ -66,46 +70,30 @@ export function libraryRequestsRouter(db: Database.Database) {
 
   router.use(requireAuth, requirePermission("canAddSubtitleToTranslateFromLibrary"))
 
-  router.get("/", (req, res) => {
-    const user = res.locals.user!
-    const libraryPaths = getLibraryPaths(db).filter((lp) => lp.enabled)
-    const userTargetLangs = getUserConfigTranslationLanguages(db, user.id)
-    const userTargetLangIds = userTargetLangs.map((tl) => tl.languageId)
-    const theme = getActiveTheme(db, user.id)
-    const config = getConfig(db)
-    const showPosters = !!config.showPosters && user.showPosters !== 0
-    const languages = getLanguages(db)
-    const langById = Object.fromEntries(languages.map((l) => [l.id, l]))
+  // Build the request groups for one media type using batched (non-N+1) queries.
+  // Mirrors the original per-item filtering logic but runs ~5 bulk queries total
+  // instead of 4+ queries per item. Unmatched items (no media item) are excluded
+  // here — they go to the dedicated "unmatched" tab via buildUnmatchedGroups.
+  function buildRequestGroups(
+    type: "movie" | "series",
+    userTargetLangIds: number[],
+  ): RequestGroup[] {
+    const libraryPaths = getLibraryPathsByType(db, type).filter((lp) => lp.enabled)
+    if (libraryPaths.length === 0) return []
+
+    const pathIds = libraryPaths.map((lp) => lp.id)
+    const enriched = enrichItems(db, getLibraryPathItemsForPaths(db, pathIds))
+    const { jobStatusBySub, whisperByMedia } = loadBatchedMaps(enriched)
 
     const groupsMap = new Map<string, RequestGroup>()
-
-    function addItemToGroup(
-      lpType: "movie" | "series",
-      mediaItem: any | null,
-      item: any,
-      subtitleId: number | null,
-      missingTargetLangIds: number[],
-      hasActiveJobs: boolean,
-      whisperStatus: string | null,
-    ) {
-      const key = mediaItem?.id ? String(mediaItem.id) : `unmatched-${item.id}`
+    for (const item of enriched) {
+      if (!item.mediaItem) continue // unmatched — handled by buildUnmatchedGroups
+      const gi = itemToGroupItem(item, jobStatusBySub, whisperByMedia, userTargetLangIds)
+      if (!gi) continue
+      const key = String(item.mediaItem.id)
       const existing = groupsMap.get(key)
-      const groupItem: RequestGroupItem = {
-        itemId: item.id,
-        season: item.season,
-        episode: item.episode,
-        fileName: item.path.split("/").pop() ?? "",
-        libraryPathName: lpType === "movie" ? "" : "",
-        libraryPathId: item.libraryPathId ?? 0,
-        subtitleId,
-        missingTargetLangIds,
-        hasActiveJobs,
-        whisperStatus,
-        isVideo: isVideoFile(item.path),
-        hasSrt: item.status !== "no_srts_found",
-      }
       if (existing) {
-        existing.items.push(groupItem)
+        existing.items.push(gi)
         existing.items.sort((a, b) => {
           if (a.season != null && b.season != null) {
             if (a.season !== b.season) return a.season - b.season
@@ -113,82 +101,209 @@ export function libraryRequestsRouter(db: Database.Database) {
           }
           return a.fileName.localeCompare(b.fileName)
         })
-        return
+        continue
       }
       groupsMap.set(key, {
         key,
-        title: mediaItem?.title ?? item.path.split("/").pop() ?? "Untitled",
-        year: mediaItem?.year ?? null,
-        genres: mediaItem?.genres ?? null,
-        posterPath: mediaItem?.mediaItemPhotoPath ?? null,
-        type: lpType,
-        items: [groupItem],
+        title: item.mediaItem.title ?? item.path.split("/").pop() ?? "Untitled",
+        year: item.mediaItem.year ?? null,
+        genres: item.mediaItem.genres ?? null,
+        posterPath: item.mediaItem.mediaItemPhotoPath ?? null,
+        type,
+        items: [gi],
       })
-    }
-
-    for (const lp of libraryPaths) {
-      const items = getLibraryPathItemsWithDetails(db, lp.id)
-      for (const item of items) {
-        if (item.blacklist) continue
-        if (item.status === "not_started" || item.status === "no_srts_found") {
-          const whisperStatus = item.mediaItemId
-            ? getActiveWhisperSubtitleForMediaItem(db, item.mediaItemId)?.whisperTranscriptionStatus ?? null
-            : null
-          addItemToGroup(lp.type, item.mediaItem, item, null, userTargetLangIds, false, whisperStatus)
-          continue
-        }
-
-        if (item.subtitleInfo && !item.subtitleInfo.deleted) {
-          // Use the actual job targetLangId mapping from DB to be authoritative
-          const jobRows = getJobLangStatusBySubtitle(db, item.subtitleInfo.subtitleId)
-
-          const finishedLangIds = new Set(
-            jobRows.filter((j) => j.status === "completed").map((j) => j.targetLangId),
-          )
-          const hasActiveJobs = jobRows.some(
-            (j) => j.status === "queued" || j.status === "running",
-          )
-
-          const missingTargetLangIds =
-            userTargetLangIds.length === 0
-              ? []
-              : userTargetLangIds.filter((id) => !finishedLangIds.has(id))
-
-          // If no user target languages configured, show the item (no specific filter)
-          // If all target languages are finished, hide the item
-          // If a translation was deleted (no active jobs, no completed), show with all languages missing
-          const allCompleted =
-            userTargetLangIds.length > 0 &&
-            userTargetLangIds.every((id) => finishedLangIds.has(id))
-
-          if (allCompleted) continue
-
-          if (missingTargetLangIds.length === 0 && !hasActiveJobs) {
-            // No missing and no active - hide
-            continue
-          }
-
-          const whisperStatus = item.mediaItemId
-            ? getActiveWhisperSubtitleForMediaItem(db, item.mediaItemId)?.whisperTranscriptionStatus ?? null
-            : null
-          addItemToGroup(
-            lp.type,
-            item.mediaItem,
-            item,
-            item.subtitleInfo.subtitleId,
-            missingTargetLangIds,
-            hasActiveJobs,
-            whisperStatus,
-          )
-        }
-      }
     }
 
     const allGroups = Array.from(groupsMap.values())
     allGroups.sort((a, b) => a.title.localeCompare(b.title))
+    return allGroups
+  }
+
+  // Unmatched items (no linked media item) across every enabled library path,
+  // both movies and series. Each becomes its own flat card titled by filename.
+  function buildUnmatchedGroups(userTargetLangIds: number[]): RequestGroup[] {
+    const paths = [
+      ...getLibraryPathsByType(db, "movie"),
+      ...getLibraryPathsByType(db, "series"),
+    ].filter((lp) => lp.enabled)
+    if (paths.length === 0) return []
+
+    const pathIds = paths.map((lp) => lp.id)
+    const enriched = enrichItems(db, getLibraryPathItemsForPaths(db, pathIds))
+    const { jobStatusBySub, whisperByMedia } = loadBatchedMaps(enriched)
+
+    const groups: RequestGroup[] = []
+    for (const item of enriched) {
+      if (item.mediaItem) continue // matched — lives on the movie/series tab
+      const gi = itemToGroupItem(item, jobStatusBySub, whisperByMedia, userTargetLangIds)
+      if (!gi) continue
+      groups.push({
+        key: `unmatched-${item.id}`,
+        title: item.path.split("/").pop() ?? "Untitled",
+        year: null,
+        genres: null,
+        posterPath: null,
+        type: "unmatched",
+        items: [gi],
+      })
+    }
+    groups.sort((a, b) => a.title.localeCompare(b.title))
+    return groups
+  }
+
+  // Batched job-lang + Whisper status maps for a set of enriched items.
+  function loadBatchedMaps(enriched: any[]) {
+    const activeSubIds = enriched
+      .filter((it) => it.subtitleInfo && !it.subtitleInfo.deleted)
+      .map((it) => it.subtitleInfo!.subtitleId)
+    const jobStatusBySub = getJobLangStatusBySubtitles(db, activeSubIds)
+    const mediaIds = [...new Set(enriched.map((it) => it.mediaItemId).filter((v): v is number => v != null))]
+    const whisperByMedia = getActiveWhisperSubtitlesForMediaItems(db, mediaIds)
+    return { jobStatusBySub, whisperByMedia }
+  }
+
+  // Shared per-item decision: returns a RequestGroupItem if the item still needs
+  // work (translation / missing langs / whisper), or null if it should be hidden.
+  function itemToGroupItem(
+    item: any,
+    jobStatusBySub: Map<number, { targetLangId: number; status: string }[]>,
+    whisperByMedia: Map<number, any>,
+    userTargetLangIds: number[],
+  ): RequestGroupItem | null {
+    if (item.blacklist) return null
+    const whisperStatus = item.mediaItemId
+      ? (whisperByMedia.get(item.mediaItemId)?.whisperTranscriptionStatus ?? null)
+      : null
+
+    if (item.status === "not_started" || item.status === "no_srts_found") {
+      return makeGroupItem(item, null, userTargetLangIds, false, whisperStatus)
+    }
+
+    if (item.subtitleInfo && !item.subtitleInfo.deleted) {
+      const jobRows = jobStatusBySub.get(item.subtitleInfo.subtitleId) ?? []
+      const finishedLangIds = new Set(
+        jobRows.filter((j) => j.status === "completed").map((j) => j.targetLangId),
+      )
+      const hasActiveJobs = jobRows.some((j) => j.status === "queued" || j.status === "running")
+      const missingTargetLangIds =
+        userTargetLangIds.length === 0
+          ? []
+          : userTargetLangIds.filter((id) => !finishedLangIds.has(id))
+      const allCompleted =
+        userTargetLangIds.length > 0 && userTargetLangIds.every((id) => finishedLangIds.has(id))
+      if (allCompleted) return null
+      if (missingTargetLangIds.length === 0 && !hasActiveJobs) return null
+      return makeGroupItem(
+        item,
+        item.subtitleInfo.subtitleId,
+        missingTargetLangIds,
+        hasActiveJobs,
+        whisperStatus,
+      )
+    }
+    return null
+  }
+
+  function makeGroupItem(
+    item: any,
+    subtitleId: number | null,
+    missingTargetLangIds: number[],
+    hasActiveJobs: boolean,
+    whisperStatus: string | null,
+  ): RequestGroupItem {
+    return {
+      itemId: item.id,
+      season: item.season,
+      episode: item.episode,
+      fileName: item.path.split("/").pop() ?? "",
+      libraryPathName: "",
+      libraryPathId: item.libraryPathId ?? 0,
+      subtitleId,
+      missingTargetLangIds,
+      hasActiveJobs,
+      whisperStatus,
+      isVideo: isVideoFile(item.path),
+      hasSrt: item.status !== "no_srts_found",
+    }
+  }
+
+  router.get("/", (req, res) => {
+    const user = res.locals.user!
+    const theme = getActiveTheme(db, user.id)
+    const config = getConfig(db)
+    const showPosters = !!config.showPosters && user.showPosters !== 0
+    const languages = getLanguages(db)
+    const langById = Object.fromEntries(
+      languages.map((l) => [l.id, { id: l.id, name: l.name, iso639: l.iso639, flagCode: l.flagCode }]),
+    )
+
+    const __ = res.locals.__ as (key: string) => string
+    const can = res.locals.can as (key: string) => boolean
+    const i18n = {
+      title: __("libraryrequests.title"),
+      searchPlaceholder: __("libraryrequests.searchPlaceholder"),
+      allGenres: __("libraryrequests.allGenres"),
+      movies: __("libraryrequests.movies"),
+      series: __("libraryrequests.series"),
+      unmatched: __("libraryrequests.unmatched"),
+      noMovies: __("libraryrequests.noMovies"),
+      noSeries: __("libraryrequests.noSeries"),
+      noUnmatched: __("libraryrequests.noUnmatched"),
+      translate: __("libraryrequests.translate"),
+      translateSeason: __("libraryrequests.translateSeason"),
+      seasonPickTracks: __("libraryrequests.seasonPickTracks"),
+      noTracksWhisper: __("libraryrequests.noTracksWhisper"),
+      createSubtitle: __("libraryrequests.createSubtitle"),
+      creatingSubtitle: __("libraryrequests.creatingSubtitle"),
+      selectSource: __("libraryrequests.selectSource"),
+      chooseSubtitleSource: __("libraryrequests.chooseSubtitleSource"),
+      unknownSeason: __("libraryrequests.unknownSeason"),
+      season: __("libraryrequests.season"),
+      episodeCount: __("libraryrequests.episodeCount"),
+      cancel: __("common.cancel"),
+      loading: __("common.loading") ?? "Loading…",
+      noEpisodes: __("libraryrequests.noTracksWhisper"),
+      whisperStatus: {
+        queued_for_transcription: __("libraryrequests.whisperStatus.queued_for_transcription"),
+        transcribing: __("libraryrequests.whisperStatus.transcribing"),
+        transcription_failed: __("libraryrequests.whisperStatus.transcription_failed"),
+        transcription_completed: __("libraryrequests.whisperStatus.transcription_completed"),
+        queued_for_translation: __("libraryrequests.whisperStatus.queued_for_translation"),
+        translating: __("libraryrequests.whisperStatus.translating"),
+      },
+    }
+    const perms = {
+      canAddSubtitleToTranslateFromLibrary: can("canAddSubtitleToTranslateFromLibrary"),
+      canCreateSubtitlesWithWhisper: can("canCreateSubtitlesWithWhisper"),
+    }
+
+    res.render("libraryrequests", {
+      user,
+      activeNav: "library-requests",
+      showPosters,
+      toast: req.query.toast ?? null,
+      msg: req.query.msg ?? null,
+      theme,
+      languages,
+      langById,
+      i18n,
+      perms,
+    })
+  })
+
+  // Tab data: request groups for one media type (or the unmatched tab), built
+  // with batched queries.
+  router.get("/data", (req, res) => {
+    const user = res.locals.user!
+    const rawType = String(req.query.type || "movie")
+    const userTargetLangIds = getUserConfigTranslationLanguages(db, user.id).map((tl) => tl.languageId)
+    const groups =
+      rawType === "unmatched"
+        ? buildUnmatchedGroups(userTargetLangIds)
+        : buildRequestGroups(rawType === "series" ? "series" : "movie", userTargetLangIds)
 
     const allGenres: string[] = []
-    for (const group of allGroups) {
+    for (const group of groups) {
       if (group.genres) {
         group.genres.split(",").forEach((g) => {
           const trimmed = g.trim()
@@ -198,22 +313,7 @@ export function libraryRequestsRouter(db: Database.Database) {
     }
     allGenres.sort()
 
-    const movieGroups = allGroups.filter((g) => g.type === "movie")
-    const seriesGroups = allGroups.filter((g) => g.type === "series")
-
-    res.render("libraryrequests", {
-      user,
-      activeNav: "library-requests",
-      movieGroups,
-      seriesGroups,
-      allGenres,
-      showPosters,
-      toast: req.query.toast ?? null,
-      msg: req.query.msg ?? null,
-      theme,
-      languages,
-      langById,
-    })
+    res.json({ groups, allGenres })
   })
 
   // Returns available subtitle sources for a library path item

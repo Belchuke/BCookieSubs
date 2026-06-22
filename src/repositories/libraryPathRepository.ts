@@ -393,6 +393,256 @@ export const getLibraryPathItemsWithDetails = (db: Database.Database, libraryPat
   })
 }
 
+// ── Batched loaders (eliminate N+1 for large libraries) ───────────────────
+// SQLite limits statements to ~999 bound parameters, so IN (...) lists are
+// chunked. Returns the same row shape the per-item loaders produce, assembled
+// from a handful of bulk queries regardless of item count.
+const SQLITE_PARAM_CHUNK = 900
+
+function chunkedInQuery<T>(db: Database.Database, ids: number[], sqlTemplate: (placeholders: string) => string): T[] {
+  const out: T[] = []
+  for (let i = 0; i < ids.length; i += SQLITE_PARAM_CHUNK) {
+    const slice = ids.slice(i, i + SQLITE_PARAM_CHUNK)
+    if (slice.length === 0) continue
+    const placeholders = slice.map(() => "?").join(",")
+    const rows = db.prepare(sqlTemplate(placeholders)).all(...slice) as T[]
+    for (const r of rows) out.push(r)
+  }
+  return out
+}
+
+export const getLibraryPathsByType = (db: Database.Database, type: "movie" | "series"): DBLibraryPath[] => {
+  return db.prepare(`SELECT * FROM libraryPath WHERE type = ? ORDER BY name ASC`).all(type) as DBLibraryPath[]
+}
+
+export const getLibraryPathItemsForPaths = (db: Database.Database, pathIds: number[]): DBLibraryPathItem[] => {
+  if (pathIds.length === 0) return []
+  return chunkedInQuery<DBLibraryPathItem>(db, pathIds, (p) => `SELECT * FROM libraryPathItem WHERE libraryPathId IN (${p}) ORDER BY createdAt DESC`)
+}
+
+type CandidateRow = DBLibraryPathItemCandidate & {
+  mediaTitle: string | null
+  mediaYear: number | null
+  mediaPoster: string | null
+  mediaType: string | null
+}
+
+const getLibraryPathItemCandidatesBulk = (db: Database.Database, itemIds: number[]): CandidateRow[] => {
+  if (itemIds.length === 0) return []
+  return chunkedInQuery<CandidateRow>(
+    db,
+    itemIds,
+    (p) =>
+      `SELECT lpc.*, mi.title as mediaTitle, mi.year as mediaYear, mi.mediaItemPhotoPath as mediaPoster, mi.type as mediaType
+        FROM libraryPathItemCandidate lpc
+        LEFT JOIN mediaItem mi ON lpc.mediaItemId = mi.id
+        WHERE lpc.libraryPathItemId IN (${p})
+        ORDER BY lpc.createdAt ASC`,
+  )
+}
+
+// Bulk subtitle info: latest subtitle per item, then active jobs for those.
+const getSubtitleInfoBulk = (db: Database.Database, itemIds: number[]): Map<number, LibraryItemSubtitleInfo> => {
+  const map = new Map<number, LibraryItemSubtitleInfo>()
+  if (itemIds.length === 0) return map
+
+  const subs = chunkedInQuery<{ id: number; libraryPathItem: number; deletedAt: string | null }>(
+    db,
+    itemIds,
+    (p) => `SELECT id, libraryPathItem, deletedAt FROM subtitle WHERE libraryPathItem IN (${p})`,
+  )
+  // Latest subtitle per item (highest id).
+  const latestByItem = new Map<number, { id: number; deletedAt: string | null }>()
+  for (const s of subs) {
+    const cur = latestByItem.get(s.libraryPathItem)
+    if (!cur || s.id > cur.id) latestByItem.set(s.libraryPathItem, { id: s.id, deletedAt: s.deletedAt })
+  }
+
+  const activeSubIds = [...latestByItem.values()].filter((s) => !s.deletedAt).map((s) => s.id)
+  const jobs = activeSubIds.length
+    ? chunkedInQuery<{ subtitleId: number; jobId: number; jobStatus: string; langName: string | null; langFlag: string | null; langIso: string | null }>(
+        db,
+        activeSubIds,
+        (p) =>
+          `SELECT sj.subtitleId, sj.id AS jobId, sj.status AS jobStatus,
+                  l.name AS langName, l.flag AS langFlag, l.iso639 AS langIso
+           FROM subtitleJob sj
+           LEFT JOIN language l ON l.id = sj.targetLangId
+           WHERE sj.subtitleId IN (${p}) AND sj.deletedAt IS NULL
+           ORDER BY sj.id ASC`,
+      )
+    : []
+  const jobsBySub = new Map<number, typeof jobs>()
+  for (const j of jobs) {
+    const arr = jobsBySub.get(j.subtitleId)
+    if (arr) arr.push(j)
+    else jobsBySub.set(j.subtitleId, [j])
+  }
+
+  for (const [itemId, latest] of latestByItem) {
+    if (latest.deletedAt) {
+      map.set(itemId, { subtitleId: latest.id, deleted: true, activeJobs: [] })
+      continue
+    }
+    const itemJobs = jobsBySub.get(latest.id) ?? []
+    if (itemJobs.length === 0) {
+      map.set(itemId, { subtitleId: latest.id, deleted: true, activeJobs: [] })
+    } else {
+      map.set(itemId, {
+        subtitleId: latest.id,
+        deleted: false,
+        activeJobs: itemJobs.map((j) => ({
+          jobId: j.jobId,
+          langName: j.langName || "",
+          langFlag: j.langFlag || null,
+          langIso: j.langIso || "",
+          jobStatus: j.jobStatus,
+        })),
+      })
+    }
+  }
+  return map
+}
+
+const getBlacklistEntriesBulk = (db: Database.Database, itemIds: number[]): Map<number, DBLibraryPathItemBlacklist> => {
+  const map = new Map<number, DBLibraryPathItemBlacklist>()
+  if (itemIds.length === 0) return map
+  const rows = chunkedInQuery<DBLibraryPathItemBlacklist>(
+    db,
+    itemIds,
+    (p) => `SELECT * FROM libraryPathItemBlacklist WHERE libraryPathItemId IN (${p})`,
+  )
+  for (const r of rows) map.set(r.libraryPathItemId, r)
+  return map
+}
+
+// Enriched item shape (same fields as getLibraryPathItemsWithDetails rows).
+export type EnrichedLibraryPathItem = DBLibraryPathItem & {
+  candidates: CandidateRow[]
+  mediaItem: any
+  subtitleInfo: LibraryItemSubtitleInfo | null
+  blacklist: DBLibraryPathItemBlacklist | null
+}
+
+// Full view data for one media type: library paths with their groups/items, all
+// enriched, built with ~6 bulk queries instead of N+1.
+export type LibraryPathViewGroup = {
+  mediaItemId: number | null
+  mediaItem: any
+  items: EnrichedLibraryPathItem[]
+}
+
+export type LibraryPathViewPath = DBLibraryPath & {
+  sourceLangName: string | null
+  groups: LibraryPathViewGroup[]
+}
+
+export const enrichItems = (db: Database.Database, items: DBLibraryPathItem[]): EnrichedLibraryPathItem[] => {
+  const itemIds = items.map((i) => i.id)
+  const candidatesByItem = new Map<number, CandidateRow[]>()
+  for (const c of getLibraryPathItemCandidatesBulk(db, itemIds)) {
+    const arr = candidatesByItem.get(c.libraryPathItemId)
+    if (arr) arr.push(c)
+    else candidatesByItem.set(c.libraryPathItemId, [c])
+  }
+  const mediaIds = [...new Set(items.map((i) => i.mediaItemId).filter((v): v is number => v != null))]
+  const mediaById = new Map<number, any>()
+  for (const m of chunkedInQuery<any>(db, mediaIds, (p) => `SELECT * FROM mediaItem WHERE id IN (${p})`)) {
+    mediaById.set(m.id, m)
+  }
+  const subByItem = getSubtitleInfoBulk(db, itemIds)
+  const blByItem = getBlacklistEntriesBulk(db, itemIds)
+
+  return items.map((item) => ({
+    ...item,
+    candidates: candidatesByItem.get(item.id) ?? [],
+    mediaItem: item.mediaItemId ? (mediaById.get(item.mediaItemId) ?? null) : null,
+    subtitleInfo: subByItem.get(item.id) ?? null,
+    blacklist: blByItem.get(item.id) ?? null,
+  }))
+}
+
+// Group + sort enriched items exactly like the GET / route did (librarypaths.ts).
+const groupItems = (items: EnrichedLibraryPathItem[]): LibraryPathViewGroup[] => {
+  const buckets = new Map<number | null, EnrichedLibraryPathItem[]>()
+  for (const item of items) {
+    const key = item.mediaItemId ?? null
+    const arr = buckets.get(key)
+    if (arr) arr.push(item)
+    else buckets.set(key, [item])
+  }
+  const groups: LibraryPathViewGroup[] = Array.from(buckets.entries()).map(([mediaItemId, grpItems]) => {
+    const sorted = [...grpItems].sort((a, b) => {
+      if (a.season != null && b.season != null) {
+        if (a.season !== b.season) return a.season - b.season
+        return (a.episode ?? 0) - (b.episode ?? 0)
+      }
+      return a.path.localeCompare(b.path)
+    })
+    return {
+      mediaItemId,
+      mediaItem: sorted[0]?.mediaItem ?? null,
+      items: sorted,
+    }
+  })
+  groups.sort((a, b) => {
+    if (a.mediaItem && !b.mediaItem) return -1
+    if (!a.mediaItem && b.mediaItem) return 1
+    if (a.mediaItem && b.mediaItem) return a.mediaItem.title.localeCompare(b.mediaItem.title)
+    return 0
+  })
+  return groups
+}
+
+export const getLibraryPathsViewData = (db: Database.Database, type: "movie" | "series"): LibraryPathViewPath[] => {
+  const paths = getLibraryPathsByType(db, type)
+  if (paths.length === 0) return []
+
+  const pathIds = paths.map((p) => p.id)
+  const itemsByPath = new Map<number, EnrichedLibraryPathItem[]>()
+  const enriched = enrichItems(db, getLibraryPathItemsForPaths(db, pathIds))
+  for (const item of enriched) {
+    const arr = itemsByPath.get(item.libraryPathId)
+    if (arr) arr.push(item)
+    else itemsByPath.set(item.libraryPathId, [item])
+  }
+
+  const langIds = [...new Set(paths.map((p) => p.sourceLangId).filter((v) => v != null))]
+  const langById = new Map<number, string>()
+  for (const l of chunkedInQuery<{ id: number; name: string }>(db, langIds, (p) => `SELECT id, name FROM language WHERE id IN (${p})`)) {
+    langById.set(l.id, l.name)
+  }
+
+  return paths.map((lp) => ({
+    ...lp,
+    sourceLangName: langById.get(lp.sourceLangId) ?? null,
+    groups: groupItems(itemsByPath.get(lp.id) ?? []),
+  }))
+}
+
+// Type-filtered lightweight id+status list for polling (only the active tab).
+export const getActiveLibraryPathItemStatusesByType = (
+  db: Database.Database,
+  type: "movie" | "series",
+): { id: number; status: string }[] => {
+  return db
+    .prepare(
+      `SELECT lpi.id, lpi.status
+       FROM libraryPathItem lpi
+       INNER JOIN libraryPath lp ON lp.id = lpi.libraryPathId
+       LEFT JOIN libraryPathItemBlacklist lpb ON lpb.libraryPathItemId = lpi.id
+       WHERE lp.type = ? AND lpb.id IS NULL`,
+    )
+    .all(type) as { id: number; status: string }[]
+}
+
+// Full enriched items by id — used to render newly-discovered items from the poll.
+export const getLibraryPathItemsByIds = (db: Database.Database, ids: number[]): EnrichedLibraryPathItem[] => {
+  if (ids.length === 0) return []
+  const items = chunkedInQuery<DBLibraryPathItem>(db, ids, (p) => `SELECT * FROM libraryPathItem WHERE id IN (${p})`)
+  return enrichItems(db, items)
+}
+
 export const isLibraryPathItemBlacklisted = (db: Database.Database, libraryPathItemId: number): boolean => {
   const row = db.prepare(`SELECT 1 FROM libraryPathItemBlacklist WHERE libraryPathItemId = ?`).get(libraryPathItemId)
   return !!row

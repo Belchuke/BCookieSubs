@@ -128,6 +128,75 @@ export const getActiveWhisperSubtitleForMediaItem = (
   )
 }
 
+// ── Batched variants (eliminate N+1 for the library-requests view) ──────────
+// SQLite limits statements to ~999 bound parameters, so IN (...) lists are chunked.
+const SQLITE_PARAM_CHUNK = 900
+
+function chunkedInQuery<T>(
+  db: Database.Database,
+  ids: number[],
+  sqlTemplate: (placeholders: string) => string,
+): T[] {
+  const out: T[] = []
+  for (let i = 0; i < ids.length; i += SQLITE_PARAM_CHUNK) {
+    const slice = ids.slice(i, i + SQLITE_PARAM_CHUNK)
+    if (slice.length === 0) continue
+    const placeholders = slice.map(() => "?").join(",")
+    const rows = db.prepare(sqlTemplate(placeholders)).all(...slice) as T[]
+    for (const r of rows) out.push(r)
+  }
+  return out
+}
+
+// Per-target-language job status for many subtitles at once. Mirrors
+// getJobLangStatusBySubtitle but in one (chunked) query instead of one per item.
+export const getJobLangStatusBySubtitles = (
+  db: Database.Database,
+  subtitleIds: number[],
+): Map<number, { targetLangId: number; status: string }[]> => {
+  const map = new Map<number, { targetLangId: number; status: string }[]>()
+  if (subtitleIds.length === 0) return map
+  const rows = chunkedInQuery<{ subtitleId: number; targetLangId: number; status: string }>(
+    db,
+    subtitleIds,
+    (p) =>
+      `SELECT subtitleId, targetLangId, status FROM subtitleJob WHERE subtitleId IN (${p}) AND deletedAt IS NULL`,
+  )
+  for (const r of rows) {
+    const arr = map.get(r.subtitleId)
+    if (arr) arr.push({ targetLangId: r.targetLangId, status: r.status })
+    else map.set(r.subtitleId, [{ targetLangId: r.targetLangId, status: r.status }])
+  }
+  return map
+}
+
+// Active Whisper subtitle for many media items at once (latest non-deleted,
+// non-cancelled/failed per media item). Mirrors getActiveWhisperSubtitleForMediaItem.
+export const getActiveWhisperSubtitlesForMediaItems = (
+  db: Database.Database,
+  mediaItemIds: number[],
+): Map<number, DBSubtitle> => {
+  const map = new Map<number, DBSubtitle>()
+  if (mediaItemIds.length === 0) return map
+  const rows = chunkedInQuery<DBSubtitle & { rn: number }>(
+    db,
+    mediaItemIds,
+    (p) =>
+      `SELECT s.*, ROW_NUMBER() OVER (PARTITION BY s.mediaItemId ORDER BY s.id DESC) AS rn
+       FROM subtitle s
+       WHERE s.mediaItemId IN (${p}) AND s.source = 'whisper'
+         AND s.deletedAt IS NULL AND s.status NOT IN ('cancelled', 'failed')`,
+  )
+  for (const r of rows) {
+    // Keep only the latest (rn = 1) per media item.
+    if (r.rn === 1) {
+      const { rn: _rn, ...sub } = r
+      map.set(sub.mediaItemId!, sub as DBSubtitle)
+    }
+  }
+  return map
+}
+
 export const setWhisperTranscriptionStatus = (
   db: Database.Database,
   subtitleId: number,
