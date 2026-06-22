@@ -70,6 +70,15 @@ export function libraryRequestsRouter(db: Database.Database) {
 
   router.use(requireAuth, requirePermission("canAddSubtitleToTranslateFromLibrary"))
 
+  // An item counts as "matched" only when its media item is a real TheMovieDB
+  // match (has a theMovieDbId). Filename-derived placeholder media items — auto
+  // -created by the scanner when AI matching fails, or by the Whisper flow — have
+  // no theMovieDbId and belong on the Unmatched tab, not Movies/Series.
+  function isMatched(item: any): boolean {
+    const mi = item.mediaItem
+    return !!(mi && mi.theMovieDbId != null && String(mi.theMovieDbId).trim() !== "")
+  }
+
   // Build the request groups for one media type using batched (non-N+1) queries.
   // Mirrors the original per-item filtering logic but runs ~5 bulk queries total
   // instead of 4+ queries per item. Unmatched items (no media item) are excluded
@@ -87,7 +96,7 @@ export function libraryRequestsRouter(db: Database.Database) {
 
     const groupsMap = new Map<string, RequestGroup>()
     for (const item of enriched) {
-      if (!item.mediaItem) continue // unmatched — handled by buildUnmatchedGroups
+      if (!isMatched(item)) continue // unmatched — handled by buildUnmatchedGroups
       const gi = itemToGroupItem(item, jobStatusBySub, whisperByMedia, userTargetLangIds)
       if (!gi) continue
       const key = String(item.mediaItem.id)
@@ -134,7 +143,7 @@ export function libraryRequestsRouter(db: Database.Database) {
 
     const groups: RequestGroup[] = []
     for (const item of enriched) {
-      if (item.mediaItem) continue // matched — lives on the movie/series tab
+      if (isMatched(item)) continue // matched — lives on the movie/series tab
       const gi = itemToGroupItem(item, jobStatusBySub, whisperByMedia, userTargetLangIds)
       if (!gi) continue
       groups.push({

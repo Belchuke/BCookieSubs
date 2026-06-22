@@ -645,8 +645,10 @@ function closeModalOnOverlay(event) {
     startBtn.style.display = paused ? "inline-flex" : "none"
   }
 
+  // Returns a promise that settles once the poll request has finished, so the
+  // scheduler below re-arms the next poll only after the previous one is done.
   function poll() {
-    fetch("/dashboard/poll")
+    return fetch("/dashboard/poll")
       .then(function (r) {
         if (redirectIfUnauthorized(r)) return null
         return r.json()
@@ -660,8 +662,18 @@ function closeModalOnOverlay(event) {
       .catch(function () {})
   }
 
+  // Self-scheduling poll: wait POLL_INTERVAL, run a poll, then once that poll's
+  // request has fully settled (success or failure) re-arm the next one. The next
+  // poll never starts until the last request finished, so slow polls can't
+  // stack up overlapping fetches.
+  function scheduleNextPoll() {
+    setTimeout(function () {
+      poll().finally(scheduleNextPoll)
+    }, POLL_INTERVAL)
+  }
+
   poll()
-  setInterval(poll, POLL_INTERVAL)
+  scheduleNextPoll()
 })()
 
 function workerControl(action) {

@@ -2,7 +2,7 @@
 // Renders tabs (Movies / Series / Blacklist) from JSON fetched on demand,
 // expands a group's file/episode rows only when opened, and patches the poll
 // results in place (never reloading the page, so in-progress work survives).
-(function () {
+;(function () {
   var PERMS = window.LP_PERMS || {}
   var I18N = window.LP_I18N || {}
   var SHOW_POSTERS = window.LP_SHOW_POSTERS
@@ -151,7 +151,10 @@
     // action buttons
     var actions = ""
     if (item.blacklist) {
-      actions += '<span class="badge badge-warning lpx-fs-70" title="' + escAttr(item.blacklist.reason || "") + '">Blacklisted</span>'
+      actions +=
+        '<span class="badge badge-warning lpx-fs-70" title="' +
+        escAttr(item.blacklist.reason || "") +
+        '">Blacklisted</span>'
       if (PERMS.canBlackListALibraryPathItem) {
         actions +=
           '<form method="POST" action="/library-paths/item/' +
@@ -224,7 +227,7 @@
       escAttr(item.path) +
       '">' +
       escHtml(fileName) +
-      "</span></div><div class=\"lpx-badge-row\">" +
+      '</span></div><div class="lpx-badge-row">' +
       badges +
       '</div></div><div class="lpx-item-actions">' +
       actions +
@@ -268,10 +271,8 @@
         return i.id
       })
     var firstItemId = group.items.length > 0 ? group.items[0].id : null
-    var groupCandidates =
-      group.items.length > 0 && group.items[0].candidates ? group.items[0].candidates : []
-    var groupKey =
-      "g" + lp.id + "-" + (group.mediaItemId != null ? group.mediaItemId : "u" + groupIdx)
+    var groupCandidates = group.items.length > 0 && group.items[0].candidates ? group.items[0].candidates : []
+    var groupKey = "g" + lp.id + "-" + (group.mediaItemId != null ? group.mediaItemId : "u" + groupIdx)
     var isSeries = lp.type === "series"
     var lpRootNorm = lp.path.endsWith("/") ? lp.path : lp.path + "/"
     var firstItemPath = group.items.length > 0 ? group.items[0].path : ""
@@ -480,13 +481,15 @@
   function pathCardHtml(lp) {
     var folderName = lp.path.split("/").filter(Boolean).pop() || lp.path
     var totalFiles = lp.groups.reduce(function (sum, g) {
-      return sum + g.items.filter(function (i) {
-        return !i.blacklist
-      }).length
+      return (
+        sum +
+        g.items.filter(function (i) {
+          return !i.blacklist
+        }).length
+      )
     }, 0)
 
-    var stateCls =
-      lp.state === "scanning" ? "badge-warning" : lp.state === "error" ? "badge-error" : "badge-neutral"
+    var stateCls = lp.state === "scanning" ? "badge-warning" : lp.state === "error" ? "badge-error" : "badge-neutral"
     var enabledBadge = lp.enabled
       ? '<span class="badge badge-success">' + escHtml(t("enabledBadge")) + "</span>"
       : '<span class="badge badge-neutral">' + escHtml(t("disabledBadge")) + "</span>"
@@ -590,13 +593,25 @@
       return '<p class="empty-state">' + escHtml(t("noBlacklisted")) + "</p>"
     }
     var head =
-      "<thead><tr class=\"lpx-thead-row\">" +
-      '<th class="lpx-th">' + escHtml(t("filesystemPath")) + "</th>" +
-      '<th class="lpx-th">' + escHtml(t("library")) + "</th>" +
-      '<th class="lpx-th">' + escHtml(t("match")) + "</th>" +
-      '<th class="lpx-th">' + escHtml(t("blacklistedBy")) + "</th>" +
-      '<th class="lpx-th">' + escHtml(t("when")) + "</th>" +
-      '<th class="lpx-th">' + escHtml(t("blacklistReason")) + "</th>" +
+      '<thead><tr class="lpx-thead-row">' +
+      '<th class="lpx-th">' +
+      escHtml(t("filesystemPath")) +
+      "</th>" +
+      '<th class="lpx-th">' +
+      escHtml(t("library")) +
+      "</th>" +
+      '<th class="lpx-th">' +
+      escHtml(t("match")) +
+      "</th>" +
+      '<th class="lpx-th">' +
+      escHtml(t("blacklistedBy")) +
+      "</th>" +
+      '<th class="lpx-th">' +
+      escHtml(t("when")) +
+      "</th>" +
+      '<th class="lpx-th">' +
+      escHtml(t("blacklistReason")) +
+      "</th>" +
       (PERMS.canBlackListALibraryPathItem ? '<th class="lpx-th">' + escHtml(t("actions")) + "</th>" : "") +
       "</tr></thead>"
 
@@ -644,17 +659,13 @@
     })
 
     return (
-      '<div class="lpx-overflow-x"><table class="table lpx-table">' +
-      head +
-      "<tbody>" +
-      body +
-      "</tbody></table></div>"
+      '<div class="lpx-overflow-x"><table class="table lpx-table">' + head + "<tbody>" + body + "</tbody></table></div>"
     )
   }
 
   // ── state helpers ──────────────────────────────────────────────────────
   function tabRoot(type) {
-    return document.querySelector('#lp-tab-' + type + ' .lp-list-root')
+    return document.querySelector("#lp-tab-" + type + " .lp-list-root")
   }
 
   function activeTabContainer() {
@@ -794,7 +805,7 @@
 
   // ── genre filter ───────────────────────────────────────────────────────
   function rebuildGenreFilter(type) {
-    var sel = document.querySelector('#lp-tab-' + type + " .lp-genre-filter")
+    var sel = document.querySelector("#lp-tab-" + type + " .lp-genre-filter")
     if (!sel) return
     var genres = {}
     ;(S(type).paths || []).forEach(function (lp) {
@@ -835,11 +846,14 @@
   }
 
   // ── poll (component-like: patch in place, incremental insert, no reload) ─
+  // Poll the active tab. Returns a promise that settles once the poll request
+  // has finished (resolved or rejected), so the scheduler below can re-arm the
+  // next poll only after the previous one is done — never overlapping.
   function poll() {
     var type = _activeTab
-    if (type === "blacklist") return // blacklist tab has no live poll
-    if (!_loadedTabs[type]) return
-    fetch("/library-paths/poll?type=" + type)
+    if (type === "blacklist") return Promise.resolve() // blacklist tab has no live poll
+    if (!_loadedTabs[type]) return Promise.resolve()
+    return fetch("/library-paths/poll?type=" + type)
       .then(function (r) {
         if (redirectIfUnauthorized(r)) return null
         return r.json()
@@ -1017,7 +1031,12 @@
         var upBtn = document.getElementById("dir-up-btn")
         var atRoot = !data.parent || (ROOT_PATH && data.path === ROOT_PATH)
         upBtn.disabled = !!atRoot
-        upBtn.onclick = !atRoot && data.parent ? function () { browseDir(data.parent) } : null
+        upBtn.onclick =
+          !atRoot && data.parent
+            ? function () {
+                browseDir(data.parent)
+              }
+            : null
         var list = document.getElementById("dir-list")
         if (data.error) {
           list.innerHTML =
@@ -1025,8 +1044,7 @@
           return
         }
         if (data.dirs.length === 0) {
-          list.innerHTML =
-            '<div class="text-dim" style="padding:.5rem .75rem;font-size:.82rem">No subdirectories</div>'
+          list.innerHTML = '<div class="text-dim" style="padding:.5rem .75rem;font-size:.82rem">No subdirectories</div>'
           return
         }
         list.innerHTML = ""
@@ -1053,9 +1071,15 @@
             '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
             escHtml(d.name) +
             "</span>"
-          btn.addEventListener("mouseenter", function () { btn.style.background = "var(--surface-3)" })
-          btn.addEventListener("mouseleave", function () { btn.style.background = "none" })
-          btn.addEventListener("click", function () { browseDir(d.fullPath) })
+          btn.addEventListener("mouseenter", function () {
+            btn.style.background = "var(--surface-3)"
+          })
+          btn.addEventListener("mouseleave", function () {
+            btn.style.background = "none"
+          })
+          btn.addEventListener("click", function () {
+            browseDir(d.fullPath)
+          })
           list.appendChild(btn)
         })
         var last = list.lastElementChild
@@ -1063,7 +1087,9 @@
       })
       .catch(function (e) {
         document.getElementById("dir-list").innerHTML =
-          '<div style="padding:.5rem .75rem;color:var(--error);font-size:.82rem">Error: ' + escHtml(String(e)) + "</div>"
+          '<div style="padding:.5rem .75rem;color:var(--error);font-size:.82rem">Error: ' +
+          escHtml(String(e)) +
+          "</div>"
       })
   }
 
@@ -1083,7 +1109,9 @@
         if (data.success) onSuccess(data)
         else showLpToast("error", data.msg || "Action failed")
       })
-      .catch(function () { showLpToast("error", "Request failed") })
+      .catch(function () {
+        showLpToast("error", "Request failed")
+      })
   }
 
   function hideGroupPicker(groupKey) {
@@ -1124,7 +1152,9 @@
       resultsEl.innerHTML = ""
       document.getElementById("item-match-name").textContent = itemMatchBtn.dataset.itemName || ""
       openModal("item-match-modal")
-      setTimeout(function () { searchEl.focus() }, 50)
+      setTimeout(function () {
+        searchEl.focus()
+      }, 50)
       return
     }
 
@@ -1139,7 +1169,10 @@
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
       })
-        .then(function (r) { if (redirectIfUnauthorized(r)) return null; return r.json() })
+        .then(function (r) {
+          if (redirectIfUnauthorized(r)) return null
+          return r.json()
+        })
         .then(function (data) {
           if (!data) return
           showLpToast(data.success ? "success" : "error", data.msg || (data.success ? "Queued" : "Failed"))
@@ -1147,7 +1180,10 @@
             var badge = createSubBtn.closest("[data-item-row]")
             if (badge) {
               var st = badge.querySelector("[data-item-status]")
-              if (st) { st.className = "badge badge-warning"; st.textContent = "queued" }
+              if (st) {
+                st.className = "badge badge-warning"
+                st.textContent = "queued"
+              }
             }
             createSubBtn.remove()
           } else {
@@ -1155,19 +1191,29 @@
             createSubBtn.textContent = prevText
           }
         })
-        .catch(function () { createSubBtn.disabled = false; createSubBtn.textContent = prevText; showLpToast("error", "Request failed") })
+        .catch(function () {
+          createSubBtn.disabled = false
+          createSubBtn.textContent = prevText
+          showLpToast("error", "Request failed")
+        })
       return
     }
 
     var openBtn = e.target.closest(".lp-group-match-btn")
     if (openBtn) {
       var picker = document.getElementById("lp-group-picker-" + openBtn.dataset.groupKey)
-      if (picker) { picker.hidden = false; if (window.lpInitLazyLoad) window.lpInitLazyLoad(picker) }
+      if (picker) {
+        picker.hidden = false
+        if (window.lpInitLazyLoad) window.lpInitLazyLoad(picker)
+      }
       return
     }
 
     var cancelBtn = e.target.closest(".lp-group-match-cancel")
-    if (cancelBtn) { hideGroupPicker(cancelBtn.dataset.groupKey); return }
+    if (cancelBtn) {
+      hideGroupPicker(cancelBtn.dataset.groupKey)
+      return
+    }
 
     var groupCandBtn = e.target.closest(".lp-select-group-candidate-btn")
     if (groupCandBtn) {
@@ -1177,7 +1223,10 @@
       lpAjaxPost(
         "/library-paths/group/select-candidate",
         "itemIds=" + encodeURIComponent(itemIds) + "&mediaItemId=" + encodeURIComponent(mediaItemId),
-        function () { hideGroupPicker(groupKey); reloadWithScrollRestore() }
+        function () {
+          hideGroupPicker(groupKey)
+          reloadWithScrollRestore()
+        },
       )
       return
     }
@@ -1196,7 +1245,8 @@
     if (blGroupBtn) {
       _blItemId = null
       _blItemIds = JSON.parse(blGroupBtn.dataset.itemIds || "[]")
-      document.getElementById("blacklist-target-name").textContent = (blGroupBtn.dataset.groupName || "this group") + " — all items"
+      document.getElementById("blacklist-target-name").textContent =
+        (blGroupBtn.dataset.groupName || "this group") + " — all items"
       document.getElementById("blacklist-reason").value = ""
       openModal("blacklist-modal")
       return
@@ -1242,7 +1292,9 @@
       var btype = bulkTmdbBtn.dataset.type
       var byear = bti.releaseDate ? bti.releaseDate.substring(0, 4) : ""
       var allItemIds = []
-      Object.values(_selectedGroups).forEach(function (g) { allItemIds = allItemIds.concat(g.itemIds) })
+      Object.values(_selectedGroups).forEach(function (g) {
+        allItemIds = allItemIds.concat(g.itemIds)
+      })
       var bbp = [
         "itemIds=" + encodeURIComponent(JSON.stringify(allItemIds)),
         "title=" + encodeURIComponent(bti.name || ""),
@@ -1259,7 +1311,9 @@
       lpAjaxPost("/library-paths/group/select-tmdb-result", bbp.join("&"), function () {
         closeModal("bulk-match-modal")
         _selectedGroups = {}
-        document.querySelectorAll(".lp-group-cb:checked").forEach(function (cb) { cb.checked = false })
+        document.querySelectorAll(".lp-group-cb:checked").forEach(function (cb) {
+          cb.checked = false
+        })
         updateBulkBar()
         reloadWithScrollRestore()
       })
@@ -1280,7 +1334,10 @@
       lpAjaxPost(action, "", function (data) {
         if (row) {
           var badge = row.querySelector("[data-item-status]")
-          if (badge) { badge.className = "badge badge-warning"; badge.textContent = "queued" }
+          if (badge) {
+            badge.className = "badge badge-warning"
+            badge.textContent = "queued"
+          }
           row.querySelectorAll("form").forEach(function (f) {
             if (f.action && (f.action.indexOf("/translate") !== -1 || f.action.indexOf("/readd") !== -1)) f.remove()
           })
@@ -1314,17 +1371,21 @@
           })
           showLpToast("success", data.msg || "Group blacklisted")
           _blItemIds = null
-        }
+        },
       )
     } else if (_blItemId) {
-      lpAjaxPost("/library-paths/item/" + _blItemId + "/blacklist", "reason=" + encodeURIComponent(reason), function (data) {
-        closeModal("blacklist-modal")
-        var row = document.querySelector('[data-item-row="' + _blItemId + '"]')
-        if (row) row.remove()
-        activeState().knownIds.delete(String(_blItemId))
-        showLpToast("success", data.msg || "Item blacklisted")
-        _blItemId = null
-      })
+      lpAjaxPost(
+        "/library-paths/item/" + _blItemId + "/blacklist",
+        "reason=" + encodeURIComponent(reason),
+        function (data) {
+          closeModal("blacklist-modal")
+          var row = document.querySelector('[data-item-row="' + _blItemId + '"]')
+          if (row) row.remove()
+          activeState().knownIds.delete(String(_blItemId))
+          showLpToast("success", data.msg || "Item blacklisted")
+          _blItemId = null
+        },
+      )
     }
   })
 
@@ -1339,7 +1400,9 @@
       formData.append("photo", file)
       showLpToast("success", "Uploading…")
       fetch("/library-paths/media-item/" + mediaItemId + "/upload-photo", { method: "POST", body: formData })
-        .then(function (r) { return r.json() })
+        .then(function (r) {
+          return r.json()
+        })
         .then(function (data) {
           if (data.success) {
             showLpToast("success", "Photo updated")
@@ -1350,7 +1413,9 @@
             showLpToast("error", data.msg || "Upload failed")
           }
         })
-        .catch(function () { showLpToast("error", "Upload failed") })
+        .catch(function () {
+          showLpToast("error", "Upload failed")
+        })
       input.value = ""
       return
     }
@@ -1385,12 +1450,25 @@
 
     var scope = input.closest("#item-match-modal") || input.closest('[id^="lp-group-picker-"]') || document
     var resultsEl = scope.querySelector(".lp-tmdb-results")
-    if (!q) { if (resultsEl) resultsEl.innerHTML = ""; return }
+    if (!q) {
+      if (resultsEl) resultsEl.innerHTML = ""
+      return
+    }
 
     _tmdbTimers[itemId] = setTimeout(function () {
-      if (resultsEl) resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">Searching…</div>'
-      fetch("/library-paths/item/" + itemId + "/search-tmdb?q=" + encodeURIComponent(q) + "&type=" + encodeURIComponent(type))
-        .then(function (r) { return r.json() })
+      if (resultsEl)
+        resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">Searching…</div>'
+      fetch(
+        "/library-paths/item/" +
+          itemId +
+          "/search-tmdb?q=" +
+          encodeURIComponent(q) +
+          "&type=" +
+          encodeURIComponent(type),
+      )
+        .then(function (r) {
+          return r.json()
+        })
         .then(function (data) {
           if (!resultsEl) return
           if (!data.items || data.items.length === 0) {
@@ -1410,21 +1488,33 @@
             if (groupKey) btn.dataset.groupKey = groupKey
             btn.dataset.type = type
             btn.dataset.tmdbItem = JSON.stringify(ti)
-            btn.style.cssText = "display:flex;flex-direction:row;align-items:center;gap:.75rem;padding:.6rem .75rem;height:auto;width:100%;text-align:left"
-            var posterHtml = SHOW_POSTERS && ti.posterUrl
-              ? '<img src="' + escHtml(ti.posterUrl) + '" alt="Poster" style="width:54px;height:81px;object-fit:cover;border-radius:4px;flex-shrink:0" onerror="this.style.display=\'none\'">'
-              : '<div style="width:54px;height:81px;background:var(--surface-2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fa-solid fa-film" style="font-size:1.4rem;color:var(--text-dim)"></i></div>'
-            btn.innerHTML = posterHtml +
+            btn.style.cssText =
+              "display:flex;flex-direction:row;align-items:center;gap:.75rem;padding:.6rem .75rem;height:auto;width:100%;text-align:left"
+            var posterHtml =
+              SHOW_POSTERS && ti.posterUrl
+                ? '<img src="' +
+                  escHtml(ti.posterUrl) +
+                  '" alt="Poster" style="width:54px;height:81px;object-fit:cover;border-radius:4px;flex-shrink:0" onerror="this.style.display=\'none\'">'
+                : '<div style="width:54px;height:81px;background:var(--surface-2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fa-solid fa-film" style="font-size:1.4rem;color:var(--text-dim)"></i></div>'
+            btn.innerHTML =
+              posterHtml +
               '<span style="font-size:.88rem;line-height:1.35;word-break:break-word;min-width:0"><strong>' +
-              escHtml(ti.name || "Unknown") + "</strong><br><span class=\"text-dim\" style=\"font-size:.8rem\">(" +
-              escHtml(year) + ")</span>" +
-              (ti.genres ? '<br><span class="text-dim" style="font-size:.75rem">' + escHtml(ti.genres) + "</span>" : "") +
+              escHtml(ti.name || "Unknown") +
+              '</strong><br><span class="text-dim" style="font-size:.8rem">(' +
+              escHtml(year) +
+              ")</span>" +
+              (ti.genres
+                ? '<br><span class="text-dim" style="font-size:.75rem">' + escHtml(ti.genres) + "</span>"
+                : "") +
               "</span>"
             grid.appendChild(btn)
           })
           resultsEl.appendChild(grid)
         })
-        .catch(function () { if (resultsEl) resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">Search failed.</div>' })
+        .catch(function () {
+          if (resultsEl)
+            resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">Search failed.</div>'
+        })
     }, 300)
   })
 
@@ -1434,14 +1524,19 @@
     var keys = Object.keys(_selectedGroups)
     var bar = document.getElementById("lp-bulk-bar")
     var countEl = document.getElementById("lp-bulk-count")
-    if (keys.length === 0) { bar.style.display = "none"; return }
+    if (keys.length === 0) {
+      bar.style.display = "none"
+      return
+    }
     bar.style.display = ""
     countEl.textContent = keys.length + " group" + (keys.length !== 1 ? "s" : "") + " selected"
   }
 
   document.getElementById("lp-bulk-clear-btn").addEventListener("click", function () {
     _selectedGroups = {}
-    document.querySelectorAll(".lp-group-cb:checked").forEach(function (cb) { cb.checked = false })
+    document.querySelectorAll(".lp-group-cb:checked").forEach(function (cb) {
+      cb.checked = false
+    })
     updateBulkBar()
   })
 
@@ -1459,7 +1554,10 @@
     var q = this.value.trim()
     var resultsEl = document.getElementById("bulk-tmdb-results")
     clearTimeout(_bulkTmdbTimer)
-    if (!q) { resultsEl.innerHTML = ""; return }
+    if (!q) {
+      resultsEl.innerHTML = ""
+      return
+    }
     var keys = Object.keys(_selectedGroups)
     var firstGroup = keys.length > 0 ? _selectedGroups[keys[0]] : null
     var type = firstGroup ? firstGroup.type || "movie" : "movie"
@@ -1467,8 +1565,17 @@
     if (!firstItemId) return
     resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">Searching…</div>'
     _bulkTmdbTimer = setTimeout(function () {
-      fetch("/library-paths/item/" + firstItemId + "/search-tmdb?q=" + encodeURIComponent(q) + "&type=" + encodeURIComponent(type))
-        .then(function (r) { return r.json() })
+      fetch(
+        "/library-paths/item/" +
+          firstItemId +
+          "/search-tmdb?q=" +
+          encodeURIComponent(q) +
+          "&type=" +
+          encodeURIComponent(type),
+      )
+        .then(function (r) {
+          return r.json()
+        })
         .then(function (data) {
           if (!data.items || data.items.length === 0) {
             resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">No results.</div>'
@@ -1483,22 +1590,33 @@
             btn.className = "btn btn-secondary lp-bulk-tmdb-btn"
             btn.dataset.tmdbItem = JSON.stringify(ti)
             btn.dataset.type = type
-            btn.style.cssText = "display:flex;flex-direction:row;align-items:center;gap:.75rem;padding:.6rem .75rem;height:auto;width:100%;text-align:left"
-            var posterHtml = SHOW_POSTERS && ti.posterUrl
-              ? '<img src="' + escHtml(ti.posterUrl) + '" alt="Poster" style="width:54px;height:81px;object-fit:cover;border-radius:4px;flex-shrink:0" onerror="this.style.display=\'none\'">'
-              : '<div style="width:54px;height:81px;background:var(--surface-2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fa-solid fa-film" style="font-size:1.4rem;color:var(--text-dim)"></i></div>'
-            btn.innerHTML = posterHtml +
+            btn.style.cssText =
+              "display:flex;flex-direction:row;align-items:center;gap:.75rem;padding:.6rem .75rem;height:auto;width:100%;text-align:left"
+            var posterHtml =
+              SHOW_POSTERS && ti.posterUrl
+                ? '<img src="' +
+                  escHtml(ti.posterUrl) +
+                  '" alt="Poster" style="width:54px;height:81px;object-fit:cover;border-radius:4px;flex-shrink:0" onerror="this.style.display=\'none\'">'
+                : '<div style="width:54px;height:81px;background:var(--surface-2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fa-solid fa-film" style="font-size:1.4rem;color:var(--text-dim)"></i></div>'
+            btn.innerHTML =
+              posterHtml +
               '<span style="font-size:.88rem;line-height:1.35;word-break:break-word;min-width:0"><strong>' +
-              escHtml(ti.name || "Unknown") + '</strong><br><span class="text-dim" style="font-size:.8rem">(' +
-              escHtml(year) + ")</span>" +
-              (ti.genres ? '<br><span class="text-dim" style="font-size:.75rem">' + escHtml(ti.genres) + "</span>" : "") +
+              escHtml(ti.name || "Unknown") +
+              '</strong><br><span class="text-dim" style="font-size:.8rem">(' +
+              escHtml(year) +
+              ")</span>" +
+              (ti.genres
+                ? '<br><span class="text-dim" style="font-size:.75rem">' + escHtml(ti.genres) + "</span>"
+                : "") +
               "</span>"
             grid.appendChild(btn)
           })
           resultsEl.innerHTML = ""
           resultsEl.appendChild(grid)
         })
-        .catch(function () { resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">Search failed.</div>' })
+        .catch(function () {
+          resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">Search failed.</div>'
+        })
     }, 300)
   })
 
@@ -1552,28 +1670,37 @@
   ;(function () {
     var _lpObserver = null
     if ("IntersectionObserver" in window) {
-      _lpObserver = new IntersectionObserver(function (entries) {
-        entries.forEach(function (entry) {
-          if (entry.isIntersecting) {
-            var img = entry.target
-            if (img.dataset.src) {
-              img.src = img.dataset.src
-              img.removeAttribute("data-src")
-              img.classList.add("is-loaded")
+      _lpObserver = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              var img = entry.target
+              if (img.dataset.src) {
+                img.src = img.dataset.src
+                img.removeAttribute("data-src")
+                img.classList.add("is-loaded")
+              }
+              _lpObserver.unobserve(img)
             }
-            _lpObserver.unobserve(img)
-          }
-        })
-      }, { rootMargin: "200px" })
+          })
+        },
+        { rootMargin: "200px" },
+      )
     }
     window.lpInitLazyLoad = function (container) {
       var root = container || document
       var imgs = root.querySelectorAll("img.lp-lazy-img[data-src]")
       if (_lpObserver) {
-        imgs.forEach(function (img) { _lpObserver.observe(img) })
+        imgs.forEach(function (img) {
+          _lpObserver.observe(img)
+        })
       } else {
         imgs.forEach(function (img) {
-          if (img.dataset.src) { img.src = img.dataset.src; img.removeAttribute("data-src"); img.classList.add("is-loaded") }
+          if (img.dataset.src) {
+            img.src = img.dataset.src
+            img.removeAttribute("data-src")
+            img.classList.add("is-loaded")
+          }
         })
       }
     }
@@ -1585,7 +1712,10 @@
     if (saved !== null) {
       sessionStorage.removeItem("lp_scroll_pos")
       var y = parseInt(saved, 10)
-      if (!isNaN(y)) setTimeout(function () { window.scrollTo(0, y) }, 50)
+      if (!isNaN(y))
+        setTimeout(function () {
+          window.scrollTo(0, y)
+        }, 50)
     }
   })()
 
@@ -1607,6 +1737,15 @@
     loadTab("movie")
   }
 
-  var LP_POLL_INTERVAL = 8000
-  setInterval(poll, LP_POLL_INTERVAL)
+  // Self-scheduling poll: wait LP_POLL_INTERVAL, run a poll, then once that
+  // poll's request has fully settled (success or failure) re-arm the next one.
+  // This guarantees the next poll never starts until the last request finished,
+  // so slow polls can't stack up overlapping fetches.
+  var LP_POLL_INTERVAL = 15000
+  function scheduleNextPoll() {
+    setTimeout(function () {
+      poll().finally(scheduleNextPoll)
+    }, LP_POLL_INTERVAL)
+  }
+  scheduleNextPoll()
 })()

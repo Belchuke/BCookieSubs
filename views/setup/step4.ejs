@@ -190,7 +190,7 @@
   }
 
   function createRow(modelName) {
-    container.style.display = '';
+    container.classList.remove('s4-pull-hidden');
     var row = document.createElement('div');
     row.className = 'pull-row';
     row.style.cssText = 'border:1px solid var(--border);border-radius:var(--radius-sm);padding:.65rem .75rem;background:var(--surface-2)';

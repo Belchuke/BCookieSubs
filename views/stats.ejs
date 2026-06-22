@@ -321,6 +321,18 @@
     return '<div class="stat-card '+(cls||'')+'"><div class="stat-value">'+esc(val)+'</div><div class="stat-label">'+esc(label)+'</div></div>';
   }
 
+  // Panels are hidden via the `sts-hidden` class (display:none). Setting only
+  // inline style.display='' falls back to the class rule and stays hidden, so
+  // toggle the class too.
+  function showEl(id) {
+    var el = (typeof id === 'string') ? document.getElementById(id) : id;
+    if (el) { el.classList.remove('sts-hidden'); el.style.display = ''; }
+  }
+  function hideEl(id) {
+    var el = (typeof id === 'string') ? document.getElementById(id) : id;
+    if (el) { el.classList.add('sts-hidden'); el.style.display = 'none'; }
+  }
+
   function makeBar(id, labels, data) {
     var el = document.getElementById(id);
     if (!el) return null;
@@ -364,9 +376,11 @@
   document.querySelectorAll('.tab-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-      document.querySelectorAll('.tab-pane').forEach(function(p){ p.style.display='none'; });
+      document.querySelectorAll('.tab-pane').forEach(function(p){ p.style.display='none'; p.classList.add('sts-hidden'); });
       btn.classList.add('active');
-      document.getElementById('tab-'+btn.dataset.tab).style.display='';
+      var target = document.getElementById('tab-'+btn.dataset.tab);
+      target.classList.remove('sts-hidden');
+      target.style.display='';
       if (btn.dataset.tab === 'judge') loadJudgeData();
     });
   });
@@ -429,8 +443,8 @@
   document.getElementById('sub-select').addEventListener('change', function() {
     var sid = this.value;
     if (!sid) {
-      document.getElementById('job-field').style.display = 'none';
-      document.getElementById('sub-info-panel').style.display = 'none';
+      hideEl('job-field');
+      hideEl('sub-info-panel');
       return;
     }
     fetch('/stats/subtitle-data?subtitleId='+sid)
@@ -444,10 +458,10 @@
         if (data.jobs && data.jobs.length === 1) {
           jobSel.value = data.jobs[0].id;
           loadJobData(data.jobs[0].id);
-          document.getElementById('job-field').style.display = 'none';
+          hideEl('job-field');
         } else {
-          document.getElementById('job-field').style.display = '';
-          document.getElementById('sub-info-panel').style.display = 'none';
+          showEl('job-field');
+          hideEl('sub-info-panel');
         }
       });
   });
@@ -460,7 +474,7 @@
     fetch('/stats/job-data?jobId='+jobId)
       .then(function(r){ return r.json(); })
       .then(function(d) {
-        document.getElementById('sub-info-panel').style.display = '';
+        showEl('sub-info-panel');
 
         document.getElementById('sub-meta-grid').innerHTML = [
           statCard('Title',       d.subtitle ? d.subtitle.name : '—', ''),
@@ -519,11 +533,11 @@
 
   document.getElementById('model-select').addEventListener('change', function() {
     var mid = this.value;
-    if (!mid) { document.getElementById('model-info-panel').style.display='none'; return; }
+    if (!mid) { hideEl('model-info-panel'); return; }
     fetch('/stats/model-data?modelId='+mid)
       .then(function(r){ return r.json(); })
       .then(function(d) {
-        document.getElementById('model-info-panel').style.display = '';
+        showEl('model-info-panel');
         var o = d.overall || {};
         var sr   = o.totalCandidates > 0 ? Math.round(o.successCount  / o.totalCandidates * 100) : 0;
         var selR = o.successCount    > 0 ? Math.round(o.selectedCount / o.successCount    * 100) : 0;
@@ -654,10 +668,10 @@
       var targetBtn = document.querySelector('.tab-btn[data-tab="' + state.tab + '"]');
       if (targetBtn) {
         document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-        document.querySelectorAll('.tab-pane').forEach(function(p){ p.style.display='none'; });
+        document.querySelectorAll('.tab-pane').forEach(function(p){ p.style.display='none'; p.classList.add('sts-hidden'); });
         targetBtn.classList.add('active');
         var pane = document.getElementById('tab-' + state.tab);
-        if (pane) pane.style.display = '';
+        if (pane) { pane.classList.remove('sts-hidden'); pane.style.display = ''; }
         if (state.tab === 'judge') loadJudgeData();
       }
     }
@@ -685,7 +699,7 @@
                 jobSel.value = state.jobSelect;
                 if (jobSel.value) loadJobData(parseInt(jobSel.value));
               }
-              document.getElementById('job-field').style.display = (data.jobs||[]).length > 1 ? '' : 'none';
+              if ((data.jobs||[]).length > 1) showEl('job-field'); else hideEl('job-field');
             });
         }
       }
@@ -718,8 +732,10 @@
 
   var STATS_POLL_INTERVAL = 30000;
 
+  // Returns a promise that settles once the poll request has finished, so the
+  // scheduler below re-arms the next poll only after the previous one is done.
   function pollStats() {
-    fetch('/stats/poll')
+    return fetch('/stats/poll')
       .then(function(r){ if (redirectIfUnauthorized(r)) return null; return r.json(); })
       .then(function(data) {
         if (!data) return;
@@ -737,7 +753,17 @@
       .catch(function(){});
   }
 
-  setInterval(pollStats, STATS_POLL_INTERVAL);
+  // Self-scheduling poll: wait STATS_POLL_INTERVAL, run a poll, then once that
+  // poll's request has fully settled (success or failure) re-arm the next one.
+  // The next poll never starts until the last request finished, so slow polls
+  // can't stack up overlapping fetches.
+  function scheduleNextStatsPoll() {
+    setTimeout(function () {
+      pollStats().finally(scheduleNextStatsPoll);
+    }, STATS_POLL_INTERVAL);
+  }
+
+  scheduleNextStatsPoll();
 
 })();
 </script>
