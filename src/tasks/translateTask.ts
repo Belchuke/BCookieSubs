@@ -31,7 +31,6 @@ import { parseLLMResponse, sleep, srtFormatterForModel, validateChunkIntegrity }
 import {
   assembleAndFinishSubtitleJob,
   createChunkCandidate,
-  createPlaceholderTranslationJobs,
   createTranslationJobsForSubtitle,
   finalizeWhisperTranscription,
   getChunksByJobId,
@@ -1114,7 +1113,14 @@ async function processWhisperTranscription(db: Database.Database, subtitle: DBSu
     if (!actingUser) {
       setWhisperTranscriptionStatus(db, subtitle.id, "transcription_failed")
       updateSubtitleStatus(db, subtitle.id, "failed")
-      createLog(db, "error", "subtitle", subtitle.id, "Whisper transcription failed: no valid user to attribute jobs to", {})
+      createLog(
+        db,
+        "error",
+        "subtitle",
+        subtitle.id,
+        "Whisper transcription failed: no valid user to attribute jobs to",
+        {},
+      )
       return
     }
 
@@ -1152,32 +1158,29 @@ async function processWhisperTranscription(db: Database.Database, subtitle: DBSu
     if (!jobResult.success) {
       setWhisperTranscriptionStatus(db, subtitle.id, "transcription_failed")
       updateSubtitleStatus(db, subtitle.id, "failed")
-      createLog(db, "error", "subtitle", subtitle.id, `Failed to create translation jobs from Whisper SRT: ${jobResult.msg}`, {})
+      createLog(
+        db,
+        "error",
+        "subtitle",
+        subtitle.id,
+        `Failed to create translation jobs from Whisper SRT: ${jobResult.msg}`,
+        {},
+      )
       return
     }
 
     setWhisperTranscriptionStatus(db, subtitle.id, null)
     updateSubtitleStatus(db, subtitle.id, "queued")
-    createLog(
-      db,
-      "info",
-      "subtitle",
-      subtitle.id,
-      "Whisper-generated SRT imported and translation jobs created",
-      { targetLangCount: targetLangIds.length },
-    )
+    createLog(db, "info", "subtitle", subtitle.id, "Whisper-generated SRT imported and translation jobs created", {
+      targetLangCount: targetLangIds.length,
+    })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     setWhisperTranscriptionStatus(db, subtitle.id, "transcription_failed")
     updateSubtitleStatus(db, subtitle.id, "failed")
-    createLog(
-      db,
-      "error",
-      "subtitle",
-      subtitle.id,
-      `Whisper transcription failed: ${msg.slice(0, 200)}`,
-      { error: msg.slice(0, 200) },
-    )
+    createLog(db, "error", "subtitle", subtitle.id, `Whisper transcription failed: ${msg.slice(0, 200)}`, {
+      error: msg.slice(0, 200),
+    })
     console.error(`[worker] Whisper transcription failed for subtitle ${subtitle.id}:`, msg)
   } finally {
     cleanupWhisperTempDir()

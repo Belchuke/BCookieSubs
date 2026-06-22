@@ -589,6 +589,33 @@ function getSeriesDetectionName(filePath: string, libraryPathRoot: string): stri
   return path.basename(seriesRoot)
 }
 
+// Parse an embedded TMDB id from a Jellyfin/Plex-style folder name, e.g.
+// "Captain America: Civil War (2016) [tmdbid-271110]" or "... {tmdb-271110}".
+function parseTmdbIdFromFolderName(folderName: string): number | null {
+  const m = folderName.match(/[[{]\s*tmdb(?:id)?-(\d+)\s*[\]}]/i)
+  return m ? parseInt(m[1]) : null
+}
+
+// Strip id/source tags so the LLM matcher sees a clean title, e.g.
+// "Captain America: Civil War (2016) [tmdbid-271110]" -> "Captain America: Civil War (2016)".
+function stripFolderIdTags(folderName: string): string {
+  return folderName
+    .replace(/[[{]\s*(?:tmdb|imdb|tvdb)(?:id)?-[^\]}]*[\]}]/gi, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+// For movies, the containing folder usually holds the authoritative title
+// (e.g. "Movie Title (Year)/file.ext"), while the filename is often a release
+// group or — for subtitles — a language label. Fall back to the filename only
+// when the file lives directly in the library root.
+function getMovieDetectionName(filePath: string, libraryPathRoot: string): string {
+  const dir = path.normalize(path.dirname(filePath))
+  const root = path.normalize(libraryPathRoot)
+  if (dir === root) return path.basename(filePath, path.extname(filePath))
+  return stripFolderIdTags(path.basename(dir))
+}
+
 async function matchMediaForFile(
   db: Database.Database,
   adminUser: DBUser,
@@ -608,18 +635,25 @@ async function matchMediaForFile(
   let detectedYear: number | null = null
   let candidateMediaItemIds: number[] = []
 
-  // NFO pre-check: if the folder contains an .nfo with a tmdbid, skip AI and fetch directly
+  // TMDB id pre-check: if the folder name embeds a tmdbid ([tmdbid-271110]) or the
+  // folder contains an .nfo with a tmdbid, skip AI and fetch directly. Try the folder
+  // name first, then fall back to the .nfo — so both sources get a chance per folder.
   const nfoDir = libraryType === "series" ? getSeriesRootDir(fileName, libraryPathRoot) : path.dirname(fileName)
+  const idSources: { tmdbId: number; source: string }[] = []
+  const folderTmdbId = parseTmdbIdFromFolderName(path.basename(nfoDir))
+  if (folderTmdbId) idSources.push({ tmdbId: folderTmdbId, source: "folder name" })
   const nfoTmdbId = readNfoTmdbId(nfoDir)
-  if (nfoTmdbId) {
+  if (nfoTmdbId && nfoTmdbId !== folderTmdbId) idSources.push({ tmdbId: nfoTmdbId, source: "NFO" })
+
+  for (const { tmdbId, source } of idSources) {
     try {
-      const details = await fetchTheMovieDbDetailsById(db, nfoTmdbId, libraryType)
+      const details = await fetchTheMovieDbDetailsById(db, tmdbId, libraryType)
       if (details) {
         const tmdbYear = details.releaseDate ? parseInt(details.releaseDate.split("-")[0]) : null
         const mediaResult = await createMediaItem(
           db,
           adminUser,
-          details.name ?? String(nfoTmdbId),
+          details.name ?? String(tmdbId),
           details.originalTitle ?? null,
           libraryType,
           tmdbYear,
@@ -634,10 +668,11 @@ async function matchMediaForFile(
             "info",
             "libraryScanner",
             null,
-            `NFO TMDB match for "${path.basename(fileName)}" → ${details.name} (id ${details.id})`,
+            `${source} TMDB match for "${path.basename(fileName)}" → ${details.name} (id ${details.id})`,
             {
               fileName: path.basename(fileName),
-              tmdbId: nfoTmdbId,
+              tmdbId,
+              tmdbIdSource: source,
               title: details.name,
             },
           )
@@ -657,10 +692,11 @@ async function matchMediaForFile(
         "warning",
         "libraryScanner",
         null,
-        `NFO TMDB fetch failed for "${path.basename(fileName)}": ${String(e).slice(0, 200)}`,
+        `${source} TMDB fetch failed for "${path.basename(fileName)}": ${String(e).slice(0, 200)}`,
         {
           fileName: path.basename(fileName),
-          tmdbId: nfoTmdbId,
+          tmdbId,
+          tmdbIdSource: source,
         },
       )
     }
@@ -669,7 +705,7 @@ async function matchMediaForFile(
   const detectionName =
     libraryType === "series"
       ? getSeriesDetectionName(fileName, libraryPathRoot)
-      : path.basename(fileName, path.extname(fileName))
+      : getMovieDetectionName(fileName, libraryPathRoot)
 
   try {
     const detected = await getSubtitleItemMediaItemFromPrompt(db, adminUser, detectionName)
