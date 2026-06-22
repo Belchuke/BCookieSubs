@@ -21,6 +21,7 @@ import {
   getLibraryPathById,
   getLibraryPathItemById,
   isLibraryPathItemBlacklisted,
+  rescanLibraryPath,
   toggleLibraryPath,
   unblacklistLibraryPathItem,
   updateLibraryPath,
@@ -105,6 +106,7 @@ export function libraryPathsRouter(db: Database.Database) {
       disabledBadge: __("librarypaths.disabledBadge"),
       enable: __("librarypaths.enable"),
       disable: __("librarypaths.disable"),
+      rescan: __("librarypaths.rescan"),
       edit: __("common.edit"),
       delete: __("common.delete"),
       blacklistBtn: __("librarypaths.blacklistBtn"),
@@ -255,6 +257,15 @@ export function libraryPathsRouter(db: Database.Database) {
       return res.redirect("/library-paths?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed"))
     }
     res.redirect("/library-paths")
+  })
+
+  router.post("/rescan/:id", (req, res) => {
+    const result = rescanLibraryPath(db, res.locals.user!, parseInt(String(req.params.id)))
+    if (req.query.json === "1") return res.json(result)
+    if (!result.success) {
+      return res.redirect("/library-paths?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed"))
+    }
+    res.redirect("/library-paths?toast=success&msg=" + encodeURIComponent(result.msg ?? "Rescan scheduled"))
   })
 
   router.post("/delete/:id", (req, res) => {

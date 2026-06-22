@@ -1543,6 +1543,14 @@ details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg);
   accent-color: var(--accent);
   margin-top: .35rem;
 }
+
+.lp-item-cb {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
 .lp-bulk-bar {
   position: fixed;
   bottom: 0; left: 0; right: 0;

@@ -2,13 +2,17 @@ import Database from "better-sqlite3"
 import { getConfig } from "../repositories/configRepository"
 import { createLog } from "../repositories/logRepository"
 import {
-  getEnabledLibraryPaths,
   getLibraryPathById,
+  getLibraryPathsDueForScan,
   getLibraryPathsStuckInScanning,
   setLibraryPathState,
 } from "../repositories/libraryPathRepository"
 import { scanLibraryPath } from "../services/libraryPathService"
-import { LIBRARY_SCAN_INTERVAL_MS, STUCK_SCAN_THRESHOLD_MINUTES } from "../constants/timer"
+import {
+  LIBRARY_SCAN_INTERVAL_MINUTES,
+  LIBRARY_SCAN_TICK_MS,
+  STUCK_SCAN_THRESHOLD_MINUTES,
+} from "../constants/timer"
 import { sleep } from "../repositories/shared"
 
 export async function libraryScannerMain(db: Database.Database): Promise<void> {
@@ -23,7 +27,7 @@ export async function libraryScannerMain(db: Database.Database): Promise<void> {
       })
       console.error("[library-scanner] Unexpected error:", e)
     }
-    await sleep(LIBRARY_SCAN_INTERVAL_MS)
+    await sleep(LIBRARY_SCAN_TICK_MS)
   }
 }
 
@@ -51,9 +55,9 @@ async function runScannerOnce(db: Database.Database): Promise<void> {
     )
   }
 
-  const enabledPaths = getEnabledLibraryPaths(db)
+  const duePaths = getLibraryPathsDueForScan(db, LIBRARY_SCAN_INTERVAL_MINUTES)
 
-  for (const lp of enabledPaths) {
+  for (const lp of duePaths) {
     const fresh = getLibraryPathById(db, lp.id)
     if (!fresh || !fresh.enabled) continue
     if (fresh.state === "scanning") continue

@@ -22,6 +22,20 @@ export const getEnabledLibraryPaths = (db: Database.Database): DBLibraryPath[] =
   return db.prepare(`SELECT * FROM libraryPath WHERE enabled = 1 ORDER BY id ASC`).all() as DBLibraryPath[]
 }
 
+// Enabled paths that are due for a routine scan: never scanned, last scanned
+// longer ago than intervalMinutes, or manually queued (lastRunAt cleared). Paths
+// already scanning are excluded so an in-progress scan isn't double-started.
+export const getLibraryPathsDueForScan = (db: Database.Database, intervalMinutes: number): DBLibraryPath[] => {
+  return db
+    .prepare(
+      `SELECT * FROM libraryPath
+       WHERE enabled = 1 AND state != 'scanning'
+         AND (lastRunAt IS NULL OR lastRunAt < datetime('now', ?))
+       ORDER BY id ASC`,
+    )
+    .all(`-${intervalMinutes} minutes`) as DBLibraryPath[]
+}
+
 // All library paths that have a non-null filesystem path (used to validate that
 // a target file lies within a configured library before writing to disk).
 export const getLibraryPathsWithFilesystemPath = (db: Database.Database): DBLibraryPath[] => {
@@ -156,6 +170,30 @@ export const toggleLibraryPath = (db: Database.Database, user: DBUser, id: numbe
 
   db.prepare(`UPDATE libraryPath SET enabled = ?, updatedAt = datetime('now') WHERE id = ?`).run(lp.enabled ? 0 : 1, id)
   return { success: true, msg: null }
+}
+
+// Reset a library path back to "idle" so the scanner worker re-runs it on its
+// next tick. Primarily used to recover a path wedged in "scanning" after a
+// crashed scan (the worker skips paths still marked "scanning"), but also works
+// as a manual "scan now" for idle/errored paths.
+export const rescanLibraryPath = (db: Database.Database, user: DBUser, id: number): DefaultResponse => {
+  const { hasPermission } = userHasPermission(db, user.id, "canEditLibraryPath")
+  if (!hasPermission) return { success: false, msg: "Permission denied" }
+
+  const lp = getLibraryPathById(db, id)
+  if (!lp) return { success: false, msg: "Library path not found" }
+
+  const previousState = lp.state
+  // Reset to idle and clear lastRunAt so the worker treats it as due on its next
+  // tick (rather than waiting out the routine scan interval).
+  db.prepare(`UPDATE libraryPath SET state = 'idle', lastRunAt = NULL, updatedAt = datetime('now') WHERE id = ?`).run(id)
+  createLog(db, "info", "libraryPath", id, `Rescan requested for library path "${lp.name}"`, {
+    name: lp.name,
+    previousState,
+    requestedByUserId: user.id,
+    requestedByUsername: user.username,
+  })
+  return { success: true, msg: "Rescan scheduled — the scanner will pick it up shortly" }
 }
 
 export const deleteLibraryPath = (db: Database.Database, user: DBUser, id: number): DefaultResponse => {
@@ -586,8 +624,10 @@ const groupItems = (items: EnrichedLibraryPathItem[]): LibraryPathViewGroup[] =>
     }
   })
   groups.sort((a, b) => {
-    if (a.mediaItem && !b.mediaItem) return -1
-    if (!a.mediaItem && b.mediaItem) return 1
+    // Unmatched group (no mediaItem) floats to the top so it's easy to spot and
+    // act on; matched groups follow, sorted alphabetically by title.
+    if (!a.mediaItem && b.mediaItem) return -1
+    if (a.mediaItem && !b.mediaItem) return 1
     if (a.mediaItem && b.mediaItem) return a.mediaItem.title.localeCompare(b.mediaItem.title)
     return 0
   })

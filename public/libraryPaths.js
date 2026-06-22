@@ -134,6 +134,18 @@
       se = '<span class="lpx-se-label">S' + pad2(item.season) + "E" + pad2(item.episode) + "</span>"
     }
 
+    // Per-item bulk-select checkbox for unmatched items. The single "Unmatched"
+    // group lumps every unmatched item together, so a per-item checkbox lets the
+    // user pick a subset (e.g. one series' episodes) and bulk-match them.
+    var selectable = !item.mediaItemId && !item.blacklist && PERMS.canChangeMatchForLibraryPaths
+    var itemCb = selectable
+      ? '<input type="checkbox" class="lp-item-cb" data-item-id="' +
+        item.id +
+        '" data-lp-type="' +
+        escAttr(lp.type) +
+        '" title="Select for bulk match">'
+      : ""
+
     var badges =
       '<span class="badge ' +
       statusCls +
@@ -222,6 +234,7 @@
       '<div data-item-row="' +
       item.id +
       '" class="lpx-item-row"><div class="lpx-min0"><div class="lpx-row-center">' +
+      itemCb +
       se +
       '<span class="lpx-filename" title="' +
       escAttr(item.path) +
@@ -517,6 +530,13 @@
       '" class="lpx-inline" onclick="event.stopPropagation()"><button type="submit" class="btn btn-sm btn-secondary">' +
       escHtml(lp.enabled ? t("disable") : t("enable")) +
       "</button></form>" +
+      (PERMS.canEditLibraryPath
+        ? '<form method="POST" action="/library-paths/rescan/' +
+          lp.id +
+          '" class="lpx-inline" onclick="event.stopPropagation()" title="Reset this library and re-run the scanner (use if a scan got stuck)"><button type="submit" class="btn btn-sm btn-secondary">' +
+          escHtml(t("rescan")) +
+          "</button></form>"
+        : "") +
       '<form method="POST" action="/library-paths/delete/' +
       lp.id +
       '" class="lpx-inline" onclick="event.stopPropagation()" onsubmit="return confirm(\'Delete library path \\\'' +
@@ -533,7 +553,7 @@
       (lp.autoTranslate ? "Yes" : "No") +
       " &nbsp;·&nbsp; AutoExtract: " +
       (lp.autoExtract ? "Yes" : "No")
-    if (lp.lastRunAt) sourceMeta += " &nbsp;·&nbsp; Last scan: " + escHtml(lp.lastRunAt.split(" ")[0])
+    if (lp.lastRunAt) sourceMeta += " &nbsp;·&nbsp; Last scan: " + escHtml(lp.lastRunAt)
 
     var cardOpen = getAccordionState()["lp-" + lp.id] === true ? " open" : ""
 
@@ -1291,9 +1311,15 @@
       var bti = JSON.parse(bulkTmdbBtn.dataset.tmdbItem)
       var btype = bulkTmdbBtn.dataset.type
       var byear = bti.releaseDate ? bti.releaseDate.substring(0, 4) : ""
+      var seenIds = {}
       var allItemIds = []
       Object.values(_selectedGroups).forEach(function (g) {
-        allItemIds = allItemIds.concat(g.itemIds)
+        ;(g.itemIds || []).forEach(function (id) {
+          if (!seenIds[id]) {
+            seenIds[id] = true
+            allItemIds.push(id)
+          }
+        })
       })
       var bbp = [
         "itemIds=" + encodeURIComponent(JSON.stringify(allItemIds)),
@@ -1311,7 +1337,7 @@
       lpAjaxPost("/library-paths/group/select-tmdb-result", bbp.join("&"), function () {
         closeModal("bulk-match-modal")
         _selectedGroups = {}
-        document.querySelectorAll(".lp-group-cb:checked").forEach(function (cb) {
+        document.querySelectorAll(".lp-group-cb:checked, .lp-item-cb:checked").forEach(function (cb) {
           cb.checked = false
         })
         updateBulkBar()
@@ -1433,6 +1459,24 @@
         delete _selectedGroups[key]
       }
       updateBulkBar()
+      return
+    }
+    // per-item bulk checkbox (unmatched items) — registers as a single-item
+    // selection in the same bulk machinery used by group checkboxes.
+    var icb = e.target.closest && e.target.closest(".lp-item-cb")
+    if (icb) {
+      var itemId = parseInt(icb.dataset.itemId)
+      var ikey = "item-" + itemId
+      if (icb.checked) {
+        _selectedGroups[ikey] = {
+          itemIds: [itemId],
+          firstItemId: icb.dataset.itemId,
+          type: icb.dataset.lpType,
+        }
+      } else {
+        delete _selectedGroups[ikey]
+      }
+      updateBulkBar()
     }
   })
 
@@ -1529,12 +1573,24 @@
       return
     }
     bar.style.display = ""
-    countEl.textContent = keys.length + " group" + (keys.length !== 1 ? "s" : "") + " selected"
+    var totalItems = bulkSelectedItemCount()
+    countEl.textContent = totalItems + " file" + (totalItems !== 1 ? "s" : "") + " selected"
+  }
+
+  // Total distinct items across all selected groups/items.
+  function bulkSelectedItemCount() {
+    var ids = {}
+    Object.keys(_selectedGroups).forEach(function (k) {
+      ;(_selectedGroups[k].itemIds || []).forEach(function (id) {
+        ids[id] = true
+      })
+    })
+    return Object.keys(ids).length
   }
 
   document.getElementById("lp-bulk-clear-btn").addEventListener("click", function () {
     _selectedGroups = {}
-    document.querySelectorAll(".lp-group-cb:checked").forEach(function (cb) {
+    document.querySelectorAll(".lp-group-cb:checked, .lp-item-cb:checked").forEach(function (cb) {
       cb.checked = false
     })
     updateBulkBar()
@@ -1543,7 +1599,7 @@
   document.getElementById("lp-bulk-change-match-btn").addEventListener("click", function () {
     var keys = Object.keys(_selectedGroups)
     if (keys.length === 0) return
-    document.getElementById("bulk-modal-count").textContent = keys.length
+    document.getElementById("bulk-modal-count").textContent = bulkSelectedItemCount()
     document.getElementById("bulk-tmdb-search").value = ""
     document.getElementById("bulk-tmdb-results").innerHTML = ""
     openModal("bulk-match-modal")

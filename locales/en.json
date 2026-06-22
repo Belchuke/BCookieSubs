@@ -405,6 +405,7 @@
     "addPathBtn": "Add Path",
     "disable": "Disable",
     "enable": "Enable",
+    "rescan": "Rescan",
     "noSubdirectories": "No subdirectories",
     "browse": "Browse",
     "blacklistedBy": "Blacklisted by",

@@ -105,7 +105,7 @@
 
 <%# ── Bulk action bar ─────────────────────────────────────────────── %>
 <div id="lp-bulk-bar" class="lp-bulk-bar" style="display:none">
-  <span id="lp-bulk-count" class="lpx-bulk-count">0 groups selected</span>
+  <span id="lp-bulk-count" class="lpx-bulk-count">0 files selected</span>
   <button type="button" class="btn btn-primary btn-sm" id="lp-bulk-change-match-btn">
     <i class="fa-solid fa-link"></i> <%= __('librarypaths.bulkChangeMatch') %>
   </button>
@@ -118,10 +118,10 @@
 <div class="modal-overlay" id="bulk-match-modal" onclick="closeModalOnOverlay(event)">
   <div class="modal modal-wide">
     <div class="modal-header">
-      <h2>Change match — <span id="bulk-modal-count">0</span> groups</h2>
+      <h2>Change match — <span id="bulk-modal-count">0</span> files</h2>
       <button class="btn btn-icon" onclick="closeModal('bulk-match-modal')">✕</button>
     </div>
-    <p class="text-dim lpx-modal-hint">Search TheMovieDB and select the correct title. All selected groups will be re-matched.</p>
+    <p class="text-dim lpx-modal-hint">Search TheMovieDB and select the correct title. All selected files will be re-matched.</p>
     <div class="field">
       <label for="bulk-tmdb-search">Search</label>
       <input type="search" id="bulk-tmdb-search" placeholder="Title…" autocomplete="off">
