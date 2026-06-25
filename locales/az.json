@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Altyazı əlavə et — Addım 2/2",
     "srtFile": "SRT faylı",
     "clickToUpload": "Yükləmək üçün klikləyin və ya sürükləyib buraxın",
-    "srtOnly": "Yalnız SRT faylları",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Mənbə dili",
     "mediaTitle": "Başlıq",
     "type": "Növ",

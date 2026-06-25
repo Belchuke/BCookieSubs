@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Tambah Subtitle — Langkah 2 dari 2",
     "srtFile": "File SRT",
     "clickToUpload": "Klik untuk mengunggah atau seret dan lepas",
-    "srtOnly": "Hanya file SRT",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Bahasa Sumber",
     "mediaTitle": "Judul",
     "type": "Tipe",

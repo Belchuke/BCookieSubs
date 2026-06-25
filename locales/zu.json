@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Engeza Isingeniso — Isinyathelo 2 kwezi-2",
     "srtFile": "Ifayela le-SRT",
     "clickToUpload": "Chofoza ukuze ulayishe noma hudula uphonse",
-    "srtOnly": "Amafayela e-SRT kuphela",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Ulimi Lwemvelaphi",
     "mediaTitle": "Isihloko",
     "type": "Uhlobo",

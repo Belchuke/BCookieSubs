@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Adaugă subtitrare — Pasul 2 din 2",
     "srtFile": "Fișier SRT",
     "clickToUpload": "Faceți clic pentru a încărca sau trageți și plasați",
-    "srtOnly": "Doar fișiere SRT",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Limbă sursă",
     "mediaTitle": "Titlu",
     "type": "Tip",

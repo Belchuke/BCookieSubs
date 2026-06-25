@@ -570,6 +570,24 @@ const createTables = (db: Database.Database) => {
       FOREIGN KEY (mediaItemId) REFERENCES mediaItem(id) ON DELETE CASCADE
     )`)
 
+    // Files BCookieSubs itself exported into a library folder. The scanner
+    // skips these as translation sources (they are output, not input) — except
+    // whisper-generated transcripts (isWhisper = 1), which remain valid
+    // sources. Lets the Library Requests page hide BCookieSubs's own output
+    // while still offering Whisper transcripts to translate from.
+    db.exec(`CREATE TABLE IF NOT EXISTS bcsubExportedFile (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      libraryPathId INTEGER NOT NULL,
+      path TEXT NOT NULL,
+      subtitleId INTEGER DEFAULT NULL,
+      isWhisper INTEGER NOT NULL DEFAULT 0,
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(libraryPathId, path),
+      FOREIGN KEY (libraryPathId) REFERENCES libraryPath(id) ON DELETE CASCADE,
+      FOREIGN KEY (subtitleId) REFERENCES subtitle(id) ON DELETE SET NULL
+    )`)
+
     db.exec(`CREATE TABLE IF NOT EXISTS subtitle (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 

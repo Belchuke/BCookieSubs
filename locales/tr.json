@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Altyazı Ekle — 2. Adım (2'de)",
     "srtFile": "SRT Dosyası",
     "clickToUpload": "Yüklemek için tıklayın veya sürükleyip bırakın",
-    "srtOnly": "Sadece SRT dosyaları",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Kaynak Dil",
     "mediaTitle": "Başlık",
     "type": "Tür",

@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Хадмал нэмэх — Алхам 2 (2-оос)",
     "srtFile": "SRT файл",
     "clickToUpload": "Байршуулахын тулд дарна уу эсвэл чирж оруулна уу",
-    "srtOnly": "Зөвхөн SRT файлууд",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Эх хэл",
     "mediaTitle": "Гарчиг",
     "type": "Төрөл",

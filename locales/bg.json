@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Добави субтитри — Стъпка 2 от 2",
     "srtFile": "SRT файл",
     "clickToUpload": "Кликнете за качване или плъзнете и пуснете",
-    "srtOnly": "Само SRT файлове",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Изходен език",
     "mediaTitle": "Заглавие",
     "type": "Тип",

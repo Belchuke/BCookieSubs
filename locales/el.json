@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Προσθήκη Υπότιτλου — Βήμα 2 από 2",
     "srtFile": "Αρχείο SRT",
     "clickToUpload": "Κάντε κλικ για μεταφόρτωση ή σύρετε και αποθέστε",
-    "srtOnly": "Μόνο αρχεία SRT",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Γλώσσα Πηγής",
     "mediaTitle": "Τίτλος",
     "type": "Τύπος",

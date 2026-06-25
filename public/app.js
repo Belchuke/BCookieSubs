@@ -90,7 +90,7 @@ function closeModalOnOverlay(event) {
     var langSelect = document.getElementById("up1-sourceLangId")
 
     if (!fileInput.files || !fileInput.files[0]) {
-      alert("Please select an SRT file.")
+      alert("Please select a subtitle file.")
       return
     }
     if (!langSelect || !langSelect.value) {
@@ -289,6 +289,12 @@ function closeModalOnOverlay(event) {
       html += '<form method="POST" action="/dashboard/cancel/' + s.id + '" style="display:inline"'
       html += " onsubmit=\"return confirm('Cancel?')\">"
       html += '<button type="submit" class="btn btn-icon btn-danger" title="Cancel">✕</button></form>'
+    }
+    // Re-add a cancelled subtitle back to the queue (inverse of Cancel). Gated
+    // on the same permission as Cancel. Completed items are done and not re-addable.
+    if (s.status === "cancelled" && (typeof CAN_STOP === "undefined" || CAN_STOP)) {
+      html += '<form method="POST" action="/dashboard/requeue/' + s.id + '" style="display:inline">'
+      html += '<button type="submit" class="btn btn-icon" title="Re-add to queue">↻</button></form>'
     }
     if (!isActive && (typeof CAN_DELETE === "undefined" || CAN_DELETE)) {
       html += '<form method="POST" action="/dashboard/delete/' + s.id + '" style="display:inline"'
@@ -519,7 +525,7 @@ function closeModalOnOverlay(event) {
 
   function renderQueueList(container, subtitles, langMap, queueType, subState, seriesState) {
     if (subtitles.length === 0) {
-      container.innerHTML = '<p class="empty-state">' + (queueType === "whisper" ? "No whisper jobs queued." : "No subtitle jobs yet. Add a .srt file to get started.") + "</p>"
+      container.innerHTML = '<p class="empty-state">' + (queueType === "whisper" ? "No whisper jobs queued." : "No subtitle jobs yet. Add a subtitle file to get started.") + "</p>"
       return
     }
 

@@ -18,10 +18,13 @@ import {
   createLibraryPathItemCandidate,
   deleteLibraryPathItem,
   findLibraryPathItemByPath,
+  getExportedFileByPath,
   getLibraryPathById,
   getLibraryPathItemById,
   getLibraryPathItemIdsByLibraryPath,
   isLibraryPathItemBlacklisted,
+  pruneMissingExportedFiles,
+  recordExportedFile,
   setInitialScanCompleted,
   setLibraryPathState,
   updateLibraryPathItemExtractFileName,
@@ -200,18 +203,42 @@ function findMediaFiles(dirPath: string): ScannedFiles {
   return { videoFiles, srtFiles }
 }
 
+// Normalize a filename stem for companion matching: collapse runs of
+// whitespace, dots, underscores and hyphens to a single dot and lowercase.
+// Subtitle files often swap the video's separators (spaces vs dots vs
+// underscores) and append a language tag, e.g. a video "Show - S01E01.mkv"
+// ships with "Show.S01E01.en.ssa". A literal startsWith check misses those,
+// so the .ssa gets its own translatable row instead of being grouped under
+// the episode. Normalizing lets us match across separator styles while the
+// trailing "." boundary (see findAllCompanionSrts) keeps "S01E01" from
+// matching "S01E10".
+function normalizeCompanionStem(stem: string): string {
+  return stem.toLowerCase().replace(/[\s._-]+/g, ".")
+}
+
 function findAllCompanionSrts(videoFilePath: string): string[] {
   const dir = path.dirname(videoFilePath)
-  const stem = path.basename(videoFilePath, path.extname(videoFilePath)).toLowerCase()
+  const videoNorm = normalizeCompanionStem(path.basename(videoFilePath, path.extname(videoFilePath)))
   let entries: fs.Dirent[]
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true })
   } catch {
     return []
   }
-  return entries
-    .filter((e) => e.isFile() && isSubtitleExtension(e.name) && e.name.toLowerCase().startsWith(stem))
-    .map((e) => path.join(dir, e.name))
+  const result: string[] = []
+  for (const e of entries) {
+    if (!e.isFile() || !isSubtitleExtension(e.name)) continue
+    const subExt = subtitleExtensionOf(e.name) ?? path.extname(e.name)
+    const stem = e.name.endsWith(subExt) ? e.name.slice(0, e.name.length - subExt.length) : e.name
+    const stemNorm = normalizeCompanionStem(stem)
+    // Either the exact same stem (no language tag) or the video stem followed
+    // by a dot-separated language/tag segment. The "." boundary is what
+    // prevents "S01E01" from prefix-matching "S01E10".
+    if (stemNorm === videoNorm || stemNorm.startsWith(videoNorm + ".")) {
+      result.push(path.join(dir, e.name))
+    }
+  }
+  return result
 }
 
 function selectBestSrt(
@@ -589,27 +616,130 @@ export function resolveSubtitleSourceFromCandidate(
   return findCompanionSrt(candidate.path.split(".").slice(0, -2).join(".") + ".mp4", sourceLangIso639, sourceLangIso2b, sourceLangName)
 }
 
-function readNfoTmdbId(dir: string): number | null {
+function decodeXmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+}
+
+interface NfoMetadata {
+  title: string | null
+  originalTitle: string | null
+  year: number | null
+  genres: string | null
+  tmdbId: number | null
+  // Raw <art><poster> text from the NFO (an absolute path from the original
+  // media server — usually not valid locally after the files are pulled down).
+  posterValue: string | null
+}
+
+// Read the title / original title / year / genres / tmdb id / poster path out of
+// a Jellyfin/Kodi .nfo. These files ship with the media when it is exported
+// from a media server, so when one is present it is a richer and cheaper source
+// of truth than guessing the title from the filename and querying
+// TheMovieDatabase.
+function parseNfoFile(nfoPath: string): NfoMetadata | null {
+  let content: string
+  try {
+    content = fs.readFileSync(nfoPath, "utf-8")
+  } catch {
+    return null
+  }
+
+  const pick = (tag: string): string | null => {
+    const m = content.match(new RegExp(`<${tag}[^>]*>\\s*([\\s\\S]*?)\\s*<\\/${tag}>`, "i"))
+    if (!m) return null
+    const v = m[1].trim()
+    return v === "" ? null : decodeXmlEntities(v)
+  }
+
+  const title = pick("title")
+  const originalTitle = pick("originaltitle")
+
+  let year: number | null = null
+  const yearStr = pick("year")
+  if (yearStr) {
+    const ym = yearStr.match(/(\d{4})/)
+    if (ym) year = parseInt(ym[1])
+  }
+  if (year === null) {
+    for (const t of ["premiered", "releasedate", "aired"]) {
+      const d = pick(t)
+      if (d) {
+        const ym = d.match(/(\d{4})/)
+        if (ym) {
+          year = parseInt(ym[1])
+          break
+        }
+      }
+    }
+  }
+
+  const genreMatches = [...content.matchAll(/<genre>\s*([^\s<][^<]*?)\s*<\/genre>/gi)]
+  const genreList = genreMatches
+    .map((m) => decodeXmlEntities(m[1].trim()))
+    .filter((g) => g.length > 0)
+  const genres = genreList.length > 0 ? genreList.join(", ") : null
+
+  let tmdbId: number | null = null
+  const tmdbXml =
+    content.match(/<tmdbid>\s*(\d+)\s*<\/tmdbid>/i) ??
+    content.match(/<uniqueid[^>]+type=["']tmdb["'][^>]*>\s*(\d+)\s*<\/uniqueid>/i)
+  if (tmdbXml) {
+    tmdbId = parseInt(tmdbXml[1])
+  } else {
+    const urlMatch = content.match(/themoviedb\.org\/(?:movie|tv)\/(\d+)/)
+    if (urlMatch) tmdbId = parseInt(urlMatch[1])
+  }
+
+  let posterValue: string | null = null
+  const artMatch = content.match(/<art>([\s\S]*?)<\/art>/i)
+  if (artMatch) {
+    const posterMatch = artMatch[1].match(/<poster>\s*([^\s<][^<]*?)\s*<\/poster>/i)
+    if (posterMatch) posterValue = decodeXmlEntities(posterMatch[1].trim())
+  }
+
+  return { title, originalTitle, year, genres, tmdbId, posterValue }
+}
+
+// Prefer the canonical Jellyfin/Kodi filename (movie.nfo / tvshow.nfo) and fall
+// back to any other .nfo in the folder (e.g. a release-named "Free Guy.nfo").
+// Returns null when the folder has no .nfo at all.
+function findPrimaryNfoPath(dir: string, libraryType: "movie" | "series"): string | null {
   let entries: fs.Dirent[]
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true })
   } catch {
     return null
   }
-  for (const entry of entries) {
-    if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".nfo") continue
+  const nfos = entries
+    .filter((e) => e.isFile() && path.extname(e.name).toLowerCase() === ".nfo")
+    .map((e) => path.join(dir, e.name))
+  if (nfos.length === 0) return null
+  const preferred = libraryType === "movie" ? "movie.nfo" : "tvshow.nfo"
+  const canonical = nfos.find((p) => path.basename(p).toLowerCase() === preferred)
+  return canonical ?? nfos[0]
+}
+
+// Resolve the NFO's poster reference to an actual image file on disk. The
+// <art><poster> value is an absolute path from the original media server and
+// will not exist on the local machine after the media was pulled down, so try
+// the literal path first, then the poster's basename next to the NFO, then in
+// a "metadata" subfolder (where Jellyfin stores episode thumbs). Returns null
+// when no image can be found — the caller then falls back to a TMDB fetch.
+function resolveNfoPoster(nfoPath: string, posterValue: string | null): string | null {
+  if (!posterValue) return null
+  const nfoDir = path.dirname(nfoPath)
+  const base = path.basename(posterValue)
+  const candidates = [posterValue, path.join(nfoDir, base), path.join(nfoDir, "metadata", base)]
+  for (const c of candidates) {
     try {
-      const content = fs.readFileSync(path.join(dir, entry.name), "utf-8")
-      // <tmdbid>12345</tmdbid> or <uniqueid type="tmdb">12345</uniqueid>
-      const xmlMatch =
-        content.match(/<tmdbid>\s*(\d+)\s*<\/tmdbid>/i) ??
-        content.match(/<uniqueid[^>]+type=["']tmdb["'][^>]*>\s*(\d+)\s*<\/uniqueid>/i)
-      if (xmlMatch) return parseInt(xmlMatch[1])
-      // https://www.themoviedb.org/movie/12345 or /tv/12345
-      const urlMatch = content.match(/themoviedb\.org\/(?:movie|tv)\/(\d+)/)
-      if (urlMatch) return parseInt(urlMatch[1])
+      if (fs.existsSync(c) && fs.statSync(c).isFile()) return c
     } catch {
-      // skip unreadable file
+      // ignore unreadable candidate
     }
   }
   return null
@@ -666,15 +796,81 @@ async function matchMediaForFile(
   let detectedYear: number | null = null
   let candidateMediaItemIds: number[] = []
 
-  // TMDB id pre-check: if the folder name embeds a tmdbid ([tmdbid-271110]) or the
-  // folder contains an .nfo with a tmdbid, skip AI and fetch directly. Try the folder
-  // name first, then fall back to the .nfo — so both sources get a chance per folder.
+  // NFO-first matching. A Jellyfin/Kodi .nfo carried next to the media carries
+  // the title, year, genres, a poster reference and (often) a tmdb id. When the
+  // NFO has a title plus a poster image that actually exists on disk plus
+  // genres, that is enough to identify the media with no TheMovieDatabase call
+  // at all — so both the AI name-detection and the TMDB fetch are skipped,
+  // which makes the library scan a lot faster. Match order is NFO first, then
+  // the tmdb id embedded in the folder name, then AI name-detection from the
+  // folder name. Look for the canonical movie.nfo / tvshow.nfo before any
+  // other .nfo in the folder.
   const nfoDir = libraryType === "series" ? getSeriesRootDir(fileName, libraryPathRoot) : path.dirname(fileName)
+  const nfoPath = findPrimaryNfoPath(nfoDir, libraryType)
+  const nfoMeta = nfoPath ? parseNfoFile(nfoPath) : null
+  const nfoPoster = nfoMeta ? resolveNfoPoster(nfoPath!, nfoMeta.posterValue) : null
+
+  if (nfoMeta && nfoMeta.title && nfoPoster && nfoMeta.genres) {
+    try {
+      const mediaResult = await createMediaItem(
+        db,
+        adminUser,
+        nfoMeta.title,
+        nfoMeta.originalTitle,
+        libraryType,
+        nfoMeta.year,
+        false,
+        nfoMeta.genres,
+        nfoMeta.tmdbId ? String(nfoMeta.tmdbId) : null,
+        null,
+        nfoPoster,
+      )
+      if (mediaResult.success && mediaResult.mediaItem) {
+        createLog(
+          db,
+          "info",
+          "libraryScanner",
+          null,
+          `NFO match for "${path.basename(fileName)}" → ${nfoMeta.title} (poster+genres from NFO; skipped TheMovieDatabase)`,
+          {
+            fileName: path.basename(fileName),
+            nfoPath,
+            title: nfoMeta.title,
+            tmdbId: nfoMeta.tmdbId,
+          },
+        )
+        return {
+          mediaItemId: mediaResult.mediaItem.id,
+          multipleMatches: false,
+          candidateMediaItemIds: [],
+          season,
+          episode,
+          detectedYear: nfoMeta.year,
+        }
+      }
+    } catch (e) {
+      createLog(
+        db,
+        "warning",
+        "libraryScanner",
+        null,
+        `NFO match failed for "${path.basename(fileName)}": ${String(e).slice(0, 200)}`,
+        {
+          fileName: path.basename(fileName),
+          nfoPath,
+          error: String(e),
+        },
+      )
+    }
+  }
+
+  // TMDB id pre-check: an NFO tmdb id (if the NFO didn't satisfy the shortcut
+  // above) comes first, then a tmdb id embedded in the folder name. Either lets
+  // us fetch directly by id and skip the AI name-detection step.
   const idSources: { tmdbId: number; source: string }[] = []
+  if (nfoMeta?.tmdbId) idSources.push({ tmdbId: nfoMeta.tmdbId, source: "NFO" })
   const folderTmdbId = parseTmdbIdFromFolderName(path.basename(nfoDir))
-  if (folderTmdbId) idSources.push({ tmdbId: folderTmdbId, source: "folder name" })
-  const nfoTmdbId = readNfoTmdbId(nfoDir)
-  if (nfoTmdbId && nfoTmdbId !== folderTmdbId) idSources.push({ tmdbId: nfoTmdbId, source: "NFO" })
+  if (folderTmdbId && folderTmdbId !== nfoMeta?.tmdbId) idSources.push({ tmdbId: folderTmdbId, source: "folder name" })
 
   for (const { tmdbId, source } of idSources) {
     try {
@@ -952,6 +1148,10 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
     })
   }
 
+  // Drop registry entries for exported files the user has since deleted, so a
+  // later user-placed file at the same path isn't wrongly hidden as our output.
+  pruneMissingExportedFiles(db, libraryPath.id)
+
   const { videoFiles, srtFiles } = findMediaFiles(libraryPath.path)
 
   const config = getConfig(db)
@@ -1081,11 +1281,51 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
   }
 
   for (const srtFile of srtFiles) {
-    if (companionSrtPaths.has(srtFile)) continue
+    if (companionSrtPaths.has(srtFile)) {
+      // This subtitle is a companion of a video in the same folder, so it is
+      // the video item's source — not its own translatable row. An older,
+      // stricter scan may have created a standalone item for it (e.g. a
+      // dot-named .ssa next to a space-named .mkv); drop that stale row so
+      // the episode stops showing up twice on the Library Requests page.
+      const staleCompanion = findLibraryPathItemByPath(db, libraryPath.id, srtFile)
+      if (staleCompanion) {
+        deleteLibraryPathItem(db, staleCompanion.id)
+        createLog(
+          db,
+          "info",
+          "libraryScanner",
+          staleCompanion.id,
+          `Removed standalone subtitle item now grouped under its video: ${srtFile}`,
+          { libraryPathName: libraryPath.name, path: srtFile },
+        )
+      }
+      continue
+    }
 
     const srtBasename = path.basename(srtFile)
 
     if (srtBasename.startsWith("[BCookieSub]")) continue
+
+    // Files BCookieSubs exported into the library folder are translation
+    // output, not a source to translate from — except whisper-generated
+    // transcripts, which are legitimate sources. Skip our own output so it
+    // never becomes a translatable row on the Library Requests page.
+    const exportedRecord = getExportedFileByPath(db, srtFile)
+    if (exportedRecord && !exportedRecord.isWhisper) {
+      const staleExport = findLibraryPathItemByPath(db, libraryPath.id, srtFile)
+      if (staleExport) {
+        deleteLibraryPathItem(db, staleExport.id)
+        createLog(
+          db,
+          "info",
+          "libraryScanner",
+          staleExport.id,
+          `Removed BCookieSubs-exported subtitle item (not a translation source): ${srtFile}`,
+          { libraryPathName: libraryPath.name, path: srtFile },
+        )
+      }
+      continue
+    }
 
     const fileExt = subtitleExtensionOf(srtFile) ?? ".srt"
     const stem = srtBasename.toLowerCase().endsWith(fileExt)
@@ -1306,20 +1546,26 @@ export async function exportSubtitleToLibraryFolder(
   const libraryPath = getLibraryPathById(db, item.libraryPathId)
   if (!libraryPath || !libraryPath.autoExtract) return
 
-  // Derive the base filename from the source media file (not the subtitle/movie title)
-  // e.g. /movies/Deadpool 2 (2018) [YTS.AM]/Deadpool.2.2018.720p.BluRay.x264-[YTS.AM].mkv
-  //   -> Deadpool.2.2018.720p.BluRay.x264-[YTS.AM]
+  // Derive the base filename from the source media file (not the subtitle/movie
+  // title) and KEEP its original separators. The saved subtitle must share the
+  // episode's filename stem so Jellyfin/Plex detect it as a companion
+  // subtitle ("<episode>.<lang>.<ext>"); rewriting spaces to dots would make
+  // the subtitle's name differ from the episode and break that detection.
+  // Only filesystem-illegal characters are stripped.
+  // e.g. /series/Show/Season 1/Show - S01E01 - Title.mkv
+  //   -> "Show - S01E01 - Title"  ->  "Show - S01E01 - Title.th.ass"
   const sourceBaseRaw = path.basename(item.path).replace(/\.[^.]+$/, "")
-  const sourceBase = sourceBaseRaw
-    .replace(/[/\\:*?"<>|]/g, "")
-    .replace(/\s+/g, ".")
-    .trim()
+  const sourceBase = sourceBaseRaw.replace(/[/\\:*?"<>|]/g, "").trim()
 
   const outputDir = path.dirname(item.path)
   let lastExportName: string | null = null
   let anyExported = false
 
   const ext = subtitleExportExtension(subtitle.sourceFormat)
+  // A subtitle is a "whisper file" (a legitimate translation source) only when
+  // Whisper generated it; library/upload sources are not. Used to decide whether
+  // our exported copy may reappear as a translatable row on the Library page.
+  const isWhisperSource = subtitle.source === "whisper"
 
   // Original-language subtitle (e.g. the Whisper-generated source transcript).
   if (includeOriginal && subtitle.originalText) {
@@ -1335,6 +1581,7 @@ export async function exportSubtitleToLibraryFolder(
         fs.writeFileSync(origPath, addCreditToSubtitle(subtitle.originalText, subtitle.sourceFormat), "utf-8")
         lastExportName = origName
         anyExported = true
+        recordExportedFile(db, item.libraryPathId, origPath, subtitle.id, isWhisperSource)
         createLog(
           db,
           "info",
@@ -1380,6 +1627,7 @@ export async function exportSubtitleToLibraryFolder(
         fs.writeFileSync(exportPath, content, "utf-8")
         lastExportName = exportName
         anyExported = true
+        recordExportedFile(db, item.libraryPathId, exportPath, subtitle.id, false)
         createLog(
           db,
           "info",

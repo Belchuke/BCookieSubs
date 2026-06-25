@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Legg til undertekst — Trinn 2 av 2",
     "srtFile": "SRT-fil",
     "clickToUpload": "Klikk for å laste opp eller dra og slipp",
-    "srtOnly": "Kun SRT-filer",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Kildespråk",
     "mediaTitle": "Tittel",
     "type": "Type",

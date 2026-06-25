@@ -86,7 +86,7 @@
     "addSubtitleStep2": "Add Subtitle — Step 2 of 2",
     "srtFile": "SRT File",
     "clickToUpload": "Click to upload or drag and drop",
-    "srtOnly": "SRT files only",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Source Language",
     "mediaTitle": "Title",
     "type": "Type",
@@ -364,7 +364,16 @@
     "download": "Download",
     "export": "Export",
     "finishedLabel": "Finished: ",
-    "durationLabel": "Duration: "
+    "durationLabel": "Duration: ",
+    "failed": "Failed",
+    "remove": "Remove",
+    "removeConfirm": "Remove this translation from the list?",
+    "prev": "Previous",
+    "next": "Next",
+    "page": "Page",
+    "showing": "Showing",
+    "of": "of",
+    "translations": "translations"
   },
   "logs": {
     "title": "Logs",
@@ -417,6 +426,7 @@
     "bulkChangeMatch": "Change match for selected",
     "bulkClear": "Clear selection",
     "changeMatch": "Change match",
+    "selectMatch": "Select match",
     "changeMatchItemHint": "Search TheMovieDB and pick the correct title for this item.",
     "createSubtitle": "Create subtitle"
   },

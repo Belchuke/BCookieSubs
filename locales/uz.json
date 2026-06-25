@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Subtitir qo'shish — 2-qadam (2 dan)",
     "srtFile": "SRT fayl",
     "clickToUpload": "Yuklash uchun bosing yoki sudrab tashlang",
-    "srtOnly": "Faqat SRT fayllar",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Manba tili",
     "mediaTitle": "Sarlavha",
     "type": "Tur",

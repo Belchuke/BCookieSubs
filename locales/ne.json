@@ -82,7 +82,7 @@
     "addSubtitleStep2": "उपशीर्षक थप्नुहोस् — चरण २ मध्ये २",
     "srtFile": "SRT फाइल",
     "clickToUpload": "अपलोड गर्न क्लिक गर्नुहोस् वा तान्नुहोस्",
-    "srtOnly": "केवल SRT फाइलहरू",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "स्रोत भाषा",
     "mediaTitle": "शीर्षक",
     "type": "प्रकार",

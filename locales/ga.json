@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Cuir Fotheideal leis — Céim 2 de 2",
     "srtFile": "Comhad SRT",
     "clickToUpload": "Cliceáil le huaslódáil nó tarraing agus scaoil",
-    "srtOnly": "Comhaid SRT amháin",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Teanga Foinse",
     "mediaTitle": "Teideal",
     "type": "Cineál",

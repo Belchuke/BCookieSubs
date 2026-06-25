@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Илова кардани зернавис — Қадами 2 аз 2",
     "srtFile": "Файли SRT",
     "clickToUpload": "Барои боркунӣ клик кунед ё кашеду партоед",
-    "srtOnly": "Танҳо файлҳои SRT",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Забони манбаъ",
     "mediaTitle": "Унвон",
     "type": "Навъ",

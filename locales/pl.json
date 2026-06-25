@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Dodaj napisy — krok 2 z 2",
     "srtFile": "Plik SRT",
     "clickToUpload": "Kliknij, aby przesłać lub przeciągnij i upuść",
-    "srtOnly": "Tylko pliki SRT",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Język źródłowy",
     "mediaTitle": "Tytuł",
     "type": "Typ",

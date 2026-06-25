@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Субтитр кошуу — 2-кадам / 2",
     "srtFile": "SRT файлы",
     "clickToUpload": "Жүктөө үчүн басыңыз же сүйрөп таштаңыз",
-    "srtOnly": "Жалгыз SRT файлдары",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Баштапкы тил",
     "mediaTitle": "Аталышы",
     "type": "Түрү",

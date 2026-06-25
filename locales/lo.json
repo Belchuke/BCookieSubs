@@ -82,7 +82,7 @@
     "addSubtitleStep2": "ເພີ່ມຄຳບັນຍາຍ — ຂັ້ນຕອນທີ 2 ຈາກ 2",
     "srtFile": "ໄຟລ໌ SRT",
     "clickToUpload": "ກົດເພື່ອອັບໂຫລດ ຫຼືລາກວາງ",
-    "srtOnly": "ໄຟລ໌ SRT ເທົ່ານັ້ນ",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "ພາສາຕົ້ນທາງ",
     "mediaTitle": "ຫົວຂໍ້",
     "type": "ປະເພດ",

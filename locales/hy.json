@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Ավելացնել ենթագիր — Քայլ 2 2-ից",
     "srtFile": "SRT ֆայл",
     "clickToUpload": "Կտտացրեք վերբեռնելու կամ քաշ-ու-գցեք",
-    "srtOnly": "Միայն SRT ֆայլեր",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Աղբյուրի լեզու",
     "mediaTitle": "Վերնագիր",
     "type": "Տեսակ",

@@ -6,7 +6,7 @@ import { getConfig, getLogs } from "../repositories/configRepository"
 import { getConfigTranslationLanguages, getLanguages, getUserConfigTranslationLanguages } from "../repositories/languageRepository"
 import { createMediaItem, getMediaItemById, MEDIA_PHOTOS_DIR } from "../repositories/mediaRepository"
 import { getSubtitleItemMediaItemFromPrompt } from "../repositories/promptFormattingRepository"
-import { cancelSubtitle, cancelSubtitleJob, createSubtitleTask, getChunksByJobId, getDashboardData, getExportFileName, getSubtitleById, getSubtitleJobById, getSubtitleJobsBySubtitleId, hideSubtitle, moveSeriesInQueue, moveSubtitleInQueue, moveWhisperSubtitleInQueue, moveWhisperSubtitleToTop, reorderSubtitles, reorderWhisperSubtitles, resetChunk, retryFailedChunk, softDeleteSubtitle, softDeleteSubtitlesByMediaItem } from "../repositories/subtitleRepository"
+import { cancelSubtitle, cancelSubtitleJob, createSubtitleTask, getChunksByJobId, getDashboardData, getExportFileName, getSubtitleById, getSubtitleJobById, getSubtitleJobsBySubtitleId, hideSubtitle, moveSeriesInQueue, moveSubtitleInQueue, moveWhisperSubtitleInQueue, moveWhisperSubtitleToTop, reorderSubtitles, reorderWhisperSubtitles, requeueCancelledSubtitle, resetChunk, retryFailedChunk, softDeleteSubtitle, softDeleteSubtitlesByMediaItem } from "../repositories/subtitleRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
 import { requireAuth } from "../middleware/auth"
 import { requirePermission } from "../services/permissionService"
@@ -251,6 +251,17 @@ export function dashboardRouter(db: Database.Database) {
       return res.redirect("/dashboard?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed to cancel"))
     }
     res.redirect("/dashboard")
+  })
+
+  // Re-add a cancelled subtitle to the queue — the inverse of /cancel/:id.
+  // Resets the subtitle and its cancelled jobs/chunks back to 'queued'
+  // (completed work is preserved). Gated on the same permission as cancel.
+  router.post("/requeue/:id", requireAuth, (req, res) => {
+    const result = requeueCancelledSubtitle(db, res.locals.user!, parseInt(String(req.params.id)))
+    if (!result.success) {
+      return res.redirect("/dashboard?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed to re-add"))
+    }
+    res.redirect("/dashboard?toast=success&msg=" + encodeURIComponent("Subtitle re-added to queue"))
   })
 
   

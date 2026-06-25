@@ -351,11 +351,29 @@
     }
 
     var actions = ""
-    if (group.mediaItemId) {
+    if (PERMS.canChangeMatchForLibraryPaths) {
+      // Manual matching is done from a single modal (no inline list under the
+      // group). The button carries the group's full context — item ids, type,
+      // candidates and display name — so the modal can match the whole group at
+      // once. It shows for unmatched groups too ("Select match"), since they no
+      // longer have an always-visible inline picker.
+      var matchLabel = group.mediaItemId ? t("changeMatch") : t("selectMatch")
       actions +=
         '<button type="button" class="btn btn-sm btn-secondary lp-group-match-btn" data-group-key="' +
         escAttr(groupKey) +
-        '">Change Match</button>'
+        '" data-item-ids="' +
+        escAttr(JSON.stringify(allItemIds)) +
+        '" data-first-item-id="' +
+        (firstItemId != null ? firstItemId : "") +
+        '" data-type="' +
+        escAttr(lp.type) +
+        '" data-candidates="' +
+        escAttr(JSON.stringify(groupCandidates)) +
+        '" data-group-name="' +
+        escAttr(group.mediaItem ? group.mediaItem.title : "") +
+        '">' +
+        escHtml(matchLabel) +
+        "</button>"
     }
     if (group.mediaItemId && PERMS.canEditLibraryPath) {
       actions +=
@@ -395,74 +413,6 @@
       "</div>" +
       "</div>"
 
-    // picker
-    var pickerHead =
-      '<div class="lpx-picker-head"><div class="text-dim lpx-fs-75">' +
-      (group.mediaItemId ? "Change the match:" : "Select the correct match:") +
-      "</div>"
-    if (group.mediaItemId) {
-      pickerHead +=
-        '<button type="button" class="btn btn-sm btn-secondary lp-group-match-cancel" data-group-key="' +
-        escAttr(groupKey) +
-        '">Cancel</button>'
-    }
-    pickerHead += "</div>"
-
-    var candidateGrid = ""
-    if (groupCandidates.length > 0) {
-      var grid = ""
-      groupCandidates.forEach(function (c) {
-        var cPoster
-        if (SHOW_POSTERS && c.mediaPoster) {
-          cPoster =
-            '<img data-src="/media-photos/' +
-            escAttr(c.mediaPoster) +
-            '" alt="Poster" class="lpx-poster-md lp-lazy-img" loading="lazy" decoding="async">'
-        } else {
-          cPoster = '<div class="lpx-poster-md-ph"><i class="fa-solid fa-film lpx-icon-md"></i></div>'
-        }
-        grid +=
-          '<button type="button" class="btn btn-secondary lp-select-group-candidate-btn lpx-candidate-btn" data-group-key="' +
-          escAttr(groupKey) +
-          '" data-item-ids="' +
-          escAttr(JSON.stringify(allItemIds)) +
-          '" data-media-item-id="' +
-          c.mediaItemId +
-          '">' +
-          cPoster +
-          '<span class="lpx-candidate-label"><strong>' +
-          escHtml(c.mediaTitle || "Unknown") +
-          '</strong><br><span class="text-dim lpx-fs-80">(' +
-          escHtml(c.mediaYear || "year unknown") +
-          ")</span></span></button>"
-      })
-      candidateGrid = '<div class="lp-candidate-grid lpx-grid-mb">' + grid + "</div>"
-    }
-
-    var picker =
-      '<div id="lp-group-picker-' +
-      escAttr(groupKey) +
-      '" class="lpx-picker"' +
-      (group.mediaItemId ? " hidden" : "") +
-      ">" +
-      pickerHead +
-      candidateGrid +
-      '<div class="lpx-tmdb-divider"><div class="field lpx-field-mb">' +
-      '<input type="search" class="lp-tmdb-search" data-item-id="' +
-      (firstItemId != null ? firstItemId : "") +
-      '" data-item-ids="' +
-      escAttr(JSON.stringify(allItemIds)) +
-      '" data-group-key="' +
-      escAttr(groupKey) +
-      '" data-type="' +
-      escAttr(lp.type) +
-      '" placeholder="Search TheMovieDB…"></div>' +
-      '<div class="lp-tmdb-results" data-item-id="' +
-      (firstItemId != null ? firstItemId : "") +
-      '" data-group-key="' +
-      escAttr(groupKey) +
-      '"></div></div></div>'
-
     // file / episode accordion — body rendered lazily on expand
     var epLabel = isSeries
       ? visibleItems.length + " episode" + (visibleItems.length !== 1 ? "s" : "")
@@ -484,7 +434,6 @@
       escAttr(genre) +
       '" class="lpx-group-box">' +
       header +
-      picker +
       epDetails +
       "</div>"
     )
@@ -1005,7 +954,10 @@
     document.getElementById("edit-type").value = lp.type || "movie"
     document.getElementById("edit-sourceLangId").value = String(lp.sourceLangId || "")
     document.getElementById("edit-enabled").checked = !!lp.enabled
-    document.getElementById("edit-autoTranslate").checked = !!lp.autoTranslate
+    // Auto-translate is temporarily disabled, so its checkbox is hidden in the
+    // modal. Force it unchecked here too — otherwise editing a path that already
+    // has it on would silently preserve it. Saving always sends autoTranslate=0.
+    document.getElementById("edit-autoTranslate").checked = false
     document.getElementById("edit-autoExtract").checked = !!lp.autoExtract
     closeDirBrowser()
     openModal("edit-modal")
@@ -1134,9 +1086,69 @@
       })
   }
 
-  function hideGroupPicker(groupKey) {
-    var picker = document.getElementById("lp-group-picker-" + groupKey)
-    if (picker) picker.hidden = true
+  // Open the shared match modal for a whole group. The group "Change match" /
+  // "Select match" button carries the group's context (item ids, type, any
+  // previously-detected candidate matches, and the display name); this wires it
+  // onto the modal's TMDB search + candidate area so a whole group can be
+  // matched in one place — the inline list under the group is gone.
+  function openGroupMatchModal(btn) {
+    var itemIds = btn.dataset.itemIds || "[]"
+    var firstItemId = btn.dataset.firstItemId || ""
+    var type = btn.dataset.type || "movie"
+    var groupKey = btn.dataset.groupKey || ""
+    var groupName = btn.dataset.groupName || ""
+    var candidates = []
+    try {
+      candidates = JSON.parse(btn.dataset.candidates || "[]")
+    } catch (e) {}
+
+    var searchEl = document.getElementById("item-match-search")
+    var resultsEl = document.getElementById("item-match-results")
+    var candEl = document.getElementById("item-match-candidates")
+    searchEl.dataset.itemId = firstItemId
+    searchEl.dataset.itemIds = itemIds
+    searchEl.dataset.groupKey = groupKey
+    searchEl.dataset.type = type
+    resultsEl.dataset.itemId = firstItemId
+    resultsEl.dataset.groupKey = groupKey
+    searchEl.value = ""
+    resultsEl.innerHTML = ""
+
+    candEl.innerHTML = ""
+    if (candidates.length > 0) {
+      candidates.forEach(function (c) {
+        var cPoster =
+          SHOW_POSTERS && c.mediaPoster
+            ? '<img src="/media-photos/' +
+              escAttr(c.mediaPoster) +
+              '" alt="Poster" style="width:54px;height:81px;object-fit:cover;border-radius:4px;flex-shrink:0">'
+            : '<div style="width:54px;height:81px;background:var(--surface-2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fa-solid fa-film" style="color:var(--text-dim)"></i></div>'
+        var b = document.createElement("button")
+        b.type = "button"
+        b.className = "btn btn-secondary lp-select-group-candidate-btn"
+        b.style.cssText =
+          "display:flex;flex-direction:row;align-items:center;gap:.75rem;padding:.6rem .75rem;height:auto;width:100%;text-align:left"
+        b.dataset.itemIds = itemIds
+        b.dataset.mediaItemId = String(c.mediaItemId)
+        b.innerHTML =
+          cPoster +
+          '<span style="font-size:.88rem;line-height:1.35;word-break:break-word;min-width:0"><strong>' +
+          escHtml(c.mediaTitle || "Unknown") +
+          '</strong><br><span class="text-dim" style="font-size:.8rem">(' +
+          escHtml(c.mediaYear || "year unknown") +
+          ")</span></span>"
+        candEl.appendChild(b)
+      })
+      candEl.style.display = ""
+    } else {
+      candEl.style.display = "none"
+    }
+
+    document.getElementById("item-match-name").textContent = groupName
+    openModal("item-match-modal")
+    setTimeout(function () {
+      searchEl.focus()
+    }, 50)
   }
 
   // ── delegated event handlers ───────────────────────────────────────────
@@ -1163,13 +1175,19 @@
       var imType = itemMatchBtn.dataset.type || "movie"
       var searchEl = document.getElementById("item-match-search")
       var resultsEl = document.getElementById("item-match-results")
+      var imCandEl = document.getElementById("item-match-candidates")
       searchEl.dataset.itemId = imItemId
       searchEl.dataset.type = imType
       delete searchEl.dataset.itemIds
       delete searchEl.dataset.groupKey
       resultsEl.dataset.itemId = imItemId
+      delete resultsEl.dataset.groupKey
       searchEl.value = ""
       resultsEl.innerHTML = ""
+      if (imCandEl) {
+        imCandEl.innerHTML = ""
+        imCandEl.style.display = "none"
+      }
       document.getElementById("item-match-name").textContent = itemMatchBtn.dataset.itemName || ""
       openModal("item-match-modal")
       setTimeout(function () {
@@ -1221,17 +1239,7 @@
 
     var openBtn = e.target.closest(".lp-group-match-btn")
     if (openBtn) {
-      var picker = document.getElementById("lp-group-picker-" + openBtn.dataset.groupKey)
-      if (picker) {
-        picker.hidden = false
-        if (window.lpInitLazyLoad) window.lpInitLazyLoad(picker)
-      }
-      return
-    }
-
-    var cancelBtn = e.target.closest(".lp-group-match-cancel")
-    if (cancelBtn) {
-      hideGroupPicker(cancelBtn.dataset.groupKey)
+      openGroupMatchModal(openBtn)
       return
     }
 
@@ -1239,12 +1247,11 @@
     if (groupCandBtn) {
       var itemIds = groupCandBtn.dataset.itemIds
       var mediaItemId = groupCandBtn.dataset.mediaItemId
-      var groupKey = groupCandBtn.dataset.groupKey
       lpAjaxPost(
         "/library-paths/group/select-candidate",
         "itemIds=" + encodeURIComponent(itemIds) + "&mediaItemId=" + encodeURIComponent(mediaItemId),
         function () {
-          hideGroupPicker(groupKey)
+          closeModal("item-match-modal")
           reloadWithScrollRestore()
         },
       )
@@ -1276,7 +1283,6 @@
     if (tmdbBtn) {
       var itemId = tmdbBtn.dataset.itemId
       var itemIds2 = tmdbBtn.dataset.itemIds
-      var groupKey2 = tmdbBtn.dataset.groupKey
       var ti = JSON.parse(tmdbBtn.dataset.tmdbItem)
       var year = ti.releaseDate ? ti.releaseDate.substring(0, 4) : ""
       var bodyParts = [
@@ -1294,7 +1300,7 @@
         // request with "Missing required fields".
         bodyParts.push("itemIds=" + encodeURIComponent(itemIds2))
         lpAjaxPost("/library-paths/group/select-tmdb-result", bodyParts.join("&"), function () {
-          if (groupKey2) hideGroupPicker(groupKey2)
+          closeModal("item-match-modal")
           reloadWithScrollRestore()
         })
       } else {
@@ -1492,7 +1498,7 @@
     var q = input.value.trim()
     clearTimeout(_tmdbTimers[itemId])
 
-    var scope = input.closest("#item-match-modal") || input.closest('[id^="lp-group-picker-"]') || document
+    var scope = input.closest("#item-match-modal") || document
     var resultsEl = scope.querySelector(".lp-tmdb-results")
     if (!q) {
       if (resultsEl) resultsEl.innerHTML = ""

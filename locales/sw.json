@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Ongeza Manukuu — Hatua ya 2 kati ya 2",
     "srtFile": "Faili ya SRT",
     "clickToUpload": "Bonyeza kupakia au buruta na uacha",
-    "srtOnly": "Faili za SRT peke yake",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Lugha ya Asili",
     "mediaTitle": "Kichwa",
     "type": "Aina",

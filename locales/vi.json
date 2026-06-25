@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Thêm phụ đề — Bước 2 trên 2",
     "srtFile": "Tệp SRT",
     "clickToUpload": "Nhấp để tải lên hoặc kéo và thả",
-    "srtOnly": "Chỉ tệp SRT",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Ngôn ngữ nguồn",
     "mediaTitle": "Tiêu đề",
     "type": "Loại",

@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Ënnertitel derbäisetzen — Schrëtt 2 vun 2",
     "srtFile": "SRT Datei",
     "clickToUpload": "Klickt fir eropzelueden oder zéien a falen loossen",
-    "srtOnly": "Nëmme SRT Dateien",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Quellsprooch",
     "mediaTitle": "Titel",
     "type": "Typ",

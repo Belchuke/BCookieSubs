@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Żid Sottotitolu — Pass 2 minn 2",
     "srtFile": "Fajl SRT",
     "clickToUpload": "Ikklikkja biex ittella' jew iġbed u oħloq",
-    "srtOnly": "Fajls SRT biss",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Lingwa Sors",
     "mediaTitle": "Titlu",
     "type": "Tip",

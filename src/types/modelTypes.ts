@@ -135,6 +135,7 @@ export type FinishedSubtitle = {
   episode: number | null
   mediaItemPhotoPath: string | null
   year: number | null
+  status: "completed" | "failed"
   translatedText: string
   finishedAt: string | null
   earliestChunkStartedAt: string | null

@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Bæta við skjátexta — Skref 2 af 2",
     "srtFile": "SRT skrá",
     "clickToUpload": "Smelltu til að hlaða upp eða dragðu og slepptu",
-    "srtOnly": "Aðeins SRT skrár",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Upprunalegt tungumál",
     "mediaTitle": "Titill",
     "type": "Tegund",

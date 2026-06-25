@@ -27,6 +27,26 @@ async function downloadPosterToFile(posterUrl: string, uniqueId: string): Promis
   }
 }
 
+// Copy a poster image that already exists on disk (e.g. a Jellyfin/Kodi
+// folder.jpg referenced by an .nfo) into the served media-photos directory so
+// it can be reused instead of being re-downloaded from TheMovieDatabase. The
+// NFO's poster path is an absolute path from the original media server and
+// will not exist locally — callers resolve it to the actual file next to the
+// NFO before passing it here.
+function copyLocalPosterToFile(srcPath: string, uniqueId: string): string | null {
+  try {
+    if (!fs.existsSync(srcPath) || !fs.statSync(srcPath).isFile()) return null
+    const ext = path.extname(srcPath).toLowerCase() || ".jpg"
+    const safeId = uniqueId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120)
+    const filename = `${safeId}${ext}`
+    const destPath = path.join(MEDIA_PHOTOS_DIR, filename)
+    fs.copyFileSync(srcPath, destPath)
+    return filename
+  } catch {
+    return null
+  }
+}
+
 export const getMediaItemPhotoPath = (db: Database.Database, id: number): string | null | undefined => {
   const row = db
     .prepare(`SELECT mediaItemPhotoPath FROM mediaItem WHERE id = ?`)
@@ -87,15 +107,18 @@ export const createMediaItem = async (
   genres: string | null,
   theMovieDbId: string | null = null,
   posterUrl: string | null = null,
+  localPosterPath: string | null = null,
 ): Promise<{ mediaItem: DBMediaItem | null } & DefaultResponse> => {
   const permission = userHasPermission(db, user.id, "canAddSubtitleToTranslateFromLibrary")
   if (!permission.hasPermission) return { mediaItem: null, success: false, msg: "Permission denied" }
 
   const existing = getMediaItemByKeys(db, title, type, year, theMovieDbId)
   if (existing) {
-    if (posterUrl && !existing.mediaItemPhotoPath) {
+    if (!existing.mediaItemPhotoPath) {
       const uniqueId = theMovieDbId ? `tmdb_${theMovieDbId}` : `media_${existing.id}`
-      const photoPath = await downloadPosterToFile(posterUrl, uniqueId)
+      let photoPath: string | null = null
+      if (localPosterPath) photoPath = copyLocalPosterToFile(localPosterPath, uniqueId)
+      if (!photoPath && posterUrl) photoPath = await downloadPosterToFile(posterUrl, uniqueId)
       if (photoPath) {
         db.prepare(`UPDATE mediaItem SET mediaItemPhotoPath = ? WHERE id = ?`).run(photoPath, existing.id)
       }
@@ -104,10 +127,9 @@ export const createMediaItem = async (
   }
 
   let mediaItemPhotoPath: string | null = null
-  if (posterUrl) {
-    const uniqueId = theMovieDbId ? `tmdb_${theMovieDbId}` : `media_${Date.now()}`
-    mediaItemPhotoPath = await downloadPosterToFile(posterUrl, uniqueId)
-  }
+  const uniqueId = theMovieDbId ? `tmdb_${theMovieDbId}` : `media_${Date.now()}`
+  if (localPosterPath) mediaItemPhotoPath = copyLocalPosterToFile(localPosterPath, uniqueId)
+  if (!mediaItemPhotoPath && posterUrl) mediaItemPhotoPath = await downloadPosterToFile(posterUrl, uniqueId)
 
   const result = db
     .prepare(

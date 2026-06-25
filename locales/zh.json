@@ -82,7 +82,7 @@
     "addSubtitleStep2": "添加字幕 — 第 2 步 (共 2 步)",
     "srtFile": "SRT 文件",
     "clickToUpload": "点击上传或拖放",
-    "srtOnly": "仅限 SRT 文件",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "源语言",
     "mediaTitle": "标题",
     "type": "类型",

@@ -115,7 +115,7 @@
 </div>
 
 <%# ── Bulk change match modal ─────────────────────────────────────── %>
-<div class="modal-overlay" id="bulk-match-modal" onclick="closeModalOnOverlay(event)">
+<div class="modal-overlay" id="bulk-match-modal">
   <div class="modal modal-wide">
     <div class="modal-header">
       <h2>Change match — <span id="bulk-modal-count">0</span> files</h2>
@@ -173,7 +173,7 @@
         <input type="checkbox" id="add-enabled" name="enabled" value="1" checked>
         <label for="add-enabled"><%= __('librarypaths.enabledActivelyScanned') %></label>
       </div>
-      <div class="field field-checkbox">
+      <div class="field field-checkbox" style="display:none">
         <input type="checkbox" id="add-autoTranslate" name="autoTranslate" value="1">
         <label for="add-autoTranslate"><%= __('librarypaths.autoTranslate') %></label>
       </div>
@@ -228,7 +228,7 @@
         <input type="checkbox" id="edit-enabled" name="enabled" value="1">
         <label for="edit-enabled"><%= __('librarypaths.enabledBadge') %></label>
       </div>
-      <div class="field field-checkbox">
+      <div class="field field-checkbox" style="display:none">
         <input type="checkbox" id="edit-autoTranslate" name="autoTranslate" value="1">
         <label for="edit-autoTranslate"><%= __('librarypaths.autoTranslate') %></label>
       </div>
@@ -267,13 +267,14 @@
 </div>
 
 <%# ── Per-item change match modal ──────────────────────────────────── %>
-<div class="modal-overlay" id="item-match-modal" onclick="closeModalOnOverlay(event)">
+<div class="modal-overlay" id="item-match-modal">
   <div class="modal modal-wide">
     <div class="modal-header">
       <h2><%= __('librarypaths.changeMatch') %> — <span id="item-match-name"></span></h2>
       <button class="btn btn-icon" onclick="closeModal('item-match-modal')">✕</button>
     </div>
     <p class="text-dim lpx-modal-hint"><%= __('librarypaths.changeMatchItemHint') %></p>
+    <div id="item-match-candidates" class="lp-candidate-grid lpx-grid-mb" style="display:none"></div>
     <div class="field">
       <input type="search" id="item-match-search" class="lp-tmdb-search" placeholder="Title…" autocomplete="off">
     </div>

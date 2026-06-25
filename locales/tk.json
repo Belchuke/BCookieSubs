@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Subtitir goş — Ädim 2/2",
     "srtFile": "SRT faýly",
     "clickToUpload": "Ýüklemek üçin basyň ýa-da sürükläp taşlaň",
-    "srtOnly": "Diňe SRT faýllary",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Çeşme dili",
     "mediaTitle": "Başlyk",
     "type": "Görnüş",

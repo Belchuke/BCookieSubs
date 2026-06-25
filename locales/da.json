@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Tilføj undertekst — Trin 2 af 2",
     "srtFile": "SRT-fil",
     "clickToUpload": "Klik for at uploade eller træk og slip",
-    "srtOnly": "Kun SRT-filer",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Kildesprog",
     "mediaTitle": "Titel",
     "type": "Type",

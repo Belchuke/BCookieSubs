@@ -179,5 +179,34 @@ export function serializeAssFromRows(
     lines[m.lineIndex] = m.prefix + (row.text ?? "")
   }
 
+  // Tag the [Script Info] section with a translation credit. ASS comments
+  // start with "; ". This is appended AFTER the Dialogue Text swap above so
+  // the per-row lineIndex values still point at the original lines — inserting
+  // earlier would shift every index after [Script Info] and corrupt the swap.
+  appendTranslatedByCredit(lines)
+
   return lines.join(eol)
+}
+
+// Insert a "; Translated by BCookieSubs" comment as the first line of the
+// [Script Info] section, if that section exists and doesn't already carry the
+// credit. Operates in place on the line array (caller joins with the EOL).
+function appendTranslatedByCredit(lines: string[]): void {
+  const creditLine = "; Translated by BCookieSubs"
+  let scriptInfoHeaderIndex = -1
+  for (let i = 0; i < lines.length; i++) {
+    if (sectionHeader(lines[i]) === "script info") {
+      scriptInfoHeaderIndex = i
+      break
+    }
+  }
+  if (scriptInfoHeaderIndex < 0) return
+
+  // Guard against duplicate credit when re-serializing already-translated output.
+  for (let j = scriptInfoHeaderIndex + 1; j < lines.length; j++) {
+    if (sectionHeader(lines[j]) !== null) break // left the [Script Info] section
+    if (lines[j].trim() === creditLine) return
+  }
+
+  lines.splice(scriptInfoHeaderIndex + 1, 0, creditLine)
 }

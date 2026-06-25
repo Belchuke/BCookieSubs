@@ -82,7 +82,7 @@
     "addSubtitleStep2": "სუბტიტრის დამატება — ნაბიჯი 2 / 2",
     "srtFile": "SRT ფაილი",
     "clickToUpload": "დააწკაპეთ ატვირთვისთვის ან გადაათრიეთ",
-    "srtOnly": "მხოლოდ SRT ფაილები",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "წყაროს ენა",
     "mediaTitle": "სათაური",
     "type": "ტიპი",

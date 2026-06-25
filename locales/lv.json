@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Pievienot subtitrus — 2. solis no 2",
     "srtFile": "SRT fails",
     "clickToUpload": "Noklikšķiniet, lai augšupielādētu, vai velciet un nometiet",
-    "srtOnly": "Tikai SRT faili",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Avota valoda",
     "mediaTitle": "Virsraksts",
     "type": "Veids",

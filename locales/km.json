@@ -82,7 +82,7 @@
     "addSubtitleStep2": "បន្ថែមមាត្រដ្ឋាន — ជំហានទី ២ នៃ ២",
     "srtFile": "ឯកសារ SRT",
     "clickToUpload": "ចុចដើម្បីផ្ទុកឡើង ឬអូសទម្លាក់",
-    "srtOnly": "ឯកសារ SRT តែប៉ុណ្ណោះ",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "ភាសាប្រភព",
     "mediaTitle": "ចំណងជើង",
     "type": "ប្រភេទ",

@@ -82,7 +82,7 @@
     "addSubtitleStep2": "إضافة ترجمة — الخطوة 2 من 2",
     "srtFile": "ملف SRT",
     "clickToUpload": "انقر للرفع أو اسحب وأفلت",
-    "srtOnly": "ملفات SRT فقط",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "لغة المصدر",
     "mediaTitle": "العنوان",
     "type": "النوع",

@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Ondertitel toevoegen — Stap 2 van 2",
     "srtFile": "SRT-bestand",
     "clickToUpload": "Klik om te uploaden of sleep en laat los",
-    "srtOnly": "Alleen SRT-bestanden",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Bron taal",
     "mediaTitle": "Titel",
     "type": "Type",

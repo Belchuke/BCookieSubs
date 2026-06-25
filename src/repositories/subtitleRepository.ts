@@ -841,6 +841,55 @@ export const cancelSubtitle = (db: Database.Database, user: DBUser, subtitleId: 
   return { success: true, msg: null }
 }
 
+// Re-add a cancelled subtitle to the queue — the inverse of cancelSubtitle. The
+// subtitle and its cancelled jobs/chunks go back to 'queued' (completed work is
+// preserved: completed jobs/chunks stay completed), and the cancellation
+// markers are cleared. Works for both translation-queue items and Whisper
+// subtitles (a Whisper subtitle mid-transcription resumes from its checkpoint;
+// one already through transcription just re-queues its translation jobs).
+export const requeueCancelledSubtitle = (db: Database.Database, user: DBUser, subtitleId: number): DefaultResponse => {
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canCancelTranslationJob")
+  if (!perm) return { success: false, msg: "User does not have permission to re-queue subtitles" }
+
+  const subtitle = getSubtitleById(db, subtitleId)
+  if (!subtitle) return { success: false, msg: "Subtitle not found" }
+  if (subtitle.status !== "cancelled") return { success: false, msg: "Only cancelled subtitles can be re-added" }
+
+  db.transaction(() => {
+    // Put the subtitle back in the queue and clear the cancellation markers.
+    db.prepare(
+      `UPDATE subtitle
+       SET status = 'queued', cancelledAt = NULL, cancelledByUserId = NULL, updatedAt = datetime('now')
+       WHERE id = ?`,
+    ).run(subtitleId)
+
+    // Re-queue the jobs that were cancelled; completed jobs stay completed.
+    db.prepare(
+      `UPDATE subtitleJob
+       SET status = 'queued', cancelledAt = NULL, cancelledByUserId = NULL, updatedAt = datetime('now')
+       WHERE subtitleId = ? AND status = 'cancelled' AND deletedAt IS NULL`,
+    ).run(subtitleId)
+
+    // Drop stale candidate rows for the chunks we're about to re-queue, then
+    // reset those chunks to a clean 'queued' state (completed chunks stay).
+    db.prepare(
+      `DELETE FROM subtitleChunkCandidate
+       WHERE subtitleChunkId IN (SELECT id FROM subtitleChunk WHERE subtitleId = ? AND status = 'cancelled')`,
+    ).run(subtitleId)
+    db.prepare(
+      `UPDATE subtitleChunk
+       SET status = 'queued', retryCount = 0, startedAt = NULL, finishedAt = NULL,
+           errorMessage = NULL, selectedCandidateId = NULL, updatedAt = datetime('now')
+       WHERE subtitleId = ? AND status = 'cancelled'`,
+    ).run(subtitleId)
+  })()
+
+  createLog(db, "info", "subtitle", subtitleId, "Re-added cancelled subtitle to the queue", {
+    requeuedBy: user.id,
+  })
+  return { success: true, msg: null }
+}
+
 export const cancelSubtitleJob = (db: Database.Database, user: DBUser, jobId: number): DefaultResponse => {
   const { hasPermission: perm } = userHasPermission(db, user.id, "canCancelTranslationJob")
   if (!perm) return { success: false, msg: "Permission denied" }
@@ -1091,8 +1140,35 @@ export const getDashboardData = (db: Database.Database) => {
   return { subtitles: enrichedSubtitles, jobs, mediaItems, languageMap }
 }
 
-export const getFinishedSubtitles = (db: Database.Database) => {
-  return db
+// One page of finished/failed translations for the Translated page. Server-
+// side paginated so the page only fetches the rows it renders (LIMIT/OFFSET),
+// not the whole history. Ordered by descending terminal timestamp (finishedAt
+// for completed, updatedAt for failed) so the newest results come first. A
+// LEFT JOIN on mediaItem keeps translations whose subtitle never matched a
+// media item (e.g. failed uploads) visible too.
+export const getFinishedSubtitlesPage = (
+  db: Database.Database,
+  opts: { page: number; pageSize: number },
+): { items: FinishedSubtitle[]; total: number; page: number; totalPages: number } => {
+  const pageSize = Math.max(1, opts.pageSize)
+
+  const total = (
+    db
+      .prepare(
+        `SELECT COUNT(*) as c FROM subtitleJob sj
+         WHERE sj.status IN ('completed', 'failed') AND sj.deletedAt IS NULL`,
+      )
+      .get() as { c: number }
+  ).c
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  // Clamp the requested 0-based page into range so an out-of-bounds request
+  // (e.g. ?page=999, or the last page emptying after a delete) shows the last
+  // valid page instead of a misleading "no subtitles" empty state.
+  const page = Math.min(Math.max(0, opts.page), totalPages - 1)
+  const offset = page * pageSize
+
+  const items = db
     .prepare(
       `SELECT
         s.id as subtitleId,
@@ -1104,18 +1180,45 @@ export const getFinishedSubtitles = (db: Database.Database) => {
         sj.episode as episode,
         m.mediaItemPhotoPath as mediaItemPhotoPath,
         m.year as year,
-        sj.translatedText,
+        sj.status as status,
+        sj.translatedText as translatedText,
         sj.finishedAt as finishedAt,
         (SELECT sc.startedAt FROM subtitleChunk sc WHERE sc.subtitleJobId = sj.id ORDER BY sc.chunkIndex ASC LIMIT 1) as earliestChunkStartedAt
       FROM subtitleJob sj
       INNER JOIN subtitle s ON sj.subtitleId = s.id
       INNER JOIN language l ON sj.targetLangId = l.id
       INNER JOIN language srcL ON s.sourceLangId = srcL.id
-      INNER JOIN mediaItem m ON s.mediaItemId = m.id
-      WHERE sj.status = 'completed'
-      ORDER BY sj.finishedAt ASC`,
+      LEFT JOIN mediaItem m ON s.mediaItemId = m.id
+      WHERE sj.status IN ('completed', 'failed')
+        AND sj.deletedAt IS NULL
+      ORDER BY COALESCE(sj.finishedAt, sj.updatedAt) DESC, sj.id DESC
+      LIMIT ? OFFSET ?`,
     )
-    .all() as FinishedSubtitle[]
+    .all(pageSize, offset) as FinishedSubtitle[]
+
+  return { items, total, page, totalPages }
+}
+
+// Remove a single completed/failed translation row from the Translated page
+// (soft-delete the job). The subtitle and its other target-language jobs are
+// left intact. Gated on the same canDeleteTranslation permission as the
+// dashboard's per-subtitle delete.
+export const softDeleteSubtitleJob = (db: Database.Database, user: DBUser, jobId: number): DefaultResponse => {
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canDeleteTranslation")
+  if (!perm) return { success: false, msg: "Permission denied" }
+
+  const job = getSubtitleJobById(db, jobId)
+  if (!job) return { success: false, msg: "Translation not found" }
+
+  db.prepare(
+    `UPDATE subtitleJob SET deletedAt = datetime('now'), deletedByUserId = ?, updatedAt = datetime('now') WHERE id = ?`,
+  ).run(user.id, jobId)
+
+  createLog(db, "info", "subtitle", job.subtitleId, "Removed translation from Translated page", {
+    jobId,
+    removedBy: user.id,
+  })
+  return { success: true, msg: null }
 }
 
 export const getSubtitlesWithLang = (db: Database.Database) => {

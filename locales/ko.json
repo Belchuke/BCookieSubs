@@ -82,7 +82,7 @@
     "addSubtitleStep2": "자막 추가 — 2단계 / 2",
     "srtFile": "SRT 파일",
     "clickToUpload": "클릭하여 업로드하거나 드래그 앤 드롭",
-    "srtOnly": "SRT 파일만 가능",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "원본 언어",
     "mediaTitle": "제목",
     "type": "유형",

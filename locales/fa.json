@@ -82,7 +82,7 @@
     "addSubtitleStep2": "افزودن زیرنویس — مرحله ۲ از ۲",
     "srtFile": "فایل SRT",
     "clickToUpload": "برای آپلود کلیک کنید یا بکشید و رها کنید",
-    "srtOnly": "فقط فایل‌های SRT",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "زبان مبدأ",
     "mediaTitle": "عنوان",
     "type": "نوع",

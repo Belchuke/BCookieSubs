@@ -82,7 +82,7 @@
     "addSubtitleStep2": "字幕を追加 — ステップ 2 / 2",
     "srtFile": "SRTファイル",
     "clickToUpload": "クリックしてアップロードまたはドラッグ＆ドロップ",
-    "srtOnly": "SRTファイルのみ",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "ソース言語",
     "mediaTitle": "タイトル",
     "type": "タイプ",

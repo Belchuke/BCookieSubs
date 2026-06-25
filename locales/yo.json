@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Fi Àkọlé Kún — Ìgbésẹ̀ 2 nínú 2",
     "srtFile": "Fáìlì SRT",
     "clickToUpload": "Tẹ láti gbé wọlé tàbí fà tò",
-    "srtOnly": "Àwọn fáìlì SRT nìkan",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Èdè Ìpilẹ̀ṣẹ̀",
     "mediaTitle": "Àkọlé",
     "type": "Iru",

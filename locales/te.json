@@ -82,7 +82,7 @@
     "addSubtitleStep2": "సబ్‌టైటిల్ జోడించు — దశ 2 / 2",
     "srtFile": "SRT ఫైల్",
     "clickToUpload": "అప్‌లోడ్ చేయడానికి క్లిక్ చేయండి లేదా లాగి వదలండి",
-    "srtOnly": "SRT ఫైళ్లు మాత్రమే",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "మూల భాష",
     "mediaTitle": "శీర్షిక",
     "type": "రకం",

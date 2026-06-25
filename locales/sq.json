@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Shto Titër — Hapi 2 nga 2",
     "srtFile": "Skedar SRT",
     "clickToUpload": "Kliko për të ngarkuar ose zvarrit dhe lësho",
-    "srtOnly": "Vetëm skedarë SRT",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Gjuha Burimore",
     "mediaTitle": "Titulli",
     "type": "Lloji",

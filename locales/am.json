@@ -82,7 +82,7 @@
     "addSubtitleStep2": "ንዑስ ርዕስ ጨምር — ደረጃ 2 ከ 2",
     "srtFile": "የ SRT ፋይል",
     "clickToUpload": "ለመጫን ጠቅ ያድርጉ ወይም ጎትተው ጣሉ",
-    "srtOnly": "የ SRT ፋይሎች ብቻ",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "የምንጭ ቋንቋ",
     "mediaTitle": "ርዕስ",
     "type": "ዓይነት",

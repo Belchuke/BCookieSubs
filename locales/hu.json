@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Felirat hozzáadása — 2/2. lépés",
     "srtFile": "SRT fájl",
     "clickToUpload": "Kattintson a feltöltéshez vagy húzza ide",
-    "srtOnly": "Csak SRT fájlok",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Forrás nyelv",
     "mediaTitle": "Cím",
     "type": "Típus",

@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Azpititulua Gehitu — 2. urratsa 2tik",
     "srtFile": "SRT Fitxategia",
     "clickToUpload": "Klikatu kargatzeko edo arrastatu eta jaregin",
-    "srtOnly": "SRT fitxategiak soilik",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Jatorrizko Hizkuntza",
     "mediaTitle": "Izenburua",
     "type": "Mota",

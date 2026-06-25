@@ -82,7 +82,7 @@
     "addSubtitleStep2": "ಉಪಶೀರ್ಷಿಕೆ ಸೇರಿಸು — ಹಂತ 2 / 2",
     "srtFile": "SRT ಫೈಲ್",
     "clickToUpload": "ಅಪ್‌ಲೋಡ್ ಮಾಡಲು ಕ್ಲಿಕ್ ಮಾಡಿ ಅಥವಾ ಎಳೆದು ಬಿಡಿ",
-    "srtOnly": "SRT ಫೈಲ್‌ಗಳು ಮಾತ್ರ",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "ಮೂಲ ಭಾಷೆ",
     "mediaTitle": "ಶೀರ್ಷಿಕೆ",
     "type": "ಪ್ರಕಾರ",

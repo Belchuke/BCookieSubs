@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Afegeix subtítol — Pas 2 de 2",
     "srtFile": "Fitxer SRT",
     "clickToUpload": "Fes clic per pujar o arrossega i deixa anar",
-    "srtOnly": "Només fitxers SRT",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Idioma d'origen",
     "mediaTitle": "Títol",
     "type": "Tipus",

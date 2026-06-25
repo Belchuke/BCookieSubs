@@ -82,7 +82,7 @@
     "addSubtitleStep2": "စာတန်း ထည့် — အဆင့် ၂ / ၂",
     "srtFile": "SRT ဖိုင်",
     "clickToUpload": "တင်ရန် နှိပ် သို့မဟုတ် ဆွဲချ",
-    "srtOnly": "SRT ဖိုင်များသာ",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "အရင်းအမြစ်ဘာသာ",
     "mediaTitle": "ခေါင်းစဉ်",
     "type": "အမျိုးအစား",

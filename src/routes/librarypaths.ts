@@ -112,6 +112,7 @@ export function libraryPathsRouter(db: Database.Database) {
       delete: __("common.delete"),
       blacklistBtn: __("librarypaths.blacklistBtn"),
       changeMatch: __("librarypaths.changeMatch"),
+      selectMatch: __("librarypaths.selectMatch"),
       removeFromBlacklist: __("librarypaths.removeFromBlacklist"),
       readd: __("librarypaths.readd"),
       translate: __("librarypaths.translate"),

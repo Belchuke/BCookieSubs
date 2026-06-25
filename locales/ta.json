@@ -82,7 +82,7 @@
     "addSubtitleStep2": "வசனம் சேர் — படி 2 / 2",
     "srtFile": "SRT கோப்பு",
     "clickToUpload": "பதிவேற்ற கிளிக் செய்யவும் அல்லது இழுத்து விடவும்",
-    "srtOnly": "SRT கோப்புகள் மட்டுமே",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "மூல மொழி",
     "mediaTitle": "தலைப்பு",
     "type": "வகை",

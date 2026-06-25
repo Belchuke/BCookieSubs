@@ -82,7 +82,7 @@
     "addSubtitleStep2": "সাবটাইটেল যোগ করুন — ধাপ ২ এর ২",
     "srtFile": "SRT ফাইল",
     "clickToUpload": "আপলোড করতে ক্লিক করুন বা টেনে ছেড়ে দিন",
-    "srtOnly": "শুধুমাত্র SRT ফাইল",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "উৎস ভাষা",
     "mediaTitle": "শিরোনাম",
     "type": "ধরন",

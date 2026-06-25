@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Lisa subtiitrid — Samm 2/2",
     "srtFile": "SRT fail",
     "clickToUpload": "Klõpsake üleslaadimiseks või lohistage",
-    "srtOnly": "Ainult SRT failid",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Lähtekeel",
     "mediaTitle": "Pealkiri",
     "type": "Tüüp",

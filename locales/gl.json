@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Engadir subtítulo — Paso 2 de 2",
     "srtFile": "Ficheiro SRT",
     "clickToUpload": "Fai clic para cargar ou arrastra e solta",
-    "srtOnly": "Só ficheiros SRT",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Idioma de orixe",
     "mediaTitle": "Título",
     "type": "Tipo",

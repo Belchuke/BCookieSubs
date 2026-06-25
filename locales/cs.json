@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Přidat titulky — krok 2 ze 2",
     "srtFile": "Soubor SRT",
     "clickToUpload": "Klikněte pro nahrání nebo přetáhněte",
-    "srtOnly": "Pouze soubory SRT",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Zdrojový jazyk",
     "mediaTitle": "Název",
     "type": "Typ",

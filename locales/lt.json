@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Pridėti subtitrus — 2 žingsnis iš 2",
     "srtFile": "SRT failas",
     "clickToUpload": "Spustelėkite, kad įkeltumėte, arba vilkite ir numeskite",
-    "srtOnly": "Tik SRT failai",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Šaltinio kalba",
     "mediaTitle": "Pavadinimas",
     "type": "Tipas",

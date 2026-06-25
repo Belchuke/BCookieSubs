@@ -82,7 +82,7 @@
     "addSubtitleStep2": "سب ٹائٹل شامل کریں — مرحلہ 2 از 2",
     "srtFile": "SRT فائل",
     "clickToUpload": "اپ لوڈ کے لیے کلک کریں یا گھسیٹ کر چھوڑیں",
-    "srtOnly": "صرف SRT فائلیں",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "ماخذ زبان",
     "mediaTitle": "عنوان",
     "type": "قسم",

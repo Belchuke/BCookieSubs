@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Voeg Onderskrift By — Stap 2 van 2",
     "srtFile": "SRT Lêer",
     "clickToUpload": "Klik om op te laai of sleep en los",
-    "srtOnly": "Slegs SRT lêers",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Brontaal",
     "mediaTitle": "Titel",
     "type": "Tipe",

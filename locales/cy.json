@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Ychwanegu Isdeiltl — Cam 2 o 2",
     "srtFile": "Ffeil SRT",
     "clickToUpload": "Cliciwch i uwchlwytho neu lusgo a gollwng",
-    "srtOnly": "Ffeiliau SRT yn unig",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Iaith Ffynhonnell",
     "mediaTitle": "Teitl",
     "type": "Math",

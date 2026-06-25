@@ -82,7 +82,7 @@
     "addSubtitleStep2": "സബ്‌ടൈറ്റിൽ ചേർക്കുക — ഘട്ടം 2 / 2",
     "srtFile": "SRT ഫയൽ",
     "clickToUpload": "അപ്‌ലോഡ് ചെയ്യാൻ ക്ലിക്ക് ചെയ്യുക അല്ലെങ്കിൽ വലിച്ചിടുക",
-    "srtOnly": "SRT ഫയലുകൾ മാത്രം",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "ഉറവിട ഭാഷ",
     "mediaTitle": "ശീർഷകം",
     "type": "തരം",

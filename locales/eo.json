@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Aldoni Subtekston — Paŝo 2 el 2",
     "srtFile": "SRT Dosiero",
     "clickToUpload": "Alklaku por alŝuti aŭ trenu kaj faligi",
-    "srtOnly": "Nur SRT dosieroj",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Fonta Lingvo",
     "mediaTitle": "Titolo",
     "type": "Tipo",

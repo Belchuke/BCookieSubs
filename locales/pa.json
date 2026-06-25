@@ -82,7 +82,7 @@
     "addSubtitleStep2": "ਉਪਸਿਰਲੇਖ ਜੋੜੋ — ਕਦਮ 2 / 2",
     "srtFile": "SRT ਫਾਈਲ",
     "clickToUpload": "ਅੱਪਲੋਡ ਕਰਨ ਲਈ ਕਲਿੱਕ ਕਰੋ ਜਾਂ ਖਿੱਚ ਕੇ ਛੱਡੋ",
-    "srtOnly": "ਕੇਵਲ SRT ਫਾਈਲਾਂ",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "ਸਰੋਤ ਭਾਸ਼ਾ",
     "mediaTitle": "ਸਿਰਲੇਖ",
     "type": "ਕਿਸਮ",

@@ -34,7 +34,19 @@
       </div>
     <% } else { %>
       <div class="card">
-        
+        <% if (pagination && pagination.total > 0) { %>
+        <div class="pagination-container trn-top">
+          <span class="pagination-info">
+            <%= __('translated.showing') %> <%= pagination.page * pagination.limit + 1 %>-<%= Math.min((pagination.page + 1) * pagination.limit, pagination.total) %> <%= __('translated.of') %> <%= pagination.total %> <%= __('translated.translations') %>
+          </span>
+          <div class="pagination-controls">
+            <a href="/translated?page=<%= pagination.page - 1 %>" class="btn btn-sm<%= pagination.hasPrev ? '' : ' btn-disabled' %>"<%= pagination.hasPrev ? '' : ' style="pointer-events:none;"' %>><%= __('translated.prev') %></a>
+            <span class="page-indicator"><%= __('translated.page') %> <%= pagination.page + 1 %> / <%= pagination.totalPages %></span>
+            <a href="/translated?page=<%= pagination.page + 1 %>" class="btn btn-sm<%= pagination.hasNext ? '' : ' btn-disabled' %>"<%= pagination.hasNext ? '' : ' style="pointer-events:none;"' %>><%= __('translated.next') %></a>
+          </div>
+        </div>
+        <% } %>
+
         <div class="table-wrap translated-table-wrap">
           <table>
             <thead>
@@ -79,10 +91,19 @@
                 <td class="text-dim trn-nowrap">
                   <span data-duration-start="<%= sub.earliestChunkStartedAt || '' %>" data-duration-end="<%= sub.finishedAt || '' %>">—</span>
                 </td>
-                <td>
-                  <a href="/dashboard/download/<%= sub.jobId %>" class="btn btn-primary btn-sm">
-                    <i class="fa-solid fa-download"></i> Export
-                  </a>
+                <td class="trn-actions">
+                  <% if (sub.status === 'completed') { %>
+                    <a href="/dashboard/download/<%= sub.jobId %>" class="btn btn-primary btn-sm">
+                      <i class="fa-solid fa-download"></i> <%= __('translated.export') %>
+                    </a>
+                  <% } else { %>
+                    <span class="badge badge-error"><%= __('translated.failed') %></span>
+                  <% } %>
+                  <% if (can('canDeleteTranslation')) { %>
+                    <form method="POST" action="/translated/delete/<%= sub.jobId %>?page=<%= pagination.page %>" style="display:inline" onsubmit="return confirm('<%= __('translated.removeConfirm') %>')">
+                      <button type="submit" class="btn btn-icon btn-danger" title="<%= __('translated.remove') %>">🗑</button>
+                    </form>
+                  <% } %>
                 </td>
               </tr>
               <% }) %>
@@ -114,13 +135,37 @@
                   <span class="text-dim trn-fs-78">Duration: <span data-duration-start="<%= sub.earliestChunkStartedAt %>" data-duration-end="<%= sub.finishedAt %>">—</span></span>
                 <% } %>
               </div>
-              <a href="/dashboard/download/<%= sub.jobId %>" class="btn btn-primary btn-sm trn-export-btn">
-                <i class="fa-solid fa-download"></i> Export
-              </a>
+              <div class="trn-card-actions">
+                <% if (sub.status === 'completed') { %>
+                  <a href="/dashboard/download/<%= sub.jobId %>" class="btn btn-primary btn-sm trn-export-btn">
+                    <i class="fa-solid fa-download"></i> <%= __('translated.export') %>
+                  </a>
+                <% } else { %>
+                  <span class="badge badge-error"><%= __('translated.failed') %></span>
+                <% } %>
+                <% if (can('canDeleteTranslation')) { %>
+                  <form method="POST" action="/translated/delete/<%= sub.jobId %>?page=<%= pagination.page %>" style="display:inline" onsubmit="return confirm('<%= __('translated.removeConfirm') %>')">
+                    <button type="submit" class="btn btn-icon btn-danger" title="<%= __('translated.remove') %>">🗑</button>
+                  </form>
+                <% } %>
+              </div>
             </div>
           </div>
           <% }) %>
         </div>
+
+        <% if (pagination && pagination.total > 0) { %>
+        <div class="pagination-container">
+          <span class="pagination-info">
+            <%= __('translated.showing') %> <%= pagination.page * pagination.limit + 1 %>-<%= Math.min((pagination.page + 1) * pagination.limit, pagination.total) %> <%= __('translated.of') %> <%= pagination.total %> <%= __('translated.translations') %>
+          </span>
+          <div class="pagination-controls">
+            <a href="/translated?page=<%= pagination.page - 1 %>" class="btn btn-sm<%= pagination.hasPrev ? '' : ' btn-disabled' %>"<%= pagination.hasPrev ? '' : ' style="pointer-events:none;"' %>><%= __('translated.prev') %></a>
+            <span class="page-indicator"><%= __('translated.page') %> <%= pagination.page + 1 %> / <%= pagination.totalPages %></span>
+            <a href="/translated?page=<%= pagination.page + 1 %>" class="btn btn-sm<%= pagination.hasNext ? '' : ' btn-disabled' %>"<%= pagination.hasNext ? '' : ' style="pointer-events:none;"' %>><%= __('translated.next') %></a>
+          </div>
+        </div>
+        <% } %>
       </div>
     <% } %>
   </main>

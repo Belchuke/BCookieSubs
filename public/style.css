@@ -42,6 +42,24 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 code { font-family: var(--font-mono); font-size: .85em; background: var(--surface-2); padding: .1em .35em; border-radius: var(--radius-sm); }
 pre { font-family: var(--font-mono); font-size: .82em; }
 
+/* ── Scrollbars — one unified style across every page and scroll area ────── */
+/* Applied to every element so the page, sidebar, tables, modals and all
+   nested scroll containers share the same thin, theme-aware scrollbar. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-3, #3a3f4b) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--surface-3, #3a3f4b);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--text-dim, #6b7280); background-clip: content-box; }
+*::-webkit-scrollbar-corner { background: transparent; }
+
 /* ── App shell ──────────────────────────────────────────────────────────── */
 .app-shell { display: flex; min-height: 100vh; }
 
@@ -1768,6 +1786,11 @@ details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg);
 .trn-fs-82 { font-size:.82rem; }
 .trn-fs-78 { font-size:.78rem; }
 .trn-export-btn { margin-top:.5rem; align-self:flex-start; }
+.trn-actions { white-space:nowrap; display:inline-flex; align-items:center; gap:.4rem; }
+.trn-card-actions { display:flex; align-items:center; gap:.5rem; margin-top:.5rem; flex-wrap:wrap; }
+/* Top pagination sits at the head of the card (margin below, not above); the
+   shared .pagination-container uses margin-top which is correct for the bottom. */
+.pagination-container.trn-top { margin-top: 0; margin-bottom: 1rem; }
 
 /* ── misc ── */
 /* ===== step1.ejs (s1-) ===== */
@@ -1889,18 +1912,12 @@ details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg);
 .lpx-group-actions { display:flex;gap:.35rem;align-items:center;flex-shrink:0;flex-wrap:wrap; }
 .lpx-photo-label { cursor:pointer;position:relative;margin:0; }
 .lpx-file-hidden { position:absolute;opacity:0;width:1px;height:1px;overflow:hidden; }
-.lpx-picker { padding:.65rem .85rem;border-top:1px solid var(--border);background:var(--surface-2); }
-.lpx-picker-head { display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem; }
 .lpx-fs-75 { font-size:.75rem; }
 .lpx-grid-mb { margin-bottom:.5rem; }
-.lpx-candidate-btn { display:flex;flex-direction:row;align-items:center;gap:.75rem;padding:.6rem .75rem;height:auto;width:100%;text-align:left; }
 .lpx-poster-md { width:54px;height:81px;object-fit:cover;border-radius:4px;flex-shrink:0; }
 .lpx-poster-md-ph { width:54px;height:81px;background:var(--surface-2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
 .lpx-icon-md { font-size:1.4rem;color:var(--text-dim); }
-.lpx-candidate-label { font-size:.88rem;line-height:1.35;word-break:break-word;min-width:0; }
 .lpx-fs-80 { font-size:.8rem; }
-.lpx-tmdb-divider { border-top:1px dashed var(--border);padding-top:.45rem; }
-.lpx-field-mb { margin-bottom:.35rem; }
 .lpx-ep-summary { cursor:pointer;padding:.5rem .85rem;border-top:1px solid var(--border);display:flex;align-items:center;gap:.5rem;background:var(--surface-2);user-select:none; }
 .lpx-ep-chevron { font-size:.72rem;color:var(--text-dim);transition:transform .2s;flex-shrink:0; }
 .lpx-fs-81 { font-size:.81rem; }

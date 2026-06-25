@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Субтитр қосу — 2-қадам / 2",
     "srtFile": "SRT файлы",
     "clickToUpload": "Жүктеу үшін басыңыз немесе сүйреп тастаңыз",
-    "srtOnly": "Тек SRT файлдары",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Бастапқы тіл",
     "mediaTitle": "Тақырып",
     "type": "Түрі",

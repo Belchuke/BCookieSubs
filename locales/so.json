@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Kudar Cinwaanka Hoose — Tallaabo 2 ka 2",
     "srtFile": "Faylka SRT",
     "clickToUpload": "Guji si aad u cusbooneysiiso ama jiid u soo dhig",
-    "srtOnly": "Faylalka SRT kaliya",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Luuqadda Asalka",
     "mediaTitle": "Cinwaan",
     "type": "Nooc",

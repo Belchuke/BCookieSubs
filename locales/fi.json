@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Lisää tekstitys — Vaihe 2 / 2",
     "srtFile": "SRT-tiedosto",
     "clickToUpload": "Klikkaa ladataksesi tai raahaa ja pudota",
-    "srtOnly": "Vain SRT-tiedostot",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Lähdekieli",
     "mediaTitle": "Titteli",
     "type": "Tyyppi",

@@ -82,7 +82,7 @@
     "addSubtitleStep2": "උපශීර්ෂ එකතු කරන්න — පියවර 2 / 2",
     "srtFile": "SRT ගොනුව",
     "clickToUpload": "උඩුගත කිරීමට ක්ලික් කරන්න හෝ ඇදගෙන ඉවත් කරන්න",
-    "srtOnly": "SRT ගොනු පමණි",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "මූල භාෂාව",
     "mediaTitle": "මාතෘකාව",
     "type": "වර්ගය",

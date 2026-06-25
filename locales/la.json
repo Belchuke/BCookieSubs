@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Adde Titulum — Gradus II ex II",
     "srtFile": "Fasciculus SRT",
     "clickToUpload": "Preme ad transmittendum vel trahe et dimitte",
-    "srtOnly": "Fasciculi SRT solum",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Lingua Fontis",
     "mediaTitle": "Titulus",
     "type": "Genus",

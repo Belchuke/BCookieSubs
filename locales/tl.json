@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Magdagdag ng Subtitle — Hakbang 2 ng 2",
     "srtFile": "SRT File",
     "clickToUpload": "Mag-click para mag-upload o i-drag and drop",
-    "srtOnly": "SRT files lamang",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Pinagmulang Wika",
     "mediaTitle": "Pamagat",
     "type": "Uri",

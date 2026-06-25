@@ -1,3 +1,4 @@
+import * as fs from "fs"
 import Database from "better-sqlite3"
 import {
   DBUser,
@@ -812,4 +813,59 @@ export const unblacklistLibraryPathItem = (
     removedByUsername: user.username,
   })
   return { success: true, msg: "Item removed from blacklist" }
+}
+
+// ---------------------------------------------------------------------------
+// bcsubExportedFile: tracks subtitle files BCookieSubs wrote into a library
+// folder. The scanner uses this to avoid offering its own exported output as
+// a translation source (see libraryPathService.scanLibraryPath).
+// ---------------------------------------------------------------------------
+
+export type ExportedFileRecord = { isWhisper: boolean; subtitleId: number | null }
+
+// Record (or refresh) a file BCookieSubs exported into a library folder.
+// isWhisper distinguishes Whisper-generated transcripts (valid sources) from
+// translated/original copies (output, not a source).
+export const recordExportedFile = (
+  db: Database.Database,
+  libraryPathId: number,
+  filePath: string,
+  subtitleId: number | null,
+  isWhisper: boolean,
+): void => {
+  db.prepare(
+    `INSERT INTO bcsubExportedFile (libraryPathId, path, subtitleId, isWhisper, updatedAt)
+     VALUES (?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(libraryPathId, path) DO UPDATE SET
+       subtitleId = excluded.subtitleId,
+       isWhisper = excluded.isWhisper,
+       updatedAt = datetime('now')`,
+  ).run(libraryPathId, filePath, subtitleId, isWhisper ? 1 : 0)
+}
+
+// Look up whether a given on-disk subtitle file was exported by BCookieSubs.
+export const getExportedFileByPath = (db: Database.Database, filePath: string): ExportedFileRecord | null => {
+  const row = db
+    .prepare(`SELECT isWhisper, subtitleId FROM bcsubExportedFile WHERE path = ? LIMIT 1`)
+    .get(filePath) as { isWhisper: number; subtitleId: number | null } | undefined
+  if (!row) return null
+  return { isWhisper: row.isWhisper === 1, subtitleId: row.subtitleId }
+}
+
+// Remove registry entries whose file no longer exists on disk (the file was
+// deleted out-of-band). Keeps the registry from eternally hiding a path the
+// user may later place a real source file at.
+export const pruneMissingExportedFiles = (db: Database.Database, libraryPathId: number): void => {
+  const rows = db
+    .prepare(`SELECT id, path FROM bcsubExportedFile WHERE libraryPathId = ?`)
+    .all(libraryPathId) as { id: number; path: string }[]
+  for (const row of rows) {
+    try {
+      if (!fs.existsSync(row.path)) {
+        db.prepare(`DELETE FROM bcsubExportedFile WHERE id = ?`).run(row.id)
+      }
+    } catch {
+      db.prepare(`DELETE FROM bcsubExportedFile WHERE id = ?`).run(row.id)
+    }
+  }
 }

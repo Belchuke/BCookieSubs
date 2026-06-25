@@ -82,7 +82,7 @@
     "addSubtitleStep2": "Tambah Sarikata — Langkah 2 daripada 2",
     "srtFile": "Fail SRT",
     "clickToUpload": "Klik untuk muat naik atau seret dan lepas",
-    "srtOnly": "Fail SRT sahaja",
+    "srtOnly": ".srt, .ass, .ssa",
     "sourceLanguage": "Bahasa Sumber",
     "mediaTitle": "Tajuk",
     "type": "Jenis",
