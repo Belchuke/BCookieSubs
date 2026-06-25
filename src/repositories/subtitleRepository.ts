@@ -887,25 +887,41 @@ export const softDeleteSubtitle = (db: Database.Database, user: DBUser, subtitle
   return { success: true, msg: null }
 }
 
-// Soft-delete every non-deleted subtitle tied to a media item — i.e. the whole
-// series (every episode) across BOTH the translation queue and the whisper
+// Soft-delete the subtitles tied to a media item that are currently in a given
 // queue. A series can straddle both queues (some episodes still transcribing
-// via Whisper, others already translating), so deleting "the series" has to
-// hit every subtitle row for that media item regardless of which queue it is
-// rendered in. Mirrors softDeleteSubtitle's per-row behavior (sets deletedAt +
-// deletedByUserId); the worker treats deletedAt as a stop signal, so in-flight
-// jobs/whisper transcription wind down on their own.
+// via Whisper, others already translating), so deleting "the series" from one
+// queue card must only hit the episodes shown in THAT card — not wipe the
+// other queue's episodes too. `queueScope` mirrors the dashboard's
+// isWhisperStage split:
+//   - "whisper":      source='whisper' AND transcription not yet completed/failed-final
+//                     (the whisper queue: queued_for_transcription, transcribing,
+//                      transcription_failed, queued_for_translation, translating)
+//   - "translation":  everything else for that media item (uploads, library
+//                     subtitles, and whisper subtitles that finished
+//                     transcription and moved into the translation queue)
+//   - "all":          every non-deleted subtitle for the media item (legacy).
+// Mirrors softDeleteSubtitle's per-row behavior (sets deletedAt + deletedByUserId);
+// the worker treats deletedAt as a stop signal, so in-flight jobs/whisper
+// transcription wind down on their own.
 export const softDeleteSubtitlesByMediaItem = (
   db: Database.Database,
   user: DBUser,
   mediaItemId: number,
+  queueScope: "whisper" | "translation" | "all" = "all",
 ): DefaultResponse => {
   const { hasPermission: perm } = userHasPermission(db, user.id, "canDeleteTranslation")
   if (!perm) return { success: false, msg: "Permission denied" }
 
+  const stageClause =
+    queueScope === "whisper"
+      ? `AND source = 'whisper' AND whisperTranscriptionStatus IS NOT NULL AND whisperTranscriptionStatus != 'transcription_completed'`
+      : queueScope === "translation"
+        ? `AND NOT (source = 'whisper' AND whisperTranscriptionStatus IS NOT NULL AND whisperTranscriptionStatus != 'transcription_completed')`
+        : ``
+
   const subs = db
     .prepare(
-      `SELECT id, name FROM subtitle WHERE mediaItemId = ? AND deletedAt IS NULL`,
+      `SELECT id, name FROM subtitle WHERE mediaItemId = ? AND deletedAt IS NULL ${stageClause}`,
     )
     .all(mediaItemId) as { id: number; name: string }[]
 
@@ -920,6 +936,7 @@ export const softDeleteSubtitlesByMediaItem = (
       createLog(db, "info", "subtitle", s.id, "Deleted subtitle (series delete)", {
         deletedBy: user.id,
         mediaItemId,
+        queueScope,
         name: s.name,
       })
     }

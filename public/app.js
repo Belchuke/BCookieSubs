@@ -23,6 +23,9 @@ function closeModalOnOverlay(event) {
   }
 }
 
+// Auto-dismiss the error toast (#page-toast) after a few seconds. Success
+// toasts are no longer rendered (only error feedback is kept), so this only
+// fades the error badge.
 ;(function () {
   var toast = document.getElementById("page-toast")
   if (toast) {
@@ -436,9 +439,10 @@ function closeModalOnOverlay(event) {
       moveHtml += "</div>"
     }
 
-    // Delete the whole series (every episode) from whichever queue it's in.
-    // Keyed by media item, so one action clears the series across both the
-    // translation and whisper queues. Available on both queue cards. The confirm
+    // Delete the whole series (every episode) — but ONLY from the queue card the
+    // button is on, so removing a series from the whisper queue leaves the
+    // translation-queue episodes (and vice versa). The queue is passed as a query
+    // param; the route scopes the delete to that queue's stage. The confirm
     // prompt is wired up after render (see the .lr-series-delete submit handler)
     // rather than via an inline onsubmit, so series titles containing quotes or
     // apostrophes can't break out of the attribute.
@@ -446,9 +450,9 @@ function closeModalOnOverlay(event) {
     if (group.mediaItemId && (typeof CAN_STOP === "undefined" || CAN_STOP)) {
       deleteHtml += '<div class="acc-inline-actions">'
       deleteHtml +=
-        '<form method="POST" action="/dashboard/delete-series/' + group.mediaItemId + '" style="display:inline" class="lr-series-delete" data-series-title="' +
-        escapeHtml(group.title || "") + '" data-media-item-id="' + group.mediaItemId + '">'
-      deleteHtml += '<button type="submit" class="btn btn-icon btn-xs btn-danger" title="Delete series">🗑</button></form>'
+        '<form method="POST" action="/dashboard/delete-series/' + group.mediaItemId + '?queue=' + qType + '" style="display:inline" class="lr-series-delete" data-series-title="' +
+        escapeHtml(group.title || "") + '" data-media-item-id="' + group.mediaItemId + '" data-queue="' + qType + '">'
+      deleteHtml += '<button type="submit" class="btn btn-icon btn-xs btn-danger" title="Delete series from this queue">🗑</button></form>'
       deleteHtml += "</div>"
     }
 
@@ -598,7 +602,8 @@ function closeModalOnOverlay(event) {
       form.addEventListener("submit", function (e) {
         var title = this.getAttribute("data-series-title") || ""
         var mediaItemId = this.getAttribute("data-media-item-id") || ""
-        if (!confirmDeleteSeries(title, mediaItemId)) e.preventDefault()
+        var queue = this.getAttribute("data-queue") || "all"
+        if (!confirmDeleteSeries(title, mediaItemId, queue)) e.preventDefault()
       })
     })
 
@@ -825,13 +830,21 @@ function whisperWorkerControl(action) {
 
 // Confirm before deleting an entire series (all episodes) from the queue.
 // Called from the series header's delete form onsubmit; returning true submits
-// the form, false cancels. `title` and `mediaItemId` are interpolated into the
-// prompt so the user knows exactly what gets removed.
-function confirmDeleteSeries(title, mediaItemId) {
+// the form, false cancels. `title`, `mediaItemId` and `queue` are interpolated
+// into the prompt so the user knows exactly what gets removed. The delete is
+// scoped to `queue` (whisper or translation) — episodes in the OTHER queue are
+// left untouched.
+function confirmDeleteSeries(title, mediaItemId, queue) {
+  var queueLabel = queue === "whisper" ? "whisper" : queue === "translation" ? "translation" : ""
+  var scopeLine =
+    queue === "whisper" || queue === "translation"
+      ? "This removes every episode currently in the " + queueLabel +
+        " queue. Episodes in the other queue are left untouched."
+      : "This removes every episode from both the translation and whisper queues."
   return window.confirm(
     "Delete the entire series \"" + (title || "this series") + "\" (" +
-      mediaItemId + ")?\n\nThis removes every episode from both the translation " +
-      "and whisper queues. This cannot be undone."
+      mediaItemId + ") from the " + (queueLabel || "all") + " queue?\n\n" +
+      scopeLine + " This cannot be undone."
   )
 }
 

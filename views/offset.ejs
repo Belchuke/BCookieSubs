@@ -20,7 +20,7 @@
 <div class="app-shell">
   <%- include('partials/sidebar') %>
   <main class="main-content">
-    <% if (locals.toast && locals.msg) { %>
+    <% if (locals.toast === 'error' && locals.msg) { %>
       <div class="toast toast-<%= toast %>" id="page-toast">
         <span class="toast-msg"><%= msg %></span>
         <button type="button" class="toast-close" aria-label="Close" data-toast-close>✕</button>
@@ -275,6 +275,8 @@
   }
 
   function showOffToast(kind, msg) {
+    // Only error feedback is kept app-wide; success/info badges were removed.
+    if (kind !== 'error') return
     var existing = document.getElementById('page-toast')
     if (existing) existing.remove()
     var div = document.createElement('div')
@@ -287,8 +289,6 @@
     else document.body.prepend(div)
     setTimeout(function() { if (div.parentNode) div.remove() }, 5000)
   }
-
-
 
   // ── Entry rendering ─────────────────────────────────────
 
@@ -668,7 +668,6 @@
       })
       .catch(function() { showOffToast('error', 'Failed to load SRT') })
   })
-
 
   // ── Preview (client-side) ───────────────────────────────
 

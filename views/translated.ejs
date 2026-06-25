@@ -20,7 +20,7 @@
 <div class="app-shell">
   <%- include('partials/sidebar') %>
   <main class="main-content">
-    <% if (locals.toast && locals.msg) { %>
+    <% if (locals.toast === 'error' && locals.msg) { %>
       <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
     <% } %>
 

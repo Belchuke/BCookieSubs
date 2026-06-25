@@ -301,7 +301,9 @@ body.sidebar-collapsed .main-content { margin-left: var(--sidebar-w-collapsed); 
 .toast-error   { background: var(--error-dim);   color: var(--error);   border: 1px solid var(--error); }
 .toast-warning { background: var(--warning-dim); color: var(--warning); border: 1px solid var(--warning); }
 @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-
+.toast-msg { display: inline; }
+.toast-close { margin-left: .75rem; background: none; border: none; color: inherit; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0; opacity: .7; }
+.toast-close:hover { opacity: 1; }
 
 
 /* ── Forms ──────────────────────────────────────────────────────────────── */
@@ -1628,7 +1630,7 @@ details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg);
 .usr-th-actions { text-align: end; padding-left: 1rem; }
 .usr-ml-half { margin-left: .5rem; }
 .usr-mr-tiny { margin-right: .2rem; }
-.usr-actions-end { justify-content: end; }
+.usr-actions-end { justify-content: end; flex-wrap: wrap; }
 .usr-inline { display: inline; }
 .usr-ml-sm { margin-left: .4rem; }
 .usr-card-created { font-size: .8rem; margin-bottom: .6rem; }

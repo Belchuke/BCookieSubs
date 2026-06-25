@@ -20,7 +20,7 @@
 <div class="app-shell">
   <%- include('partials/sidebar') %>
   <main class="main-content">
-    <% if (locals.toast && locals.msg) { %>
+    <% if (locals.toast === 'error' && locals.msg) { %>
       <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
     <% } %>
 
@@ -29,7 +29,6 @@
     <div class="config-layout">
 
       <div class="cfg-col-gap-lg">
-
 
         <div class="card">
           <div class="card-header"><h2><%= __('config.general') %></h2></div>
@@ -73,13 +72,8 @@
             <% if (config.scanLibraryPaths && can('canManageSettings')) { %>
             <div class="field">
               <label for="rootLibraryPath"><%= __('config.rootLibraryFolder') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipRootLibraryFolder') %>"></i></label>
-              <div class="cfg-flex-gap-sm">
-                <input type="text" id="rootLibraryPath" name="rootLibraryPath" value="<%= config.rootLibraryPath || '' %>"
-                       placeholder="e.g. /mnt/media" class="cfg-flex-1">
-                <button type="button" class="btn btn-secondary cfg-flex-shrink-0"
-                        onclick="openConfigDirBrowser()"><%= __('config.browse') %></button>
-              </div>
-              <div id="config-path-browser-anchor"></div>
+              <input type="text" id="rootLibraryPath" name="rootLibraryPath" value="<%= config.rootLibraryPath || '' %>"
+                     placeholder="e.g. /mnt/media" readonly>
             </div>
             <% } %>
             <div class="field field-checkbox">
@@ -101,7 +95,6 @@
             <h2><%= __('config.theme') %></h2>
           </div>
 
-
           <form method="POST" action="/config/theme/select" class="cfg-flex-end-mb">
             <div class="field cfg-field-flex-mb0">
               <label for="themeId"><%= __('config.activeTheme') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipActiveTheme') %>"></i></label>
@@ -114,7 +107,6 @@
             <button type="submit" class="btn btn-primary cfg-flex-shrink-0"><%= __('common.apply') %></button>
           </form>
 
-
           <% var userThemes = themes.filter(function(t){ return !t.isPublic }) %>
           <% if (userThemes.length > 0) { %>
             <div class="cfg-theme-chips">
@@ -125,7 +117,6 @@
               <% }) %>
             </div>
           <% } %>
-
 
           <details>
             <summary class="cfg-summary"><%= __('config.createCustomTheme') %></summary>
@@ -422,89 +413,8 @@
   </main>
 </div>
 
-<div id="config-dir-browser-panel" class="cfg-browser-panel">
-  <div class="cfg-browser-box">
-    <div class="cfg-browser-head">
-      <button type="button" id="config-dir-up-btn" class="btn btn-icon btn-sm cfg-browser-up" title="Go up">↑</button>
-      <span id="config-dir-current-path" class="text-dim cfg-browser-path"></span>
-    </div>
-    <div id="config-dir-list" class="cfg-browser-list">
-      <div class="text-dim cfg-browser-loading"><%= __('common.loading') %></div>
-    </div>
-    <div class="cfg-browser-foot">
-      <button type="button" id="config-dir-select-btn" class="btn btn-sm btn-primary"><%= __('config.selectFolder') %></button>
-      <button type="button" class="btn btn-sm btn-secondary" onclick="closeConfigDirBrowser()"><%= __('common.cancel') %></button>
-    </div>
-  </div>
-</div>
-
 <script src="/app.js"></script>
 <script>
-  var _configBrowserCurrentPath = '/'
-
-  function openConfigDirBrowser() {
-    var anchor = document.getElementById('config-path-browser-anchor')
-    var panel = document.getElementById('config-dir-browser-panel')
-    anchor.appendChild(panel)
-    panel.style.display = ''
-    var inputVal = document.getElementById('rootLibraryPath').value.trim()
-    configBrowseDir(inputVal || '/')
-  }
-
-  function closeConfigDirBrowser() {
-    document.getElementById('config-dir-browser-panel').style.display = 'none'
-  }
-
-  function configBrowseDir(dirPath) {
-    _configBrowserCurrentPath = dirPath
-    document.getElementById('config-dir-current-path').textContent = dirPath
-    document.getElementById('config-dir-list').innerHTML =
-      '<div class="text-dim" style="padding:.5rem .75rem;font-size:.8rem"><%= __('common.loading') %></div>'
-
-    fetch('/library-paths/browse?path=' + encodeURIComponent(dirPath))
-      .then(function(r) { return r.json() })
-      .then(function(data) {
-        _configBrowserCurrentPath = data.path
-        document.getElementById('config-dir-current-path').textContent = data.path
-
-        var upBtn = document.getElementById('config-dir-up-btn')
-        upBtn.disabled = !data.parent
-        upBtn.onclick = data.parent ? function() { configBrowseDir(data.parent) } : null
-
-        var list = document.getElementById('config-dir-list')
-        if (data.error) {
-          list.innerHTML = '<div style="padding:.5rem .75rem;color:var(--error);font-size:.82rem">' + data.error + '</div>'
-          return
-        }
-        if (data.dirs.length === 0) {
-          list.innerHTML = '<div class="text-dim" style="padding:.5rem .75rem;font-size:.82rem">No subdirectories</div>'
-          return
-        }
-        list.innerHTML = ''
-        data.dirs.forEach(function(d) {
-          var btn = document.createElement('button')
-          btn.type = 'button'
-          btn.style.cssText = 'display:flex;align-items:center;gap:.5rem;width:100%;padding:.4rem .75rem;background:none;border:none;border-bottom:1px solid var(--border);text-align:left;cursor:pointer;color:var(--text);font-size:.85rem'
-          btn.innerHTML = '<i class="fa-solid fa-folder" style="color:var(--accent);font-size:.9rem;flex-shrink:0"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + d.name + '</span>'
-          btn.addEventListener('click', function() { configBrowseDir(d.fullPath) })
-          list.appendChild(btn)
-        })
-        var last = list.lastElementChild
-        if (last) last.style.borderBottom = 'none'
-      })
-      .catch(function() {
-        document.getElementById('config-dir-list').innerHTML =
-          '<div style="padding:.5rem .75rem;color:var(--error);font-size:.82rem">Error loading directory</div>'
-      })
-  }
-
-  document.getElementById('config-dir-select-btn').addEventListener('click', function() {
-    document.getElementById('rootLibraryPath').value = _configBrowserCurrentPath
-    closeConfigDirBrowser()
-  })
-
-  document.getElementById('config-dir-up-btn').disabled = true
-
   function syncColor(hexInput, fieldName) {
     var val = hexInput.value.trim()
     var colorInput = hexInput.previousElementSibling

@@ -24,9 +24,6 @@
   <div class="app-shell">
     <%- include('partials/sidebar') %>
     <main class="main-content">
-      <% if (locals.toast && locals.msg) { %>
-        <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
-      <% } %>
       <%- body %>
     </main>
   </div>

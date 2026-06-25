@@ -292,12 +292,21 @@ export function dashboardRouter(db: Database.Database) {
     res.redirect("/dashboard")
   })
 
-  // Delete every subtitle in a series (all episodes) across both the translation
-  // and whisper queues. Keyed by media item so one action clears the series no
-  // matter which queue its episodes are rendered in. Permission is enforced in
-  // the repo (canDeleteTranslation), matching the per-subtitle /delete/:id route.
+  // Delete the series (its episodes) from the queue the button was clicked in.
+  // `queue` (whisper|translation|all) scopes the delete so removing a series
+  // from the whisper queue doesn't also wipe its translation-queue episodes
+  // (and vice versa). Permission is enforced in the repo (canDeleteTranslation),
+  // matching the per-subtitle /delete/:id route.
   router.post("/delete-series/:mediaItemId", requireAuth, (req, res) => {
-    const result = softDeleteSubtitlesByMediaItem(db, res.locals.user!, parseInt(String(req.params.mediaItemId)))
+    const queue = String(req.query.queue ?? "all")
+    const queueScope: "whisper" | "translation" | "all" =
+      queue === "whisper" || queue === "translation" ? queue : "all"
+    const result = softDeleteSubtitlesByMediaItem(
+      db,
+      res.locals.user!,
+      parseInt(String(req.params.mediaItemId)),
+      queueScope,
+    )
     if (!result.success) {
       return res.redirect("/dashboard?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed to delete series"))
     }

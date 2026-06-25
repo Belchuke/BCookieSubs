@@ -20,7 +20,7 @@
 <div class="app-shell">
   <%- include('partials/sidebar') %>
   <main class="main-content">
-    <% if (locals.toast && locals.msg) { %>
+    <% if (locals.toast === 'error' && locals.msg) { %>
       <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
     <% } %>
 
@@ -125,7 +125,6 @@
       <input type="hidden" id="up2-genres" name="genres" value="">
       <input type="hidden" id="up2-posterUrl" name="posterUrl" value="">
 
-
       <div id="up2-tmdb-selector" class="field" style="display:none">
         <label for="up2-tmdb-select"><%= __('dashboard.tmdbMatch') %></label>
         <select id="up2-tmdb-select"></select>
@@ -177,7 +176,6 @@
             <input type="number" id="up2-chunkSize" name="chunkSetting" min="1" max="200" placeholder="<%= config.defaultChunkSize %>">
           </div>
         </div>
-
 
         <div id="up2-poster-wrap" class="dsh-poster-wrap" style="display:none">
           <img id="up2-poster" src="" alt="Poster" class="dsh-poster">

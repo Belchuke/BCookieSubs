@@ -20,7 +20,7 @@
 <div class="app-shell">
   <%- include('partials/sidebar') %>
   <main class="main-content">
-    <% if (locals.toast && locals.msg) { %>
+    <% if (locals.toast === 'error' && locals.msg) { %>
       <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
     <% } %>
 
@@ -445,8 +445,14 @@
       var roleId = btn.dataset.roleId;
       var panel = document.getElementById('role-perms-' + roleId);
       var icon = btn.querySelector('i');
-      if (panel.style.display === 'none') {
-        panel.style.display = '';
+      // The panel is hidden via the .usr-perms-panel CSS rule (display:none),
+      // not an inline style, so reading panel.style.display alone is unreliable
+      // (it is '' while the panel is visually hidden). Check the computed style
+      // and toggle explicitly between 'block' and 'none'.
+      var hidden = panel.style.display === 'none' ||
+        (panel.style.display === '' && getComputedStyle(panel).display === 'none');
+      if (hidden) {
+        panel.style.display = 'block';
         icon.classList.replace('fa-chevron-down', 'fa-chevron-up');
       } else {
         panel.style.display = 'none';

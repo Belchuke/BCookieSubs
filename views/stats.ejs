@@ -20,7 +20,7 @@
 <div class="app-shell">
   <%- include('partials/sidebar') %>
   <main class="main-content">
-    <% if (locals.toast && locals.msg) { %>
+    <% if (locals.toast === 'error' && locals.msg) { %>
       <div class="toast toast-<%= toast %>" id="page-toast"><%= msg %></div>
     <% } %>
 
@@ -180,12 +180,10 @@
           <div class="stat-grid" id="sub-meta-grid"></div>
         </div>
 
-
         <div class="card sts-mt1">
           <div class="card-header"><h2><%= __('stats.candidatesByModel') %></h2></div>
           <div class="chart-wrap"><canvas id="sub-chart-model"></canvas></div>
         </div>
-
 
         <div class="card sts-mt1">
           <div class="card-header"><h2><%= __('stats.chunks') %></h2></div>
@@ -437,7 +435,6 @@
   });
   applyPromptFilters();
 
-
   var subChartModel = null;
 
   document.getElementById('sub-select').addEventListener('change', function() {
@@ -485,14 +482,12 @@
           statCard('Status',      d.job.status,        d.job.status==='completed'?'stat-success':'stat-processing'),
         ].join('');
 
-
         var bm = {};
         (d.chunks||[]).forEach(function(c) {
           if (c.selectedModelName) bm[c.selectedModelName] = (bm[c.selectedModelName]||0)+1;
         });
         if (subChartModel) subChartModel.destroy();
         subChartModel = makeBar('sub-chart-model', Object.keys(bm), Object.values(bm));
-
 
         window._statReasonData = [];
         var tbody = document.querySelector('#sub-chunk-table tbody');
@@ -715,7 +710,6 @@
         }
       }
     }
-
 
     if (state.judgeSel) {
       var judgeEl = document.getElementById('judge-model-select');
