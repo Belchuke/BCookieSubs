@@ -161,7 +161,7 @@ export const getSubtitleItemMediaItemFromPrompt = async (
     createLog(
       db,
       "error",
-      "nameFormatter",
+      "nameFormatter", "nameFormatter",
       null,
       `Name formatter failed for "${fileName}": ${String(error).slice(0, 200)}`,
       { fileName, error: String(error) },
@@ -217,7 +217,7 @@ export const selectBestTheMovieDbMatch = async (
       createLog(
         db,
         "warning",
-        "libraryScanner",
+        "tmdbMatching", "libraryScanner",
         null,
         `theMovieDBMatchingPrompt returned no JSON object for "${fileName}"`,
         {
@@ -235,7 +235,7 @@ export const selectBestTheMovieDbMatch = async (
       createLog(
         db,
         "warning",
-        "libraryScanner",
+        "tmdbMatching", "libraryScanner",
         null,
         `theMovieDBMatchingPrompt returned malformed winnerId for "${fileName}"`,
         {
@@ -251,7 +251,7 @@ export const selectBestTheMovieDbMatch = async (
       createLog(
         db,
         "info",
-        "libraryScanner",
+        "tmdbMatching", "libraryScanner",
         null,
         `theMovieDBMatchingPrompt indicated no good match for "${fileName}"`,
         {
@@ -267,7 +267,7 @@ export const selectBestTheMovieDbMatch = async (
       createLog(
         db,
         "warning",
-        "libraryScanner",
+        "tmdbMatching", "libraryScanner",
         null,
         `theMovieDBMatchingPrompt winnerId ${parsed.winnerId} not in candidate list for "${fileName}"`,
         {
@@ -283,7 +283,7 @@ export const selectBestTheMovieDbMatch = async (
     createLog(
       db,
       "info",
-      "libraryScanner",
+      "tmdbMatching", "libraryScanner",
       null,
       `theMovieDBMatchingPrompt executed for "${fileName}" with ${candidates.length} candidates — AI soft-picked ${winner.id} (${winner.name})`,
       {
@@ -299,7 +299,7 @@ export const selectBestTheMovieDbMatch = async (
     createLog(
       db,
       "warning",
-      "libraryScanner",
+      "tmdbMatching", "libraryScanner",
       null,
       `theMovieDBMatchingPrompt failed for "${fileName}": ${String(error).slice(0, 200)}`,
       { fileName, error: String(error) },

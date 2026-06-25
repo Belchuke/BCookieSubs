@@ -53,13 +53,25 @@ function makeExtractTempPath(stem: string, tag: string, ext = ".srt"): string {
   return path.join(EXTRACT_TEMP_DIR, `${safeStem}.${tag}.${process.pid}-${_extractCounter}${safeExt}`)
 }
 
+// TMDB ids that must never be auto-assigned to a scanned movie. These are
+// junk/placeholder TMDB entries (e.g. id 1054041 "Subs") that the matcher
+// gravitates toward when it can't find the real title, attaching a garbage
+// media item to otherwise obvious filenames. Anything that would resolve to
+// one of these is left Unmatched (no media item) instead, so the user can fix
+// the file rather than silently getting a wrong match. Movies only — series
+// ids are left alone.
+const BLOCKED_TMDB_IDS_FOR_MOVIES: number[] = [1054041]
+function isBlockedTmdbId(tmdbId: number | null | undefined, libraryType: "movie" | "series"): boolean {
+  return libraryType === "movie" && tmdbId != null && BLOCKED_TMDB_IDS_FOR_MOVIES.includes(tmdbId)
+}
+
 function safeDeleteTempExtract(filePath: string, db?: Database.Database, itemId: number | null = null): void {
   if (!filePath.startsWith(EXTRACT_TEMP_DIR)) return
   try {
     fs.unlinkSync(filePath)
   } catch (e: any) {
     if (e?.code !== "ENOENT" && db) {
-      createLog(db, "warning", "libraryScanner", itemId, "Failed to delete temporary extracted subtitle file", {
+      createLog(db, "warning", "libraryScanner", "libraryScanner", itemId, "Failed to delete temporary extracted subtitle file", {
         path: filePath,
         error: String(e),
       })
@@ -818,7 +830,7 @@ async function matchMediaForFile(
         createLog(
           db,
           "info",
-          "libraryScanner",
+          "nfoMatch", "libraryScanner",
           null,
           `NFO match for "${path.basename(fileName)}" → ${nfoMeta.title} (poster+genres from NFO; skipped TheMovieDatabase)`,
           {
@@ -841,7 +853,7 @@ async function matchMediaForFile(
       createLog(
         db,
         "warning",
-        "libraryScanner",
+        "nfoMatch", "libraryScanner",
         null,
         `NFO match failed for "${path.basename(fileName)}": ${String(e).slice(0, 200)}`,
         {
@@ -863,6 +875,17 @@ async function matchMediaForFile(
 
   for (const { tmdbId, source } of idSources) {
     try {
+      if (isBlockedTmdbId(tmdbId, libraryType)) {
+        createLog(
+          db,
+          "info",
+          "tmdbBlocked", "libraryScanner",
+          null,
+          `Blocked TMDB junk id ${tmdbId} (${source}) for "${path.basename(fileName)}"; skipping and leaving Unmatched`,
+          { fileName: path.basename(fileName), tmdbId, tmdbIdSource: source },
+        )
+        continue
+      }
       const details = await fetchTheMovieDbDetailsById(db, tmdbId, libraryType)
       if (details) {
         const tmdbYear = details.releaseDate ? parseInt(details.releaseDate.split("-")[0]) : null
@@ -882,7 +905,7 @@ async function matchMediaForFile(
           createLog(
             db,
             "info",
-            "libraryScanner",
+            "tmdbMatch", "libraryScanner",
             null,
             `${source} TMDB match for "${path.basename(fileName)}" → ${details.name} (id ${details.id})`,
             {
@@ -906,7 +929,7 @@ async function matchMediaForFile(
       createLog(
         db,
         "warning",
-        "libraryScanner",
+        "tmdbMatch", "libraryScanner",
         null,
         `${source} TMDB fetch failed for "${path.basename(fileName)}": ${String(e).slice(0, 200)}`,
         {
@@ -971,7 +994,11 @@ async function matchMediaForFile(
         attemptEpisode = detected.episode
         attemptYear = detected.year
 
-        const theMovieDbResults = detected.theMovieDbRequestResult ?? []
+        const rawResults = detected.theMovieDbRequestResult ?? []
+        // Drop blocked junk ids (e.g. TMDB 1054041 "Subs") so they can never
+        // become a single match, an AI pick, or a manual-selection candidate.
+        const theMovieDbResults = rawResults.filter((r) => !isBlockedTmdbId(r.id, libraryType))
+        const hadOnlyBlockedResults = rawResults.length > 0 && theMovieDbResults.length === 0
 
         if (theMovieDbResults.length > 0) {
           let filtered = attemptYear
@@ -1043,7 +1070,7 @@ async function matchMediaForFile(
             createLog(
               db,
               "info",
-              "libraryScanner",
+              "tmdbMultiple", "libraryScanner",
               null,
               `Multiple TMDb candidates for "${path.basename(fileName)}" from "${detectionName}"; falling back to manual selection`,
               {
@@ -1080,6 +1107,18 @@ async function matchMediaForFile(
               candidateMediaItemIds: attemptCandidates,
             }
           }
+        } else if (hadOnlyBlockedResults) {
+          // TMDB returned only junk ids (e.g. 1054041 "Subs"). Don't fall back
+          // to a filename-only media item — leave the file Unmatched so the
+          // user can fix it, rather than silently attaching a garbage match.
+          createLog(
+            db,
+            "info",
+            "tmdbBlocked", "libraryScanner",
+            null,
+            `Blocked TMDB junk match for "${path.basename(fileName)}"; leaving Unmatched`,
+            { fileName: path.basename(fileName), detectionName, blockedIds: rawResults.map((r) => r.id) },
+          )
         } else if (detected.name) {
           const existing = getMediaItemByKeys(db, detected.name, libraryType, attemptYear, null)
           if (existing) {
@@ -1117,7 +1156,7 @@ async function matchMediaForFile(
         }
       }
     } catch (e) {
-      createLog(db, "warning", "libraryScanner", null, `Name detection failed for file: ${path.basename(fileName)}`, {
+      createLog(db, "warning", "nameDetection", "libraryScanner", null, `Name detection failed for file: ${path.basename(fileName)}`, {
         fileName,
         libraryType,
         detectionName,
@@ -1195,7 +1234,7 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
     createLog(
       db,
       "warning",
-      "libraryScanner",
+      "scanSkipped", "libraryScanner",
       libraryPath.id,
       `Skipping scan of "${libraryPath.name}": no admin user available to attribute actions to`,
       {
@@ -1210,7 +1249,7 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
     createLog(
       db,
       "warning",
-      "libraryScanner",
+      "scanSkipped", "libraryScanner",
       libraryPath.id,
       `Library path "${libraryPath.name}" does not exist on disk: ${libraryPath.path}`,
       {
@@ -1233,7 +1272,7 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
   for (const inv of existingItems) {
     if (fs.existsSync(inv.path)) continue
     deleteLibraryPathItem(db, inv.id)
-    createLog(db, "info", "libraryScanner", inv.id, `Removed library item no longer on disk: ${inv.path}`, {
+    createLog(db, "info", "libraryScanner", "libraryScanner", inv.id, `Removed library item no longer on disk: ${inv.path}`, {
       libraryPathName: libraryPath.name,
       path: inv.path,
     })
@@ -1384,7 +1423,7 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
         createLog(
           db,
           "info",
-          "libraryScanner",
+          "libraryScanner", "libraryScanner",
           staleCompanion.id,
           `Removed standalone subtitle item now grouped under its video: ${srtFile}`,
           { libraryPathName: libraryPath.name, path: srtFile },
@@ -1409,7 +1448,7 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
         createLog(
           db,
           "info",
-          "libraryScanner",
+          "libraryScanner", "libraryScanner",
           staleExport.id,
           `Removed BCookieSubs-exported subtitle item (not a translation source): ${srtFile}`,
           { libraryPathName: libraryPath.name, path: srtFile },
@@ -1533,7 +1572,7 @@ export async function autoTranslateItem(
   try {
     srtContent = fs.readFileSync(srtFilePath, "utf-8")
   } catch (e) {
-    createLog(db, "error", "libraryScanner", libraryPathItemId, "Failed to read SRT file for auto-translate", {
+    createLog(db, "error", "libraryScanner", "libraryScanner", libraryPathItemId, "Failed to read SRT file for auto-translate", {
       path: srtFilePath,
       isTemp,
       error: String(e),
@@ -1550,7 +1589,7 @@ export async function autoTranslateItem(
     createLog(
       db,
       "warning",
-      "libraryScanner",
+      "libraryScanner", "libraryScanner",
       libraryPathItemId,
       "No default target languages configured — cannot auto-translate library item",
       {},
@@ -1585,7 +1624,7 @@ export async function autoTranslateItem(
 
   if (result.success) {
     updateLibraryPathItemStatus(db, libraryPathItemId, "queued")
-    createLog(db, "info", "libraryScanner", libraryPathItemId, `Queued library item for translation: ${srtFileName}`, {
+    createLog(db, "info", "libraryScanner", "libraryScanner", libraryPathItemId, `Queued library item for translation: ${srtFileName}`, {
       srtFileName,
       targetLangIds,
       fromEmbeddedExtract: isTemp,
@@ -1595,7 +1634,7 @@ export async function autoTranslateItem(
     createLog(
       db,
       "warning",
-      "libraryScanner",
+      "libraryScanner", "libraryScanner",
       libraryPathItemId,
       `Failed to create subtitle task for library item: ${result.msg ?? "unknown reason"}`,
       {
@@ -1676,7 +1715,7 @@ export async function exportSubtitleToLibraryFolder(
         createLog(
           db,
           "info",
-          "libraryScanner",
+          "libraryScanner", "libraryScanner",
           item.id,
           `Exported original subtitle to ${origName}`,
           { exportPath: origPath, exportName: origName, subtitleId: subtitle.id },
@@ -1685,7 +1724,7 @@ export async function exportSubtitleToLibraryFolder(
         createLog(
           db,
           "error",
-          "libraryScanner",
+          "libraryScanner", "libraryScanner",
           item.id,
           `Failed to export original subtitle "${origName}": ${String(e).slice(0, 200)}`,
           { exportPath: origPath, exportName: origName, subtitleId: subtitle.id, error: String(e) },
@@ -1722,7 +1761,7 @@ export async function exportSubtitleToLibraryFolder(
         createLog(
           db,
           "info",
-          "libraryScanner",
+          "libraryScanner", "libraryScanner",
           item.id,
           `Exported translated subtitle to ${exportName} (${lang.name})`,
           {
@@ -1736,7 +1775,7 @@ export async function exportSubtitleToLibraryFolder(
         createLog(
           db,
           "error",
-          "libraryScanner",
+          "libraryScanner", "libraryScanner",
           item.id,
           `Failed to export translated subtitle "${exportName}" (${lang.name}): ${String(e).slice(0, 200)}`,
           {

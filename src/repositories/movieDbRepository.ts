@@ -210,7 +210,7 @@ export const setOrUpdateSecret = (
   if (deleteKey) {
     if (secretExist) {
       db.prepare(`DELETE FROM secret WHERE secretName = ?`).run(secretName)
-      createLog(db, "info", "config", null, `Deleted ${secretName}`, {})
+      createLog(db, "info", "configUpdate", "config", null, `Deleted ${secretName}`, {})
       return { success: true, msg: `${secretName} deleted successfully` }
     } else {
       return { success: false, msg: `${secretName} does not exist` }
@@ -223,13 +223,13 @@ export const setOrUpdateSecret = (
     db.prepare(
       `UPDATE secret SET encryptedValue = ?, iv = ?, authTag = ?, setByEnv = 0, updatedAt = datetime('now') WHERE secretName = ?`,
     ).run(encrypted.encryptedValue, encrypted.iv, encrypted.authTag, secretName)
-    createLog(db, "info", "config", null, `Updated ${secretName}`, {})
+    createLog(db, "info", "configUpdate", "config", null, `Updated ${secretName}`, {})
     return { success: true, msg: `${secretName} updated successfully` }
   }
   db.prepare(
     `INSERT INTO secret (secretName, encryptedValue, iv, authTag, algorithm, setByEnv) VALUES (?, ?, ?, ?, 'aes-256-gcm', 0)`,
   ).run(secretName, encrypted.encryptedValue, encrypted.iv, encrypted.authTag)
-  createLog(db, "info", "config", null, `Set ${secretName}`, {})
+  createLog(db, "info", "configUpdate", "config", null, `Set ${secretName}`, {})
   return { success: true, msg: `${secretName} set successfully` }
 }
 

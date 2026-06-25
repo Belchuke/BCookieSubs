@@ -134,17 +134,10 @@
       se = '<span class="lpx-se-label">S' + pad2(item.season) + "E" + pad2(item.episode) + "</span>"
     }
 
-    // Per-item bulk-select checkbox for unmatched items. The single "Unmatched"
-    // group lumps every unmatched item together, so a per-item checkbox lets the
-    // user pick a subset (e.g. one series' episodes) and bulk-match them.
-    var selectable = !item.mediaItemId && !item.blacklist && PERMS.canChangeMatchForLibraryPaths
-    var itemCb = selectable
-      ? '<input type="checkbox" class="lp-item-cb" data-item-id="' +
-        item.id +
-        '" data-lp-type="' +
-        escAttr(lp.type) +
-        '" title="Select for bulk match">'
-      : ""
+    // Unmatched items are read-only (no in-app match/blacklist), so they don't
+    // get a per-item bulk-select checkbox — it only existed to drive bulk-match.
+    var isUnmatchedItem = !item.mediaItemId
+    var itemCb = ""
 
     var badges =
       '<span class="badge ' +
@@ -176,7 +169,10 @@
           "</button></form>"
       }
     } else {
-      if (PERMS.canChangeMatchForLibraryPaths) {
+      // Unmatched items get no "Change match" / "Blacklist" — they're read-only
+      // (show the file path so the user can fix it on disk and rescan). Matched
+      // items keep the full action set.
+      if (!isUnmatchedItem && PERMS.canChangeMatchForLibraryPaths) {
         actions +=
           '<button type="button" class="btn btn-sm btn-secondary lp-item-match-btn" data-item-id="' +
           item.id +
@@ -218,7 +214,7 @@
           escHtml(t("translate")) +
           "</button></form>"
       }
-      if (PERMS.canBlackListALibraryPathItem) {
+      if (!isUnmatchedItem && PERMS.canBlackListALibraryPathItem) {
         actions +=
           '<button type="button" class="btn btn-sm btn-secondary lp-blacklist-btn" data-item-id="' +
           item.id +
@@ -230,6 +226,17 @@
       }
     }
 
+    // Unmatched items show their full filesystem path under the filename so the
+    // user can locate the file and fix/rename it on disk (there's no in-app
+    // match action for these).
+    var pathLine = isUnmatchedItem
+      ? '<div class="text-dim lpx-fs-72 lpx-item-path" title="' +
+        escAttr(item.path) +
+        '">' +
+        escHtml(item.path) +
+        "</div>"
+      : ""
+
     return (
       '<div data-item-row="' +
       item.id +
@@ -240,7 +247,9 @@
       escAttr(item.path) +
       '">' +
       escHtml(fileName) +
-      '</span></div><div class="lpx-badge-row">' +
+      '</span></div>' +
+      pathLine +
+      '<div class="lpx-badge-row">' +
       badges +
       '</div></div><div class="lpx-item-actions">' +
       actions +
@@ -351,13 +360,18 @@
     }
 
     var actions = ""
-    if (PERMS.canChangeMatchForLibraryPaths) {
+    // Unmatched groups are read-only: they get no "Select match" and no
+    // "Blacklist" — the scanner already failed to identify these (including
+    // blocked junk matches like TMDB 1054041), so the intent is for the user to
+    // fix the file on disk and rescan, not to re-match/blacklist in-app. The
+    // file's full path is shown under each filename to help locate it.
+    var isUnmatchedGroup = group.mediaItemId == null
+    if (!isUnmatchedGroup && PERMS.canChangeMatchForLibraryPaths) {
       // Manual matching is done from a single modal (no inline list under the
       // group). The button carries the group's full context — item ids, type,
       // candidates and display name — so the modal can match the whole group at
-      // once. It shows for unmatched groups too ("Select match"), since they no
-      // longer have an always-visible inline picker.
-      var matchLabel = group.mediaItemId ? t("changeMatch") : t("selectMatch")
+      // once.
+      var matchLabel = t("changeMatch")
       actions +=
         '<button type="button" class="btn btn-sm btn-secondary lp-group-match-btn" data-group-key="' +
         escAttr(groupKey) +
@@ -382,7 +396,7 @@
         group.mediaItemId +
         '"></label>'
     }
-    if (PERMS.canBlackListALibraryPathItem && blacklistableIds.length > 0) {
+    if (!isUnmatchedGroup && PERMS.canBlackListALibraryPathItem && blacklistableIds.length > 0) {
       actions +=
         '<button type="button" class="btn btn-sm btn-danger lp-blacklist-group-btn" data-item-ids="' +
         escAttr(JSON.stringify(blacklistableIds)) +
@@ -395,15 +409,19 @@
 
     var header =
       '<div class="lpx-group-header">' +
-      '<input type="checkbox" class="lp-group-cb" data-group-key="' +
-      escAttr(groupKey) +
-      '" data-item-ids="' +
-      escAttr(JSON.stringify(allItemIds)) +
-      '" data-first-item-id="' +
-      (firstItemId != null ? firstItemId : "") +
-      '" data-lp-type="' +
-      escAttr(lp.type) +
-      '" title="Select for bulk action">' +
+      // Unmatched groups have no bulk action (no match/blacklist), so no group
+      // checkbox either — checking it would only feed the bulk-change-match bar.
+      (!isUnmatchedGroup
+        ? '<input type="checkbox" class="lp-group-cb" data-group-key="' +
+          escAttr(groupKey) +
+          '" data-item-ids="' +
+          escAttr(JSON.stringify(allItemIds)) +
+          '" data-first-item-id="' +
+          (firstItemId != null ? firstItemId : "") +
+          '" data-lp-type="' +
+          escAttr(lp.type) +
+          '" title="Select for bulk action">'
+        : "") +
       posterHtml +
       '<div class="lpx-group-info">' +
       titleBlock +

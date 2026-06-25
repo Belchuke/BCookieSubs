@@ -243,7 +243,7 @@ export function offsetRouter(db: Database.Database) {
 
       fs.writeFileSync(targetPath, srt, "utf-8")
       const user = res.locals.user!
-      createLog(db, "info", "offset", user.id, `Wrote edited subtitle to ${targetPath}`, { targetPath })
+      createLog(db, "info", "offset", "offset", user.id, `Wrote edited subtitle to ${targetPath}`, { targetPath })
       return res.json({ success: true, msg: "Saved", fileName: path.basename(targetPath), path: targetPath })
     } catch (e) {
       return res.json({ success: false, msg: (e as Error).message || "Failed to save" })
@@ -270,7 +270,7 @@ export function offsetRouter(db: Database.Database) {
       if (body.addCredit) srt = addCreditToSrt(srt)
 
       const user = res.locals.user!
-      createLog(db, "info", "offset", user.id, `Applied offset ${offsetMs}ms to ${result.length} entries`, {
+      createLog(db, "info", "offset", "offset", user.id, `Applied offset ${offsetMs}ms to ${result.length} entries`, {
         offsetMs,
         count: result.length,
         scope,

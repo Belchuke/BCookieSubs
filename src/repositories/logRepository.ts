@@ -5,13 +5,15 @@ import { DefaultResponse } from "../types/modelTypes"
 export const createLog = (
   db: Database.Database,
   level: DBLog["level"],
+  type: string | null,
   entityType: string | null = null,
   entityId: number | null = null,
   message: string,
   metadata: any = null,
 ): void => {
-  db.prepare(`INSERT INTO log (level, entityType, entityId, message, metadata) VALUES (?, ?, ?, ?, ?)`).run(
+  db.prepare(`INSERT INTO log (level, type, entityType, entityId, message, metadata) VALUES (?, ?, ?, ?, ?, ?)`).run(
     level,
+    type,
     entityType,
     entityId,
     message,

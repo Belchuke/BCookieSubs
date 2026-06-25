@@ -51,7 +51,7 @@ export async function transcribeSubtitleAndCreateJobs(
   if (!config.whisperEnabled) {
     setWhisperTranscriptionStatus(db, subtitle.id, "transcription_failed")
     updateSubtitleStatus(db, subtitle.id, "failed")
-    createLog(db, "warning", "subtitle", subtitle.id, "Whisper is disabled in settings; skipping transcription", {})
+    createLog(db, "warning", "whisperTranscription", "subtitle", subtitle.id, "Whisper is disabled in settings; skipping transcription", {})
     return
   }
 
@@ -59,7 +59,7 @@ export async function transcribeSubtitleAndCreateJobs(
   if (!mediaPath || !fs.existsSync(mediaPath)) {
     setWhisperTranscriptionStatus(db, subtitle.id, "transcription_failed")
     updateSubtitleStatus(db, subtitle.id, "failed")
-    createLog(db, "error", "subtitle", subtitle.id, "Whisper transcription failed: source media file not found", {
+    createLog(db, "error", "whisperTranscription", "subtitle", subtitle.id, "Whisper transcription failed: source media file not found", {
       mediaPath,
     })
     return
@@ -111,7 +111,7 @@ export async function transcribeSubtitleAndCreateJobs(
       createLog(
         db,
         "info",
-        "subtitle",
+        "whisperTranscription", "subtitle",
         subtitle.id,
         `Whisper transcription paused at ${result.checkpoint.ms}ms; will resume from there`,
         { checkpointMs: result.checkpoint.ms, segments: result.checkpoint.entries.length },
@@ -157,7 +157,7 @@ export async function transcribeSubtitleAndCreateJobs(
       createLog(
         db,
         "error",
-        "subtitle",
+        "whisperTranscription", "subtitle",
         subtitle.id,
         "Whisper transcription failed: no valid user to attribute jobs to",
         {},
@@ -177,7 +177,7 @@ export async function transcribeSubtitleAndCreateJobs(
       createLog(
         db,
         "error",
-        "subtitle",
+        "subtitleCompleted", "subtitle",
         subtitle.id,
         "Whisper transcription completed but no target languages configured; cannot create translation jobs",
         {},
@@ -202,7 +202,7 @@ export async function transcribeSubtitleAndCreateJobs(
       createLog(
         db,
         "error",
-        "subtitle",
+        "whisperTranscription", "subtitle",
         subtitle.id,
         `Failed to create translation jobs from Whisper SRT: ${jobResult.msg}`,
         {},
@@ -212,14 +212,14 @@ export async function transcribeSubtitleAndCreateJobs(
 
     setWhisperTranscriptionStatus(db, subtitle.id, null)
     updateSubtitleStatus(db, subtitle.id, "queued")
-    createLog(db, "info", "subtitle", subtitle.id, "Whisper-generated SRT imported and translation jobs created", {
+    createLog(db, "info", "subtitleCreate", "subtitle", subtitle.id, "Whisper-generated SRT imported and translation jobs created", {
       targetLangCount: targetLangIds.length,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     setWhisperTranscriptionStatus(db, subtitle.id, "transcription_failed")
     updateSubtitleStatus(db, subtitle.id, "failed")
-    createLog(db, "error", "subtitle", subtitle.id, `Whisper transcription failed: ${msg.slice(0, 200)}`, {
+    createLog(db, "error", "whisperTranscription", "subtitle", subtitle.id, `Whisper transcription failed: ${msg.slice(0, 200)}`, {
       error: msg.slice(0, 200),
     })
     console.error(`[worker] Whisper transcription failed for subtitle ${subtitle.id}:`, msg)

@@ -28,48 +28,296 @@
       <div class="alert alert-error"><%= error %></div>
     <% } %>
 
+    <div class="logs-toolbar">
+      <div class="logs-filters">
+        <div class="field field-inline">
+          <label for="log-level-filter"><%= __('logs.level') %></label>
+          <select id="log-level-filter" onchange="logsApplyFilter()">
+            <option value=""><%= __('logs.allLevels') %></option>
+            <% ["debug","info","warning","error"].forEach(function(lv) { %>
+              <option value="<%= lv %>" <%= level === lv ? 'selected' : '' %>><%= lv %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="field field-inline">
+          <label for="log-type-filter"><%= __('logs.type') %></label>
+          <select id="log-type-filter" onchange="logsApplyFilter()">
+            <option value=""><%= __('logs.allTypes') %></option>
+            <% (types || []).forEach(function(tp) { %>
+              <option value="<%= tp %>" <%= type === tp ? 'selected' : '' %>><%= tp %></option>
+            <% }) %>
+          </select>
+        </div>
+      </div>
+      <button type="button" class="btn btn-secondary" onclick="openModal('log-export-modal')">
+        <i class="fa-solid fa-download"></i> <%= __('logs.export') %>
+      </button>
+    </div>
+
+    <div id="log-pagination-wrap">
     <% if (pagination && pagination.total > 0) { %>
-    <div class="pagination-container lg-pagination">
+    <div class="pagination-container lg-pagination" id="log-pagination">
       <span class="pagination-info">
-       <%= __('logs.showing') %> <%= pagination.page * pagination.limit + 1 %>-<%= Math.min((pagination.page + 1) * pagination.limit, pagination.total) %> <%= __('logs.of') %> <%= pagination.total %> <%= __('logs.logs') %>
+       <%= __('logs.showing') %> <span id="log-range-from"><%= pagination.page * pagination.limit + 1 %></span>-<span id="log-range-to"><%= Math.min((pagination.page + 1) * pagination.limit, pagination.total) %></span> <%= __('logs.of') %> <span id="log-total"><%= pagination.total %></span> <%= __('logs.logs') %>
       </span>
-      <div class="pagination-controls">
-        <a href="/logs?page=<%= pagination.page - 1 %>&limit=<%= pagination.limit %>" class="btn btn-sm<%= pagination.hasPrev ? '' : ' btn-disabled' %>"<%= pagination.hasPrev ? '' : ' style="pointer-events:none;"' %>><%= __('logs.prev') %></a>
-        <span class="page-indicator"><%= __('logs.page') %> <%= pagination.page + 1 %> / <%= pagination.totalPages %></span>
-        <a href="/logs?page=<%= pagination.page + 1 %>&limit=<%= pagination.limit %>" class="btn btn-sm<%= pagination.hasNext ? '' : ' btn-disabled' %>"<%= pagination.hasNext ? '' : ' style="pointer-events:none;"' %>><%= __('logs.nextPage') %></a>
+      <div class="pagination-controls" id="log-pagination-controls">
+        <a href="/logs?page=<%= pagination.page - 1 %>&limit=<%= pagination.limit %><%= level ? '&level=' + level : '' %><%= type ? '&type=' + encodeURIComponent(type) : '' %>" class="btn btn-sm<%= pagination.hasPrev ? '' : ' btn-disabled' %>"<%= pagination.hasPrev ? '' : ' style="pointer-events:none;"' %>><%= __('logs.prev') %></a>
+        <span class="page-indicator"><%= __('logs.page') %> <span id="log-page-cur"><%= pagination.page + 1 %></span> / <span id="log-page-total"><%= pagination.totalPages %></span></span>
+        <a href="/logs?page=<%= pagination.page + 1 %>&limit=<%= pagination.limit %><%= level ? '&level=' + level : '' %><%= type ? '&type=' + encodeURIComponent(type) : '' %>" class="btn btn-sm<%= pagination.hasNext ? '' : ' btn-disabled' %>"<%= pagination.hasNext ? '' : ' style="pointer-events:none;"' %>><%= __('logs.nextPage') %></a>
       </div>
     </div>
+    <% } else { %>
+    <div class="pagination-container lg-pagination" id="log-pagination" style="display:none"></div>
     <% } %>
+    </div>
 
     <div class="card">
+      <div class="log-panel log-panel-full" id="log-panel">
       <% if (logs.length === 0) { %>
-        <p class="empty-state"><%= __('logs.noLogsFound') %></p>
+        <p class="empty-state" id="log-empty"><%= __('logs.noLogsFound') %></p>
       <% } else { %>
-        <div class="log-panel log-panel-full">
-          <% logs.forEach(function(l) { %>
-            <div class="log-entry log-<%= l.level %>">
-              <span class="log-time" data-utc="<%= l.createdAt %>"><%= l.createdAt %></span>
-              <span class="log-level"><%= l.level.toUpperCase() %></span>
-              <% if (l.entityType) { %>
-                <span class="log-entity text-dim"><%= l.entityType %><% if (l.entityId) { %>:<%= l.entityId %><% } %></span>
-              <% } %>
-              <span class="log-msg"><%= l.message %></span>
-            </div>
-          <% }) %>
-        </div>
+        <% logs.forEach(function(l) { %>
+          <div class="log-entry log-<%= l.level %>">
+            <span class="log-time" data-utc="<%= l.createdAt %>"><%= l.createdAt %></span>
+            <span class="log-level"><%= l.level.toUpperCase() %></span>
+            <span class="log-type text-dim"><%= l.type || '' %></span>
+            <% if (l.entityType) { %>
+              <span class="log-entity text-dim"><%= l.entityType %><% if (l.entityId) { %>:<%= l.entityId %><% } %></span>
+            <% } %>
+            <span class="log-msg"><%= l.message %></span>
+          </div>
+        <% }) %>
       <% } %>
+      </div>
     </div>
 
   </main>
 </div>
+
+<!-- Export modal -->
+<div class="modal-overlay" id="log-export-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2><%= __('logs.exportTitle') %></h2>
+      <button class="btn btn-icon" onclick="closeModal('log-export-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="text-dim logs-export-hint"><%= __('logs.exportHint') %></p>
+      <div class="field">
+        <label for="log-export-format"><%= __('logs.exportFormat') %></label>
+        <select id="log-export-format">
+          <option value="txt"><%= __('logs.formatTxt') %></option>
+          <option value="json"><%= __('logs.formatJson') %></option>
+          <option value="csv"><%= __('logs.formatCsv') %></option>
+        </select>
+      </div>
+      <div class="logs-export-dates">
+        <div class="field">
+          <label for="log-export-from"><%= __('logs.exportFrom') %></label>
+          <input type="date" id="log-export-from" placeholder="<%= __('logs.exportFromPlaceholder') %>">
+        </div>
+        <div class="field">
+          <label for="log-export-to"><%= __('logs.exportTo') %></label>
+          <input type="date" id="log-export-to" placeholder="<%= __('logs.exportToPlaceholder') %>">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="closeModal('log-export-modal')"><%= __('logs.exportCancel') %></button>
+      <button type="button" class="btn btn-primary" onclick="logsRunExport()"><%= __('logs.exportBtn') %></button>
+    </div>
+  </div>
+</div>
+
 <script src="/app.js"></script>
 <script>
-  document.querySelectorAll('[data-utc]').forEach(function (el) {
-    var utcStr = el.getAttribute('data-utc')
-    if (!utcStr) return
-    var d = new Date(utcStr.replace(' ', 'T') + 'Z')
-    if (!isNaN(d.getTime())) el.textContent = d.toLocaleString()
-  })
+  var logsI18n = {
+    showing: <%- JSON.stringify(__('logs.showing')) %>,
+    of: <%- JSON.stringify(__('logs.of')) %>,
+    logs: <%- JSON.stringify(__('logs.logs')) %>,
+    page: <%- JSON.stringify(__('logs.page')) %>,
+    prev: <%- JSON.stringify(__('logs.prev')) %>,
+    nextPage: <%- JSON.stringify(__('logs.nextPage')) %>,
+    noLogsFound: <%- JSON.stringify(__('logs.noLogsFound')) %>
+  }
+</script>
+<script>
+(function () {
+  var POLL_INTERVAL = 15000
+
+  // Current filter/pagination state — read from the DOM so polling always
+  // reflects whatever the user has selected (filters are never reset by poll).
+  function currentLevel() { return document.getElementById("log-level-filter").value || "" }
+  function currentType()   { return document.getElementById("log-type-filter").value || "" }
+  function currentPage() {
+    var el = document.getElementById("log-page-cur")
+    if (!el) return 0
+    var totalPages = parseInt(document.getElementById("log-page-total").textContent, 10) || 1
+    var cur = parseInt(el.textContent, 10) || 1
+    return Math.min(Math.max(cur - 1, 0), totalPages - 1)
+  }
+  function currentLimit() {
+    var m = /limit=(\d+)/.exec(document.location.search)
+    return m ? parseInt(m[1], 10) : 30
+  }
+
+  function escHtml(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;")
+  }
+
+  // Row markup — mirrors the server-side logsRowHtml() partial.
+  function rowHtml(l) {
+    var html = '<div class="log-entry log-' + l.level + '">'
+    html += '<span class="log-time" data-utc="' + escHtml(l.createdAt) + '">' + escHtml(l.createdAt) + '</span>'
+    html += '<span class="log-level">' + l.level.toUpperCase() + '</span>'
+    if (l.type) {
+      html += '<span class="log-type text-dim" title="' + escHtml(l.type) + '">' + escHtml(l.type) + '</span>'
+    } else {
+      html += '<span class="log-type text-dim"></span>'
+    }
+    if (l.entityType) {
+      html += '<span class="log-entity text-dim">' + escHtml(l.entityType)
+      if (l.entityId) html += ':' + escHtml(l.entityId)
+      html += '</span>'
+    }
+    html += '<span class="log-msg">' + escHtml(l.message) + '</span>'
+    html += '</div>'
+    return html
+  }
+
+  function paginationLink(page) {
+    var q = "?page=" + page + "&limit=" + currentLimit()
+    if (currentLevel()) q += "&level=" + encodeURIComponent(currentLevel())
+    if (currentType()) q += "&type=" + encodeURIComponent(currentType())
+    return "/logs" + q
+  }
+
+  function renderPagination(p) {
+    var wrap = document.getElementById("log-pagination-wrap")
+    if (!wrap) return
+    if (!p || p.total === 0) {
+      wrap.innerHTML = '<div class="pagination-container lg-pagination" id="log-pagination" style="display:none"></div>'
+      return
+    }
+    var from = p.page * p.limit + 1
+    var to = Math.min((p.page + 1) * p.limit, p.total)
+    var prevCls = p.hasPrev ? '' : ' btn-disabled'
+    var prevStyle = p.hasPrev ? '' : ' style="pointer-events:none;"'
+    var nextCls = p.hasNext ? '' : ' btn-disabled'
+    var nextStyle = p.hasNext ? '' : ' style="pointer-events:none;"'
+    wrap.innerHTML =
+      '<div class="pagination-container lg-pagination" id="log-pagination">' +
+        '<span class="pagination-info">' +
+          logsI18n.showing + ' <span id="log-range-from">' + from + '</span>-<span id="log-range-to">' + to + '</span> ' +
+          logsI18n.of + ' <span id="log-total">' + p.total + '</span> ' + logsI18n.logs +
+        '</span>' +
+        '<div class="pagination-controls" id="log-pagination-controls">' +
+          '<a href="' + paginationLink(p.page - 1) + '" class="btn btn-sm' + prevCls + '"' + prevStyle + '>' + logsI18n.prev + '</a>' +
+          '<span class="page-indicator">' + logsI18n.page + ' <span id="log-page-cur">' + (p.page + 1) + '</span> / <span id="log-page-total">' + p.totalPages + '</span></span>' +
+          '<a href="' + paginationLink(p.page + 1) + '" class="btn btn-sm' + nextCls + '"' + nextStyle + '>' + logsI18n.nextPage + '</a>' +
+        '</div>' +
+      '</div>'
+  }
+
+  function renderRows(logs) {
+    var panel = document.getElementById("log-panel")
+    if (!panel) return
+    // Preserve the panel's scroll position across the row swap.
+    var scrollTop = panel.scrollTop
+    if (!logs || logs.length === 0) {
+      panel.innerHTML = '<p class="empty-state" id="log-empty">' + logsI18n.noLogsFound + '</p>'
+      return
+    }
+    panel.innerHTML = logs.map(rowHtml).join("")
+    convertTimes()
+    panel.scrollTop = scrollTop
+  }
+
+  function updateTypeOptions(types) {
+    var sel = document.getElementById("log-type-filter")
+    if (!sel) return
+    var cur = sel.value
+    var known = {}
+    Array.prototype.forEach.call(sel.options, function (o) {
+      if (o.value) known[o.value] = true
+    })
+    var changed = false
+    ;(types || []).forEach(function (t) {
+      if (!known[t]) { changed = true; known[t] = true }
+    })
+    if (!changed) return
+    // Rebuild keeping "all" first, then sorted types, preserving selection.
+    var all = [sel.options[0]]
+    var rest = (types || []).slice().sort()
+    sel.innerHTML = ""
+    all.forEach(function (o) { sel.appendChild(o) })
+    rest.forEach(function (t) {
+      var o = document.createElement("option")
+      o.value = t; o.textContent = t
+      if (t === cur) o.selected = true
+      sel.appendChild(o)
+    })
+    sel.value = cur
+  }
+
+  function convertTimes() {
+    document.querySelectorAll('#log-panel [data-utc]').forEach(function (el) {
+      var utcStr = el.getAttribute("data-utc")
+      if (!utcStr) return
+      var d = new Date(utcStr.replace(" ", "T") + "Z")
+      if (!isNaN(d.getTime())) el.textContent = d.toLocaleString()
+    })
+  }
+
+  function pollUrl() {
+    var q = "?page=" + currentPage() + "&limit=" + currentLimit()
+    if (currentLevel()) q += "&level=" + encodeURIComponent(currentLevel())
+    if (currentType()) q += "&type=" + encodeURIComponent(currentType())
+    return "/logs/poll" + q
+  }
+
+  function poll() {
+    return fetch(pollUrl())
+      .then(function (r) { if (!r.ok) return null; return r.json() })
+      .then(function (data) {
+        if (!data || !data.success) return
+        renderRows(data.logs)
+        renderPagination(data.pagination)
+        updateTypeOptions(data.types)
+      })
+      .catch(function () {})
+  }
+
+  function scheduleNextPoll() {
+    setTimeout(function () { poll().finally(scheduleNextPoll) }, POLL_INTERVAL)
+  }
+
+  // Expose a couple of helpers for the inline handlers in the EJS above.
+  window.logsApplyFilter = function () {
+    var q = "?page=0&limit=" + currentLimit()
+    if (currentLevel()) q += "&level=" + encodeURIComponent(currentLevel())
+    if (currentType()) q += "&type=" + encodeURIComponent(currentType())
+    document.location.href = "/logs" + q
+  }
+
+  window.logsRunExport = function () {
+    var fmt = document.getElementById("log-export-format").value || "txt"
+    var from = document.getElementById("log-export-from").value
+    var to = document.getElementById("log-export-to").value
+    var q = "?format=" + encodeURIComponent(fmt)
+    if (currentLevel()) q += "&level=" + encodeURIComponent(currentLevel())
+    if (currentType()) q += "&type=" + encodeURIComponent(currentType())
+    if (from) q += "&from=" + encodeURIComponent(from)
+    if (to) q += "&to=" + encodeURIComponent(to)
+    document.location.href = "/logs/export" + q
+  }
+
+  // Initial time conversion for the server-rendered rows.
+  convertTimes()
+  scheduleNextPoll()
+})()
 </script>
 </body>
 </html>

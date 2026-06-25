@@ -22,7 +22,7 @@ export async function libraryScannerMain(db: Database.Database): Promise<void> {
     try {
       await runScannerOnce(db)
     } catch (e) {
-      createLog(db, "error", "libraryScanner", null, `Library scanner loop crashed: ${String(e).slice(0, 200)}`, {
+      createLog(db, "error", "scanFailed", "libraryScanner", null, `Library scanner loop crashed: ${String(e).slice(0, 200)}`, {
         error: String(e),
       })
       console.error("[library-scanner] Unexpected error:", e)
@@ -41,7 +41,7 @@ async function runScannerOnce(db: Database.Database): Promise<void> {
     createLog(
       db,
       "error",
-      "libraryScanner",
+      "scanFailed", "libraryScanner",
       lp.id,
       `Library path "${lp.name}" scan stuck for more than ${STUCK_SCAN_THRESHOLD_MINUTES} minutes — marked as error`,
       {
@@ -69,7 +69,7 @@ async function runScannerOnce(db: Database.Database): Promise<void> {
       createLog(
         db,
         "error",
-        "libraryScanner",
+        "scanFailed", "libraryScanner",
         lp.id,
         `Scan failed for library path "${lp.name}": ${String(e).slice(0, 200)}`,
         {

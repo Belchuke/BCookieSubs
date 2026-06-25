@@ -334,7 +334,7 @@ export const createWhisperSubtitle = (
   if (!subtitle) {
     return { subtitle: null as any, success: false, msg: "Failed to create Whisper subtitle" }
   }
-  createLog(db, "info", "subtitle", subtitle.id, "Created Whisper subtitle workflow", {
+  createLog(db, "info", "subtitleCreate", "subtitle", subtitle.id, "Created Whisper subtitle workflow", {
     mediaItemId,
     libraryPathItemId,
     model,
@@ -420,7 +420,7 @@ export const createPlaceholderTranslationJobs = (
   })
   transaction()
 
-  createLog(db, "info", "subtitle", subtitle.id, "Created placeholder translation jobs for Whisper workflow", {
+  createLog(db, "info", "subtitleCreate", "subtitle", subtitle.id, "Created placeholder translation jobs for Whisper workflow", {
     addedLangs: newLangs.map((l) => l.name),
   })
   return { success: true, msg: `Added ${newLangs.length} placeholder translation job(s)` }
@@ -529,7 +529,7 @@ export const createTranslationJobsForSubtitle = (
     .filter((l) => allAdded.includes(l.id))
     .map((l) => l.name)
 
-  createLog(db, "info", "subtitle", subtitle.id, "Created translation jobs from Whisper-generated SRT", {
+  createLog(db, "info", "subtitleCreate", "subtitle", subtitle.id, "Created translation jobs from Whisper-generated SRT", {
     addedLangs: addedLangNames,
   })
   return { success: true, msg: `Added ${addedLangNames.length} translation job(s)` }
@@ -646,7 +646,7 @@ export const addMissingTargetLanguageJobs = (
   })
   transaction()
 
-  createLog(db, "info", "subtitle", subtitle.id, "Added missing language jobs", {
+  createLog(db, "info", "subtitleCreate", "subtitle", subtitle.id, "Added missing language jobs", {
     addedLangs: newLangs.map((l) => l.name),
   })
   return {
@@ -752,7 +752,7 @@ export const createSubtitleTask = (
     })
     transaction()
 
-    createLog(db, "info", "subtitle", existingSubtitle.id, "Added missing jobs for re-uploaded subtitle", {
+    createLog(db, "info", "subtitleCreate", "subtitle", existingSubtitle.id, "Added missing jobs for re-uploaded subtitle", {
       addedLangs: missingLangs.map((l) => l.name),
     })
     return { success: true, msg: `Added ${missingLangs.length} new language job(s) to existing subtitle` }
@@ -810,7 +810,7 @@ export const createSubtitleTask = (
   })
   transaction()
 
-  createLog(db, "info", "subtitle", null, "Created subtitle task", {
+  createLog(db, "info", "subtitleCreate", "subtitle", null, "Created subtitle task", {
     name: srtFileName,
     langs: getLangTargetInOrder.map((l) => l.name),
   })
@@ -837,7 +837,7 @@ export const cancelSubtitle = (db: Database.Database, user: DBUser, subtitleId: 
     `UPDATE subtitleChunk SET status = 'cancelled', updatedAt = datetime('now') WHERE subtitleId = ? AND status NOT IN ('completed', 'cancelled')`,
   ).run(subtitleId)
 
-  createLog(db, "info", "subtitle", subtitleId, "Cancelled subtitle", { cancelledBy: user.id })
+  createLog(db, "info", "subtitleCancel", "subtitle", subtitleId, "Cancelled subtitle", { cancelledBy: user.id })
   return { success: true, msg: null }
 }
 
@@ -884,7 +884,7 @@ export const requeueCancelledSubtitle = (db: Database.Database, user: DBUser, su
     ).run(subtitleId)
   })()
 
-  createLog(db, "info", "subtitle", subtitleId, "Re-added cancelled subtitle to the queue", {
+  createLog(db, "info", "subtitleCancel", "subtitle", subtitleId, "Re-added cancelled subtitle to the queue", {
     requeuedBy: user.id,
   })
   return { success: true, msg: null }
@@ -917,7 +917,7 @@ export const cancelSubtitleJob = (db: Database.Database, user: DBUser, jobId: nu
     ).run(user.id, job.subtitleId)
   }
 
-  createLog(db, "info", "subtitle", job.subtitleId, "Cancelled subtitle job", { jobId, cancelledBy: user.id })
+  createLog(db, "info", "subtitleCancel", "subtitle", job.subtitleId, "Cancelled subtitle job", { jobId, cancelledBy: user.id })
   return { success: true, msg: null }
 }
 
@@ -932,7 +932,7 @@ export const softDeleteSubtitle = (db: Database.Database, user: DBUser, subtitle
     `UPDATE subtitle SET deletedAt = datetime('now'), deletedByUserId = ?, updatedAt = datetime('now') WHERE id = ?`,
   ).run(user.id, subtitleId)
 
-  createLog(db, "info", "subtitle", subtitleId, "Deleted subtitle", { deletedBy: user.id })
+  createLog(db, "info", "subtitleDelete", "subtitle", subtitleId, "Deleted subtitle", { deletedBy: user.id })
   return { success: true, msg: null }
 }
 
@@ -982,7 +982,7 @@ export const softDeleteSubtitlesByMediaItem = (
   db.transaction(() => {
     for (const s of subs) {
       update.run(user.id, s.id)
-      createLog(db, "info", "subtitle", s.id, "Deleted subtitle (series delete)", {
+      createLog(db, "info", "subtitleDelete", "subtitle", s.id, "Deleted subtitle (series delete)", {
         deletedBy: user.id,
         mediaItemId,
         queueScope,
@@ -1214,7 +1214,7 @@ export const softDeleteSubtitleJob = (db: Database.Database, user: DBUser, jobId
     `UPDATE subtitleJob SET deletedAt = datetime('now'), deletedByUserId = ?, updatedAt = datetime('now') WHERE id = ?`,
   ).run(user.id, jobId)
 
-  createLog(db, "info", "subtitle", job.subtitleId, "Removed translation from Translated page", {
+  createLog(db, "info", "subtitleDelete", "subtitle", job.subtitleId, "Removed translation from Translated page", {
     jobId,
     removedBy: user.id,
   })
@@ -1483,7 +1483,7 @@ export const hideSubtitle = (db: Database.Database, user: DBUser, subtitleId: nu
 
   db.prepare(`UPDATE subtitle SET hide = 1, updatedAt = datetime('now') WHERE id = ?`).run(subtitleId)
 
-  createLog(db, "info", "subtitle", subtitleId, "Hidden subtitle from dashboard", { hiddenBy: user.id })
+  createLog(db, "info", "subtitle", "subtitle", subtitleId, "Hidden subtitle from dashboard", { hiddenBy: user.id })
   return { success: true, msg: null }
 }
 
@@ -1734,7 +1734,7 @@ export const assembleAndFinishSubtitleJob = (
     `UPDATE subtitleJob SET status = 'completed', translatedText = ?, outputFilePath = ?, outputHash = ?, finishedAt = datetime('now'), updatedAt = datetime('now') WHERE id = ?`,
   ).run(translatedText || null, outputFilePath, outputHash, job.id)
 
-  createLog(db, "info", "subtitleJob", job.id, "Subtitle job completed", {
+  createLog(db, "info", "subtitleJobCompleted", "subtitleJob", job.id, "Subtitle job completed", {
     targetLangId: job.targetLangId,
     outputFilePath,
   })

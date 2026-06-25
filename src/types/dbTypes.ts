@@ -442,6 +442,7 @@ export type DBLibraryPathItemCandidate = {
 export type DBLog = {
   id: number
   level: "debug" | "info" | "warning" | "error"
+  type: string | null
   entityType: string | null
   entityId: number | null
   message: string
@@ -449,6 +450,68 @@ export type DBLog = {
   createdAt: string
   deletedAt: string | null
 }
+
+// Fine-grained log "type" values — a second filtering dimension alongside level.
+// Kept as a loose string column (no CHECK) so new types can be added freely; this
+// list is the known set, used to populate the type filter dropdown on the logs page.
+export const LOG_TYPES: string[] = [
+  "login",
+  "resetPassword",
+  "newUser",
+  "updateUserRoles",
+  "newRole",
+  "updateRole",
+  "deleteRole",
+  "deleteUser",
+  "chunkCompleted",
+  "chunkFailed",
+  "chunkCandidate",
+  "chunkJudge",
+  "tmdbMatch",
+  "tmdbMatching",
+  "tmdbMultiple",
+  "tmdbBlocked",
+  "nfoMatch",
+  "nameDetection",
+  "nameFormatter",
+  "scanFailed",
+  "scanSkipped",
+  "libraryScanner",
+  "libraryPathCreate",
+  "libraryPathUpdate",
+  "libraryPathDelete",
+  "libraryPathRescan",
+  "libraryPathBlacklist",
+  "whisperQueued",
+  "whisperStart",
+  "whisperRun",
+  "whisperModel",
+  "whisperPaused",
+  "whisperCompleted",
+  "whisperFailed",
+  "whisperGrouped",
+  "whisperTranscription",
+  "workerState",
+  "subtitleCreate",
+  "subtitleCancel",
+  "subtitleDelete",
+  "subtitleCompleted",
+  "subtitleJobCompleted",
+  "subtitleJobFailed",
+  "configUpdate",
+  "languageConfig",
+  "secretConfig",
+  "modelAdd",
+  "modelUpdate",
+  "modelDelete",
+  "rateLimit",
+  "prompt",
+  "scheduleCreate",
+  "scheduleUpdate",
+  "scheduleDelete",
+  "sessionDelete",
+  "offset",
+]
 
 export type Migration = {
   id: number

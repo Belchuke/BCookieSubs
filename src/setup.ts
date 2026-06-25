@@ -768,6 +768,7 @@ const createTables = (db: Database.Database) => {
       level TEXT NOT NULL DEFAULT 'info'
         CHECK (level IN ('debug', 'info', 'warning', 'error')),
 
+      type TEXT DEFAULT NULL,
       entityType TEXT DEFAULT NULL,
       entityId INTEGER DEFAULT NULL,
 
@@ -817,6 +818,7 @@ const COLUMN_MIGRATIONS: { table: string; column: string; definition: string }[]
   { table: "subtitle", column: "sourceFormat", definition: "TEXT NOT NULL DEFAULT 'srt'" },
   { table: "subtitle", column: "whisperResumeSrt", definition: "TEXT DEFAULT NULL" },
   { table: "subtitle", column: "whisperResumeMs", definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "log", column: "type", definition: "TEXT DEFAULT NULL" },
 ]
 
 function applyColumnMigrations(db: Database.Database): void {

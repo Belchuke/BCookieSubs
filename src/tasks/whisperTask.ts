@@ -49,7 +49,7 @@ function abortCurrentRun(_reason: "pause" | "preempt"): boolean {
 export function pauseWorker(db: Database.Database, actingUsername: string | null = null): void {
   workerPaused = true
   const who = actingUsername ?? "unknown user"
-  createLog(db, "info", "worker", null, `Whisper worker paused by user: ${who}`, { username: actingUsername })
+  createLog(db, "info", "workerState", "worker", null, `Whisper worker paused by user: ${who}`, { username: actingUsername })
   console.log(`[whisper-worker] Worker paused by user: ${who}`)
   // Actually stop the in-progress transcription: kill whisper-cli and save its
   // checkpoint so resume continues from the same second.
@@ -65,7 +65,7 @@ export function preemptWhisper(db: Database.Database): { willSwitch: boolean } {
   if (!currentSubtitleId) return { willSwitch: false }
   const next = getNextWhisperSubtitleForTranscription(db)
   if (!next || next.id === currentSubtitleId) return { willSwitch: false }
-  createLog(db, "info", "worker", null, "Whisper worker preempted: switching to a higher-priority subtitle", {
+  createLog(db, "info", "workerState", "worker", null, "Whisper worker preempted: switching to a higher-priority subtitle", {
     fromSubtitleId: currentSubtitleId,
     toSubtitleId: next.id,
   })
@@ -77,7 +77,7 @@ export function resumeWorker(db?: Database.Database, actingUsername: string | nu
   workerPaused = false
   const who = actingUsername ?? "unknown user"
   if (db) {
-    createLog(db, "info", "worker", null, `Whisper worker resumed by user: ${who}`, { username: actingUsername })
+    createLog(db, "info", "workerState", "worker", null, `Whisper worker resumed by user: ${who}`, { username: actingUsername })
   }
   console.log(`[whisper-worker] Worker resumed by user: ${who}`)
   notifyPausedState(false)
@@ -88,14 +88,14 @@ export function isWorkerPaused(): boolean {
 }
 
 export async function whisperTaskMain(db: Database.Database): Promise<void> {
-  createLog(db, "info", "worker", null, "Whisper worker started", {})
+  createLog(db, "info", "workerState", "worker", null, "Whisper worker started", {})
   console.log("[whisper-worker] Whisper worker started")
 
   while (true) {
     try {
       await runOnce(db)
     } catch (err) {
-      createLog(db, "error", "worker", null, `Whisper worker loop crashed: ${summarizeError(err)}`, {
+      createLog(db, "error", "workerState", "worker", null, `Whisper worker loop crashed: ${summarizeError(err)}`, {
         error: String(err),
       })
       console.error("[whisper-worker] Unexpected error:", err)
@@ -131,7 +131,7 @@ async function runOnce(db: Database.Database): Promise<void> {
   if (!scheduleResult.shouldRun) {
     if (taskRunning) {
       taskRunning = false
-      createLog(db, "info", "worker", null, "Whisper worker paused automatically: outside configured schedule window", {
+      createLog(db, "info", "workerState", "worker", null, "Whisper worker paused automatically: outside configured schedule window", {
         scheduleId: scheduleResult.scheduleId,
       })
       console.log("[whisper-worker] Paused — outside schedule window")
@@ -143,7 +143,7 @@ async function runOnce(db: Database.Database): Promise<void> {
 
   if (!taskRunning) {
     taskRunning = true
-    createLog(db, "info", "worker", null, "Whisper worker resumed: inside configured schedule window", {
+    createLog(db, "info", "workerState", "worker", null, "Whisper worker resumed: inside configured schedule window", {
       scheduleId: scheduleResult.scheduleId,
       scheduleActive: scheduleResult.scheduleActive,
     })

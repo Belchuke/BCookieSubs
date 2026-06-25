@@ -117,7 +117,7 @@ export const createLibraryPath = (
       .run(name.trim(), path.trim(), sourceLangId, type, enabled ? 1 : 0, autoTranslate ? 1 : 0, autoExtract ? 1 : 0)
 
     const lp = getLibraryPathById(db, result.lastInsertRowid as number)
-    createLog(db, "info", "libraryPath", lp?.id ?? null, "Created library path", { name, path, type })
+    createLog(db, "info", "libraryPathCreate", "libraryPath", lp?.id ?? null, "Created library path", { name, path, type })
     return { success: true, msg: null, libraryPath: lp }
   } catch (e: any) {
     if (String(e).includes("UNIQUE")) return { libraryPath: null, success: false, msg: "Path already exists" }
@@ -154,7 +154,7 @@ export const updateLibraryPath = (
       `UPDATE libraryPath SET name = ?, path = ?, sourceLangId = ?, type = ?, enabled = ?, autoTranslate = ?, autoExtract = ?, updatedAt = datetime('now') WHERE id = ?`,
     ).run(name.trim(), path.trim(), sourceLangId, type, enabled ? 1 : 0, autoTranslate ? 1 : 0, autoExtract ? 1 : 0, id)
 
-    createLog(db, "info", "libraryPath", id, "Updated library path", { name, path })
+    createLog(db, "info", "libraryPathUpdate", "libraryPath", id, "Updated library path", { name, path })
     return { success: true, msg: null }
   } catch (e: any) {
     if (String(e).includes("UNIQUE")) return { success: false, msg: "Path already exists" }
@@ -188,7 +188,7 @@ export const rescanLibraryPath = (db: Database.Database, user: DBUser, id: numbe
   // Reset to idle and clear lastRunAt so the worker treats it as due on its next
   // tick (rather than waiting out the routine scan interval).
   db.prepare(`UPDATE libraryPath SET state = 'idle', lastRunAt = NULL, updatedAt = datetime('now') WHERE id = ?`).run(id)
-  createLog(db, "info", "libraryPath", id, `Rescan requested for library path "${lp.name}"`, {
+  createLog(db, "info", "libraryPathRescan", "libraryPath", id, `Rescan requested for library path "${lp.name}"`, {
     name: lp.name,
     previousState,
     requestedByUserId: user.id,
@@ -205,7 +205,7 @@ export const deleteLibraryPath = (db: Database.Database, user: DBUser, id: numbe
   if (!lp) return { success: false, msg: "Library path not found" }
 
   db.prepare(`DELETE FROM libraryPath WHERE id = ?`).run(id)
-  createLog(db, "info", "libraryPath", id, "Deleted library path", { name: lp.name })
+  createLog(db, "info", "libraryPathDelete", "libraryPath", id, "Deleted library path", { name: lp.name })
   return { success: true, msg: null }
 }
 
@@ -781,7 +781,7 @@ export const blacklistLibraryPathItem = (
     `INSERT INTO libraryPathItemBlacklist (libraryPathItemId, blacklistedByUserId, reason) VALUES (?, ?, ?)`,
   ).run(libraryPathItemId, user.id, trimmed)
 
-  createLog(db, "info", "libraryPath", item.libraryPathId, `Blacklisted library item from translation: ${item.path}`, {
+  createLog(db, "info", "libraryPathBlacklist", "libraryPath", item.libraryPathId, `Blacklisted library item from translation: ${item.path}`, {
     libraryPathItemId,
     libraryPathId: item.libraryPathId,
     blacklistedByUserId: user.id,
@@ -806,7 +806,7 @@ export const unblacklistLibraryPathItem = (
 
   if (result.changes === 0) return { success: false, msg: "Item was not blacklisted" }
 
-  createLog(db, "info", "libraryPath", item.libraryPathId, `Removed library item from blacklist: ${item.path}`, {
+  createLog(db, "info", "libraryPathBlacklist", "libraryPath", item.libraryPathId, `Removed library item from blacklist: ${item.path}`, {
     libraryPathItemId,
     libraryPathId: item.libraryPathId,
     removedByUserId: user.id,

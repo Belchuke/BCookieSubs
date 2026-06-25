@@ -150,7 +150,7 @@ export const addModel = (
       }
     }
 
-    createLog(db, "info", "model", softDeleted.id, "Re-added previously deleted model", { name, roles, provider })
+    createLog(db, "info", "modelAdd", "model", softDeleted.id, "Re-added previously deleted model", { name, roles, provider })
     return { success: true, msg: "Model added successfully" }
   }
 
@@ -177,7 +177,7 @@ export const addModel = (
     roleStmt.run(modelId, role)
   }
 
-  createLog(db, "info", "model", modelId, "Added model", { name, roles, provider })
+  createLog(db, "info", "modelAdd", "model", modelId, "Added model", { name, roles, provider })
   return { success: true, msg: "Model added successfully" }
 }
 
@@ -201,7 +201,7 @@ export const updateModel = (
     `UPDATE model SET name = ?, closeAfterUse = ?, active = ?, provider = ?, baseUrl = ?, updatedAt = datetime('now') WHERE id = ?`,
   ).run(name, closeAfterUse ? 1 : 0, active ? 1 : 0, provider, baseUrl, modelId)
 
-  createLog(db, "info", "model", modelId, "Updated model", { name, closeAfterUse, active, provider })
+  createLog(db, "info", "modelUpdate", "model", modelId, "Updated model", { name, closeAfterUse, active, provider })
   return { success: true, msg: "Model updated successfully" }
 }
 
@@ -244,6 +244,6 @@ export const deleteModel = (db: Database.Database, user: DBUser, modelId: number
   db.prepare(`UPDATE model SET deletedAt = datetime('now'), updatedAt = datetime('now') WHERE id = ?`).run(modelId)
   db.prepare(`UPDATE modelRole SET deletedAt = datetime('now') WHERE modelId = ? AND deletedAt IS NULL`).run(modelId)
 
-  createLog(db, "info", "model", modelId, "Deleted model", { name: model.name })
+  createLog(db, "info", "modelDelete", "model", modelId, "Deleted model", { name: model.name })
   return { success: true, msg: "Model deleted successfully" }
 }

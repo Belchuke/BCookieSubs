@@ -236,6 +236,12 @@
     html += '<div class="lr-card-body">'
     html += "<div>"
     html += '<div class="lr-card-title" title="' + escAttr(group.title) + '">' + escHtml(group.title) + "</div>"
+    // Unmatched items are read-only — show the file's full path under the title
+    // so the user can locate it on disk and fix/rename it themselves.
+    if (group.type === "unmatched" && group.filePath) {
+      html += '<div class="lr-card-path text-dim" title="' + escAttr(group.filePath) + '">' +
+        escHtml(group.filePath) + "</div>"
+    }
     html += '<div class="lr-card-meta">' + metaHtml(group) + "</div>"
     html += "</div>"
 

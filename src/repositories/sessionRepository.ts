@@ -68,5 +68,5 @@ export const deleteAllSessionsForUser = (db: Database.Database, userId: number):
   db.prepare(
     `UPDATE userSession SET deletedAt = datetime('now'), updatedAt = datetime('now') WHERE userId = ? AND deletedAt IS NULL`,
   ).run(userId)
-  createLog(db, "info", "session", null, "Deleted all sessions for user", { userId })
+  createLog(db, "info", "sessionDelete", "session", null, "Deleted all sessions for user", { userId })
 }

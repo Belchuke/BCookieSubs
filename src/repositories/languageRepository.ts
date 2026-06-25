@@ -108,7 +108,7 @@ export const addConfigTranslationLanguage = (
 
   syncUserConfigTranslationLanguagesFromGlobal(db, user.id)
 
-  createLog(db, "info", "config", null, "Added language to translation config", { languageId })
+  createLog(db, "info", "languageConfig", "config", null, "Added language to translation config", { languageId })
   return { success: true, msg: "Language added to translation config successfully" }
 }
 
@@ -168,7 +168,7 @@ export const removeConfigTranslationLanguage = (
     )
   }
 
-  createLog(db, "info", "config", null, "Removed language from translation config", { languageId })
+  createLog(db, "info", "languageConfig", "config", null, "Removed language from translation config", { languageId })
 
   syncUserConfigTranslationLanguagesFromGlobal(db, user.id)
 

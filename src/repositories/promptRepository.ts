@@ -210,7 +210,7 @@ export const addPromptVersion = (
     promptText,
   )
 
-  createLog(db, "info", "prompt", promptId, "Added new prompt version and activated it", { version })
+  createLog(db, "info", "prompt", "prompt", promptId, "Added new prompt version and activated it", { version })
   return { success: true, msg: "Prompt version added and activated successfully" }
 }
 
@@ -234,7 +234,7 @@ export const addTranslationPrompt = (
     promptText,
   )
 
-  createLog(db, "info", "prompt", promptId, "Created new translation prompt", { name })
+  createLog(db, "info", "prompt", "prompt", promptId, "Created new translation prompt", { name })
   return { success: true, msg: "Translation prompt created successfully" }
 }
 
@@ -251,7 +251,7 @@ export const setPromptActive = (
   if (!prompt) return { success: false, msg: "Prompt not found" }
 
   db.prepare(`UPDATE prompt SET active = ?, updatedAt = datetime('now') WHERE id = ?`).run(active ? 1 : 0, promptId)
-  createLog(db, "info", "prompt", promptId, active ? "Activated prompt" : "Deactivated prompt", {})
+  createLog(db, "info", "prompt", "prompt", promptId, active ? "Activated prompt" : "Deactivated prompt", {})
   return { success: true, msg: null }
 }
 
@@ -270,6 +270,6 @@ export const setActivePromptVersion = (
   db.prepare(`UPDATE promptVersion SET active = 0 WHERE promptId = ? AND active = 1`).run(promptId)
   db.prepare(`UPDATE promptVersion SET active = 1 WHERE id = ? AND promptId = ?`).run(promptVersionId, promptId)
 
-  createLog(db, "info", "prompt", promptId, "Changed active prompt version", { promptVersionId })
+  createLog(db, "info", "prompt", "prompt", promptId, "Changed active prompt version", { promptVersionId })
   return { success: true, msg: "Active prompt version updated successfully" }
 }

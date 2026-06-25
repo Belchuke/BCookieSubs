@@ -126,7 +126,7 @@ export function pauseWorker(db: Database.Database, actingUsername: string | null
   }
   cleanupRunningChunks(db)
   const who = actingUsername ?? "unknown user"
-  createLog(db, "info", "worker", null, `Worker paused by user: ${who}`, { username: actingUsername })
+  createLog(db, "info", "workerState", "worker", null, `Worker paused by user: ${who}`, { username: actingUsername })
   console.log(`[worker] Worker paused by user: ${who}`)
   notifyPausedState(true)
 }
@@ -135,7 +135,7 @@ export function resumeWorker(db?: Database.Database, actingUsername: string | nu
   workerPaused = false
   const who = actingUsername ?? "unknown user"
   if (db) {
-    createLog(db, "info", "worker", null, `Worker resumed by user: ${who}`, { username: actingUsername })
+    createLog(db, "info", "workerState", "worker", null, `Worker resumed by user: ${who}`, { username: actingUsername })
   }
   console.log(`[worker] Worker resumed by user: ${who}`)
   notifyPausedState(false)
@@ -146,14 +146,14 @@ export function isWorkerPaused(): boolean {
 }
 
 export async function taskMain(db: Database.Database): Promise<void> {
-  createLog(db, "info", "worker", null, "Translation worker started", {})
+  createLog(db, "info", "workerState", "worker", null, "Translation worker started", {})
   console.log("[worker] Translation worker started")
 
   while (true) {
     try {
       await runOnce(db)
     } catch (err) {
-      createLog(db, "error", "worker", null, `Translation worker loop crashed: ${summarizeError(err)}`, {
+      createLog(db, "error", "workerState", "worker", null, `Translation worker loop crashed: ${summarizeError(err)}`, {
         error: String(err),
       })
       console.error("[worker] Unexpected error:", err)
@@ -171,7 +171,7 @@ async function runOnce(db: Database.Database): Promise<void> {
   if (!scheduleResult.shouldRun) {
     if (taskRunning) {
       taskRunning = false
-      createLog(db, "info", "worker", null, "Worker paused automatically: outside configured schedule window", {
+      createLog(db, "info", "workerState", "worker", null, "Worker paused automatically: outside configured schedule window", {
         scheduleId: scheduleResult.scheduleId,
       })
       console.log("[worker] Paused — outside schedule window")
@@ -183,7 +183,7 @@ async function runOnce(db: Database.Database): Promise<void> {
 
   if (!taskRunning) {
     taskRunning = true
-    createLog(db, "info", "worker", null, "Worker resumed: inside configured schedule window", {
+    createLog(db, "info", "workerState", "worker", null, "Worker resumed: inside configured schedule window", {
       scheduleId: scheduleResult.scheduleId,
       scheduleActive: scheduleResult.scheduleActive,
     })
@@ -279,7 +279,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
     createLog(
       db,
       "error",
-      "chunk",
+      "chunkFailed", "chunk",
       chunk.id,
       `Chunk ${chunk.chunkIndex} failed: source or target language missing in database`,
       {
@@ -317,7 +317,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
     createLog(
       db,
       "error",
-      "chunk",
+      "chunkFailed", "chunk",
       chunk.id,
       `Chunk ${chunk.chunkIndex} failed: no active translation models configured — add one in the Models page`,
       {
@@ -333,7 +333,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
     createLog(
       db,
       "error",
-      "chunk",
+      "chunkFailed", "chunk",
       chunk.id,
       `Chunk ${chunk.chunkIndex} failed: no active translation prompt versions — activate at least one in the Prompts page`,
       {
@@ -372,7 +372,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
       createLog(
         db,
         "warning",
-        "chunk",
+        "chunkCandidate", "chunk",
         chunk.id,
         `Translation candidate skipped because model was deleted during processing: modelId=${model.id}, chunkId=${chunk.id}`,
         { modelId: model.id, modelName: model.name, chunkId: chunk.id, jobId: chunk.subtitleJobId },
@@ -532,7 +532,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
               false,
             )
             console.log(`[worker] Rate limited on model ${model.name} with prompt ${promptVersion.id}: ${errorSummary}`)
-            createLog(db, "warning", "model", model.id, `Rate limited during translation using model ${model.name}`, {
+            createLog(db, "warning", "rateLimit", "model", model.id, `Rate limited during translation using model ${model.name}`, {
               modelName: model.name,
               provider: model.provider,
               chunkId: chunk.id,
@@ -578,7 +578,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
             createLog(
               db,
               "error",
-              "chunk",
+              "chunkFailed", "chunk",
               chunk.id,
               `Translation candidate failed after ${candidateAttempts} retries (model ${model.name}, prompt v${promptVersion.id}): ${errorSummary}`,
               {
@@ -604,7 +604,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
           createLog(
             db,
             "warning",
-            "chunk",
+            "chunkCandidate", "chunk",
             chunk.id,
             `Retrying translation candidate (${errorCode}) — model ${model.name}, attempt ${candidateAttempts + 1}/${config.maxRetriesPerChunk}: ${errorSummary}`,
             {
@@ -633,7 +633,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
     createLog(
       db,
       "error",
-      "chunk",
+      "chunkFailed", "chunk",
       chunk.id,
       `Chunk ${chunk.chunkIndex} failed: no valid translation candidates produced after ${config.maxRetriesPerChunk} retries per model+prompt`,
       {
@@ -671,7 +671,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
       createLog(
         db,
         "error",
-        "chunk",
+        "chunkFailed", "chunk",
         chunk.id,
         `Chunk ${chunk.chunkIndex} failed — judge could not select after ${config.maxRetriesPerChunk} retries`,
         {
@@ -731,7 +731,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
     createLog(
       db,
       "warning",
-      "chunk",
+      "chunkFailed", "chunk",
       chunk.id,
       `Chunk ${chunk.chunkIndex + 1} finalization skipped due to error (likely deleted model): ${msg.slice(0, 200)}`,
       {
@@ -746,7 +746,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
   createLog(
     db,
     "info",
-    "chunk",
+    "chunkCompleted", "chunk",
     chunk.id,
     `Chunk ${chunk.chunkIndex + 1} completed for ${mediaName} ${mediaItem?.type === `series` ? `S${job.season}E${job.episode}` : ""}`,
     {
@@ -789,7 +789,7 @@ async function runJudgeModel(
         createLog(
           db,
           "warning",
-          "chunk",
+          "chunkJudge", "chunk",
           chunkId,
           `Judge returned no valid JSON (model ${judgeModel.name}, attempt ${attempt + 1}/${maxRetries})`,
           {
@@ -810,7 +810,7 @@ async function runJudgeModel(
       const result = JSON.parse(jsonMatch[0]) as { winnerIndex: number; reason?: string }
 
       if (result.winnerIndex === -1) {
-        createLog(db, "warning", "chunk", chunkId, `Judge rejected all candidates (model ${judgeModel.name})`, {
+        createLog(db, "warning", "chunkJudge", "chunk", chunkId, `Judge rejected all candidates (model ${judgeModel.name})`, {
           judgeModel: judgeModel.name,
           judgeModelId: judgeModel.id,
           chunkId,
@@ -824,7 +824,7 @@ async function runJudgeModel(
         createLog(
           db,
           "warning",
-          "chunk",
+          "chunkJudge", "chunk",
           chunkId,
           `Judge returned out-of-range index ${result.winnerIndex} (model ${judgeModel.name}, ${candidates.length} candidates)`,
           {
@@ -854,7 +854,7 @@ async function runJudgeModel(
       createLog(
         db,
         "error",
-        "chunk",
+        "chunkFailed", "chunk",
         chunkId,
         `Judge call failed (model ${judgeModel.name}, attempt ${attempt + 1}/${maxRetries}, ${failureCategory}): ${errorSummary}`,
         {
@@ -913,7 +913,7 @@ async function judgeAndSelectCandidate(
   const judgeModels = getActiveModelsByRole(db, "judge")
 
   if (!judgePromptVersion || judgeModels.length === 0) {
-    createLog(db, "info", "chunk", chunkId, "No judge configured — using first valid candidate", { jobId })
+    createLog(db, "info", "chunkJudge", "chunk", chunkId, "No judge configured — using first valid candidate", { jobId })
     return {
       candidateId: candidates[0].candidateId,
       judgeModelId: null,
@@ -953,7 +953,7 @@ async function judgeAndSelectCandidate(
     createLog(
       db,
       "info",
-      "chunk",
+      "chunkJudge", "chunk",
       chunkId,
       `Primary judge ${reason} (model ${judgeModel.name}) — falling back to ${fallbackModels[0].name}`,
       {
@@ -975,7 +975,7 @@ async function judgeAndSelectCandidate(
       jobId,
     )
     if (fallbackResult.status === "selected") {
-      createLog(db, "info", "chunk", chunkId, `Fallback judge selected candidate (model ${fallbackModels[0].name})`, {
+      createLog(db, "info", "chunkJudge", "chunk", chunkId, `Fallback judge selected candidate (model ${fallbackModels[0].name})`, {
         fallbackJudgeModel: fallbackModels[0].name,
         fallbackJudgeModelId: fallbackModels[0].id,
         jobId,
@@ -987,7 +987,7 @@ async function judgeAndSelectCandidate(
         judgePromptText,
       }
     }
-    createLog(db, "warning", "chunk", chunkId, `Fallback judge also failed (model ${fallbackModels[0].name})`, {
+    createLog(db, "warning", "chunkFailed", "chunk", chunkId, `Fallback judge also failed (model ${fallbackModels[0].name})`, {
       fallbackJudgeModel: fallbackModels[0].name,
       fallbackJudgeModelId: fallbackModels[0].id,
       jobId,
@@ -1024,7 +1024,7 @@ async function checkAndFinalizeJob(db: Database.Database, job: DBSubtitleJob, su
     createLog(
       db,
       "error",
-      "subtitleJob",
+      "subtitleJobFailed", "subtitleJob",
       job.id,
       `Subtitle job ${job.id} failed: ${failedChunks.length}/${allChunks.length} chunks could not be translated`,
       {
@@ -1078,7 +1078,7 @@ async function checkAndFinalizeSubtitle(db: Database.Database, subtitle: DBSubti
     createLog(
       db,
       "error",
-      "subtitle",
+      "subtitleCompleted", "subtitle",
       subtitle.id,
       `Subtitle "${subtitle.name}" completed with failures: ${failedJobs.length}/${allJobs.length} target languages failed`,
       {
@@ -1092,7 +1092,7 @@ async function checkAndFinalizeSubtitle(db: Database.Database, subtitle: DBSubti
     createLog(
       db,
       "info",
-      "subtitle",
+      "subtitleCompleted", "subtitle",
       subtitle.id,
       `Subtitle "${subtitle.name}" fully translated to ${allJobs.length} target language${allJobs.length === 1 ? "" : "s"}`,
       {

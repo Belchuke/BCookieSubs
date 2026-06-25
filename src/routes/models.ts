@@ -254,7 +254,7 @@ export function modelsRouter(db: Database.Database) {
         "/models?toast=error&msg=" + encodeURIComponent(result.error ?? "Failed to remove from Ollama"),
       )
     }
-    createLog(db, "info", "model", null, "Removed Ollama model", { modelName })
+    createLog(db, "info", "modelDelete", "model", null, "Removed Ollama model", { modelName })
     res.redirect("/models?toast=success&msg=" + encodeURIComponent(`Removed ${modelName} from Ollama`))
   })
 

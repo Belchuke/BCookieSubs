@@ -94,19 +94,19 @@ export const verifyUserPassword = (
     null
 
   if (!user) {
-    createLog(db, "warning", "user", null, `Failed login attempt: unknown username "${username}"`, { username })
+    createLog(db, "warning", "login", "user", null, `Failed login attempt: unknown username "${username}"`, { username })
     return { user: null, session: null, token: null, success: false, msg: "Invalid username or password" }
   }
 
   const passwordMatch = bcrypt.compareSync(password, user.passwordHash ?? "")
 
   if (!passwordMatch) {
-    createLog(db, "warning", "user", user.id, `Failed login attempt: incorrect password for ${username}`, { username })
+    createLog(db, "warning", "login", "user", user.id, `Failed login attempt: incorrect password for ${username}`, { username })
     return { user: null, session: null, token: null, success: false, msg: "Invalid username or password" }
   }
 
   const { session, token } = createSession(db, user.id)
-  createLog(db, "info", "user", user.id, `User logged in: ${username}`, { username })
+  createLog(db, "info", "login", "user", user.id, `User logged in: ${username}`, { username })
 
   return { user: { ...user, passwordHash: "" }, session, token, success: true, msg: null }
 }
@@ -131,7 +131,7 @@ export const updateUserPassword = (
   )
 
   deleteAllSessionsForUser(db, targetUserId)
-  createLog(db, "info", "user", targetUserId, `Updated password for user: ${targetUser.username}`, {
+  createLog(db, "info", "resetPassword", "user", targetUserId, `Updated password for user: ${targetUser.username}`, {
     username: targetUser.username,
     updatedByUserId: actorUser.id,
     updatedByUsername: actorUser.username,
@@ -166,7 +166,7 @@ export const createInitialAdminUser = (
     return { user: null, session: null, token: null, success: false, msg: "Failed to retrieve created owner user" }
 
   syncUserConfigTranslationLanguagesFromGlobal(db, newUser.id)
-  createLog(db, "info", "user", newUser.id, `Created initial owner user: ${username}`, { username })
+  createLog(db, "info", "newUser", "user", newUser.id, `Created initial owner user: ${username}`, { username })
 
   const { session, token } = createSession(db, newUser.id)
   return { user: newUser, session, token, success: true, msg: null }
@@ -204,7 +204,7 @@ export const createUser = (
   if (!newUser) return { user: null, success: false, msg: "Failed to retrieve created user" }
 
   syncUserConfigTranslationLanguagesFromGlobal(db, newUser.id)
-  createLog(db, "info", "user", newUser.id, `Created new user: ${username} with role: ${targetRole.name}`, {
+  createLog(db, "info", "newUser", "user", newUser.id, `Created new user: ${username} with role: ${targetRole.name}`, {
     username,
     roleId,
     roleName: targetRole.name,
@@ -240,7 +240,7 @@ export const updateUserRoles = (
   }
 
   const targetUser = getUserById(db, targetUserId)
-  createLog(db, "info", "user", targetUserId, `Updated roles for user: ${targetUser?.username}`, {
+  createLog(db, "info", "updateUserRoles", "user", targetUserId, `Updated roles for user: ${targetUser?.username}`, {
     username: targetUser?.username,
     roleIds,
     updatedByUserId: actorUser.id,
@@ -300,7 +300,7 @@ export const createRole = (
     ).run(roleId, key)
   }
 
-  createLog(db, "info", "user", null, `Created role: ${name} (level ${level})`, {
+  createLog(db, "info", "newRole", "user", null, `Created role: ${name} (level ${level})`, {
     actorId: actorUser.id,
     actorUsername: actorUser.username,
   })
@@ -345,7 +345,7 @@ export const updateRole = (
     ).run(roleId, key)
   }
 
-  createLog(db, "info", "user", null, `Updated role: ${name} (level ${level})`, {
+  createLog(db, "info", "updateRole", "user", null, `Updated role: ${name} (level ${level})`, {
     actorId: actorUser.id,
     actorUsername: actorUser.username,
   })
@@ -365,7 +365,7 @@ export const deleteRole = (db: Database.Database, actorUser: DBUser, roleId: num
   if (role.level > actorLevel) return { success: false, msg: "Cannot delete a role above your own level" }
 
   db.prepare(`DELETE FROM role WHERE id = ?`).run(roleId)
-  createLog(db, "info", "user", null, `Deleted role: ${role.name}`, {
+  createLog(db, "info", "deleteRole", "user", null, `Deleted role: ${role.name}`, {
     actorId: actorUser.id,
     actorUsername: actorUser.username,
   })
@@ -417,7 +417,7 @@ export const deleteUser = (db: Database.Database, actorUser: DBUser, userId: num
 
   db.prepare(`UPDATE user SET deletedAt = datetime('now'), updatedAt = datetime('now') WHERE id = ?`).run(userId)
   deleteAllSessionsForUser(db, userId)
-  createLog(db, "info", "user", userId, `Deleted user: ${userToDelete.username}`, {
+  createLog(db, "info", "deleteUser", "user", userId, `Deleted user: ${userToDelete.username}`, {
     username: userToDelete.username,
     deletedByUserId: actorUser.id,
     deletedByUsername: actorUser.username,

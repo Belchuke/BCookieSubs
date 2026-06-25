@@ -193,7 +193,7 @@ export const createSchedule = (
     firstStartAt,
   )
 
-  createLog(db, "info", "schedule", null, "Created new schedule", { taskName })
+  createLog(db, "info", "scheduleCreate", "schedule", null, "Created new schedule", { taskName })
   return { success: true, msg: null }
 }
 
@@ -227,7 +227,7 @@ export const updateSchedule = (
     scheduleId,
   )
 
-  createLog(db, "info", "schedule", scheduleId, "Updated schedule", { taskName })
+  createLog(db, "info", "scheduleUpdate", "schedule", scheduleId, "Updated schedule", { taskName })
   return { success: true, msg: null }
 }
 
@@ -236,6 +236,6 @@ export const deleteSchedule = (db: Database.Database, user: DBUser, scheduleId: 
   if (!perm) return { success: false, msg: "User does not have permission to manage schedules" }
 
   db.prepare(`DELETE FROM schedule WHERE id = ?`).run(scheduleId)
-  createLog(db, "info", "schedule", null, "Deleted schedule", { scheduleId })
+  createLog(db, "info", "scheduleDelete", "schedule", null, "Deleted schedule", { scheduleId })
   return { success: true, msg: null }
 }

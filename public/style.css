@@ -767,6 +767,17 @@ tr:hover td { background: var(--surface-2); }
 .log-entry.log-warning .log-level { color: var(--warning); }
 .log-entry.log-info .log-level { color: var(--accent); }
 .log-entry.log-debug .log-level { color: var(--text-dim); }
+.log-type { flex-shrink: 0; min-width: 110px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .72rem; }
+
+/* ── Logs toolbar (filters + export) ─────────────────────────────────────── */
+.logs-toolbar { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: flex-end; justify-content: space-between; margin-bottom: 1rem; }
+.logs-filters { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: flex-end; }
+.logs-toolbar .field-inline { display: flex; flex-direction: column; gap: .35rem; margin-bottom: 0; min-width: 160px; }
+.logs-toolbar .field-inline label { font-size: .8rem; color: var(--text-dim); }
+.logs-toolbar .field-inline select { width: 100%; }
+.logs-export-dates { display: flex; gap: 1rem; flex-wrap: wrap; }
+.logs-export-dates .field { flex: 1; min-width: 140px; margin-bottom: 0; }
+.logs-export-hint { margin: 0 0 1rem; font-size: .85rem; }
 
 /* ── btn-warning ────────────────────────────────────────────────────────── */
 .btn-warning { background: var(--warning-dim); color: var(--warning); border-color: var(--warning); }
@@ -1005,6 +1016,7 @@ tr:hover td { background: var(--surface-2); }
   }
   .log-time { width: 100%; margin-bottom: .05rem; }
   .log-level { width: auto; }
+  .log-type { min-width: 0; max-width: 100%; width: auto; }
   .log-msg { width: 100%; word-break: break-word; }
   .pagination-container { flex-direction: column; align-items: flex-start; gap: .5rem; }
 }
@@ -1307,6 +1319,16 @@ canvas { max-width: 100%; display: block; }
   font-size: .8rem;
   color: var(--text-dim);
   flex-shrink: 0;
+}
+.lr-card-path {
+  font-size: .72rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-all;
+  flex-shrink: 0;
+  margin-top: .1rem;
 }
 .lr-card-genres {
   font-size: .78rem;
@@ -1927,6 +1949,7 @@ details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg);
 .lpx-row-center { display:flex;align-items:center;gap:.4rem; }
 .lpx-se-label { font-weight:600;font-size:.85rem;flex-shrink:0; }
 .lpx-filename { font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1; }
+.lpx-item-path { font-size:.72rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:.1rem;word-break:break-all; }
 .lpx-badge-row { display:flex;gap:.35rem;margin-top:.2rem;flex-wrap:wrap;align-items:center; }
 .lpx-fs-70 { font-size:.7rem; }
 .lpx-item-actions { display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;justify-content:flex-end; }

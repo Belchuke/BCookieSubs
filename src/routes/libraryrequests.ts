@@ -64,6 +64,9 @@ type RequestGroup = {
   posterPath: string | null
   type: "movie" | "series" | "unmatched"
   items: RequestGroupItem[]
+  // Full filesystem path of the file, surfaced for unmatched items so the user
+  // can locate it on disk and fix/rename it (unmatched items are read-only here).
+  filePath?: string | null
 }
 
 export function libraryRequestsRouter(db: Database.Database) {
@@ -155,6 +158,7 @@ export function libraryRequestsRouter(db: Database.Database) {
         posterPath: null,
         type: "unmatched",
         items: [gi],
+        filePath: item.path,
       })
     }
     groups.sort((a, b) => a.title.localeCompare(b.title))

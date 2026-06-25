@@ -350,7 +350,7 @@ export async function transcribeMediaWithWhisper(
   const partWavPath = resumeMs > 0 ? `${tempMediaPath}.part.wav` : null
   const partSrtPath = partWavPath ? `${partWavPath}.srt` : null
 
-  createLog(db, "info", "whisper", mediaItemId, `Whisper transcription queued for media item ${mediaItemId}`, {
+  createLog(db, "info", "whisperQueued", "whisper", mediaItemId, `Whisper transcription queued for media item ${mediaItemId}`, {
     model,
     mediaBasename,
     useCuda,
@@ -361,21 +361,21 @@ export async function transcribeMediaWithWhisper(
     fs.copyFileSync(mediaPath, tempMediaPath)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    createLog(db, "error", "whisper", mediaItemId, `Failed to copy media for Whisper: ${msg.slice(0, 200)}`, {
+    createLog(db, "error", "whisperFailed", "whisper", mediaItemId, `Failed to copy media for Whisper: ${msg.slice(0, 200)}`, {
       mediaBasename,
     })
     return { success: false, error: `Failed to copy media file: ${msg.slice(0, 200)}` }
   }
 
   try {
-    createLog(db, "info", "whisper", mediaItemId, `Whisper transcription started using model ${model}`, {
+    createLog(db, "info", "whisperStart", "whisper", mediaItemId, `Whisper transcription started using model ${model}`, {
       mediaBasename,
       timestampsLength,
       useCuda,
       resumeMs,
     })
 
-    createLog(db, "info", "whisper", mediaItemId, `Converting media to WAV for Whisper`, { mediaBasename, resumeMs })
+    createLog(db, "info", "whisperRun", "whisper", mediaItemId, `Converting media to WAV for Whisper`, { mediaBasename, resumeMs })
     // Fresh run converts the whole media; resume converts only the tail past the checkpoint.
     if (resumeMs > 0 && partWavPath) {
       await convertToWav(tempMediaPath, partWavPath, resumeMs)
@@ -388,17 +388,17 @@ export async function transcribeMediaWithWhisper(
     if (!cliPath) {
       throw new Error("whisper-cli executable not found; please run the setup script to build whisper.cpp")
     }
-    createLog(db, "info", "whisper", mediaItemId, `Using whisper-cli at ${cliPath}`, {})
+    createLog(db, "info", "whisperRun", "whisper", mediaItemId, `Using whisper-cli at ${cliPath}`, {})
 
     const modelPath = getWhisperModelPath(model, modelRootPathRaw)
     if (!fs.existsSync(modelPath)) {
-      createLog(db, "info", "whisper", mediaItemId, `Whisper model ${model} not found; downloading`, { modelPath })
+      createLog(db, "info", "whisperModel", "whisper", mediaItemId, `Whisper model ${model} not found; downloading`, { modelPath })
       const downloadDir = modelRootPathRaw || path.join(WHISPER_CPP_PATH, "models")
       await downloadWhisperModel(model, downloadDir)
       if (!fs.existsSync(modelPath)) {
         throw new Error(`Whisper model file not found at ${modelPath} after download`)
       }
-      createLog(db, "info", "whisper", mediaItemId, `Whisper model ${model} downloaded`, { modelPath })
+      createLog(db, "info", "whisperModel", "whisper", mediaItemId, `Whisper model ${model} downloaded`, { modelPath })
     }
     if (handle?.aborted) return abortedResult()
 
@@ -417,7 +417,7 @@ export async function transcribeMediaWithWhisper(
       if (mark > lastLoggedMark) {
         lastLoggedMark = mark
         const minutes = mark * 15
-        createLog(db, "info", "whisper", mediaItemId, `Whispered ${minutes} min for ${name}`, {
+        createLog(db, "info", "whisperRun", "whisper", mediaItemId, `Whispered ${minutes} min for ${name}`, {
           mediaBasename,
           positionMs,
           durationMs,
@@ -438,7 +438,7 @@ export async function transcribeMediaWithWhisper(
       }
 
       const command = [cliPath, ...flags, "-l", "auto", "-m", modelPath, "-f", partWavPath]
-      createLog(db, "info", "whisper", mediaItemId, `Running whisper-cli (resume from ${resumeMs}ms)`, {
+      createLog(db, "info", "whisperRun", "whisper", mediaItemId, `Running whisper-cli (resume from ${resumeMs}ms)`, {
         command: command.map(escapeShellArg).join(" "),
       })
 
@@ -452,7 +452,7 @@ export async function transcribeMediaWithWhisper(
         createLog(
           db,
           "info",
-          "whisper",
+          "whisperPaused", "whisper",
           mediaItemId,
           `Whisper transcription paused during resume at ${checkpointMs}ms; will resume from there`,
           { resumeMs, checkpointMs, tailSegments: partEntries.length },
@@ -477,7 +477,7 @@ export async function transcribeMediaWithWhisper(
     // ---- Fresh run. ----
     const wavDurationMs = getWavDurationMs(wavMediaPath)
     const command = [cliPath, ...flags, "-l", "auto", "-m", modelPath, "-f", wavMediaPath]
-    createLog(db, "info", "whisper", mediaItemId, `Running whisper-cli`, {
+    createLog(db, "info", "whisperRun", "whisper", mediaItemId, `Running whisper-cli`, {
       command: command.map(escapeShellArg).join(" "),
     })
 
@@ -488,7 +488,7 @@ export async function transcribeMediaWithWhisper(
       createLog(
         db,
         "info",
-        "whisper",
+        "whisperPaused", "whisper",
         mediaItemId,
         `Whisper transcription paused at ${checkpointMs}ms; will resume from there`,
         { checkpointMs, segments: entries.length },
@@ -513,14 +513,14 @@ export async function transcribeMediaWithWhisper(
       createLog(
         db,
         "info",
-        "whisper",
+        "whisperGrouped", "whisper",
         mediaItemId,
         `Grouped ${dedupedCount} repeated Whisper subtitle line(s) into extended-duration entries`,
         { originalLines: parsedEntries.length, finalLines: entries.length },
       )
     }
 
-    createLog(db, "info", "whisper", mediaItemId, `Whisper transcription completed for media item ${mediaItemId}`, {
+    createLog(db, "info", "whisperCompleted", "whisper", mediaItemId, `Whisper transcription completed for media item ${mediaItemId}`, {
       model,
       lineCount: entries.length,
     })
@@ -532,7 +532,7 @@ export async function transcribeMediaWithWhisper(
     createLog(
       db,
       "error",
-      "whisper",
+      "whisperFailed", "whisper",
       mediaItemId,
       `Whisper transcription failed for media item ${mediaItemId}: ${sanitized}`,
       {
@@ -542,7 +542,7 @@ export async function transcribeMediaWithWhisper(
       },
     )
     if (sanitized.toLowerCase().includes("download") || sanitized.toLowerCase().includes("ggml")) {
-      createLog(db, "error", "whisper", null, `Whisper model download failed: ${model}`, { model })
+      createLog(db, "error", "whisperModel", "whisper", null, `Whisper model download failed: ${model}`, { model })
     }
     return { success: false, error: sanitized }
   } finally {
