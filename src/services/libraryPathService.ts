@@ -766,17 +766,6 @@ function stripFolderIdTags(folderName: string): string {
     .trim()
 }
 
-// For movies, the containing folder usually holds the authoritative title
-// (e.g. "Movie Title (Year)/file.ext"), while the filename is often a release
-// group or — for subtitles — a language label. Fall back to the filename only
-// when the file lives directly in the library root.
-function getMovieDetectionName(filePath: string, libraryPathRoot: string): string {
-  const dir = path.normalize(path.dirname(filePath))
-  const root = path.normalize(libraryPathRoot)
-  if (dir === root) return path.basename(filePath, path.extname(filePath))
-  return stripFolderIdTags(path.basename(dir))
-}
-
 async function matchMediaForFile(
   db: Database.Database,
   adminUser: DBUser,
@@ -929,101 +918,77 @@ async function matchMediaForFile(
     }
   }
 
-  const detectionName =
-    libraryType === "series"
-      ? getSeriesDetectionName(fileName, libraryPathRoot)
-      : getMovieDetectionName(fileName, libraryPathRoot)
+  // Candidate detection names, in priority order. For series there is one:
+  // the series-root folder. For movies, prefer the FILENAME — it is the
+  // release-named signal (carries the title + year + tags) and is what matches
+  // reliably even when the movie's containing folder isn't in a clean
+  // "Title (Year)" layout. The containing folder name is a fallback for the
+  // opposite case: a numbered/DVD filename ("VTS_01_1.mkv", "01.mkv") sitting
+  // inside a descriptive folder. Trying filename first then folder covers both
+  // layouts; a clean single match on the first name wins, and we only fall
+  // through to the next name when the first yields no usable match.
+  const stem = path.basename(fileName, path.extname(fileName))
+  const detectionNames: string[] = []
+  if (libraryType === "series") {
+    // For series the series-root folder is the authoritative title (the
+    // filename is the episode, not the show), so it stays first. The filename is
+    // a fallback for series that live in a badly-named/blank folder or directly
+    // in the library root — the episode filename usually carries the show name
+    // plus SxxExx, which the name formatter turns back into a clean title.
+    detectionNames.push(getSeriesDetectionName(fileName, libraryPathRoot))
+    if (stem && !detectionNames.includes(stem)) detectionNames.push(stem)
+  } else {
+    const dir = path.normalize(path.dirname(fileName))
+    const root = path.normalize(libraryPathRoot)
+    const folderName = dir === root ? null : stripFolderIdTags(path.basename(dir))
+    detectionNames.push(stem)
+    if (folderName && folderName !== stem) detectionNames.push(folderName)
+  }
 
-  try {
-    const detected = await getSubtitleItemMediaItemFromPrompt(db, adminUser, detectionName)
+  type DetectionOutcome = {
+    status: "matched" | "multiple" | "none"
+    season: number | null
+    episode: number | null
+    detectedYear: number | null
+    mediaItemId: number | null
+    candidateMediaItemIds: number[]
+  }
 
-    if (detected) {
-      season = detected.season
-      episode = detected.episode
-      detectedYear = detected.year
+  // One AI-detection + TMDB-match attempt against a single detection name.
+  // Returns the outcome plus a status so the caller can decide whether to fall
+  // through to the next candidate name.
+  const attemptDetectionMatch = async (detectionName: string): Promise<DetectionOutcome> => {
+    let attemptSeason: number | null = null
+    let attemptEpisode: number | null = null
+    let attemptYear: number | null = null
+    let attemptCandidates: number[] = []
 
-      const theMovieDbResults = detected.theMovieDbRequestResult ?? []
+    try {
+      const detected = await getSubtitleItemMediaItemFromPrompt(db, adminUser, detectionName, libraryType)
 
-      if (theMovieDbResults.length > 0) {
-        let filtered = detectedYear
-          ? theMovieDbResults.filter((r) => {
-              const releaseYear = r.releaseDate
-                ? parseInt(r.releaseDate.split("-")[0])
-                : r.releaseDate !== undefined
-                  ? parseInt(String(r.releaseDate).split("-")[0])
-                  : null
-              return releaseYear === null || releaseYear === detectedYear
-            })
-          : theMovieDbResults
+      if (detected) {
+        attemptSeason = detected.season
+        attemptEpisode = detected.episode
+        attemptYear = detected.year
 
-        if (filtered.length === 0) filtered = theMovieDbResults
+        const theMovieDbResults = detected.theMovieDbRequestResult ?? []
 
-        if (filtered.length === 1) {
-          const match = filtered[0]
-          const tmdbYear = match.releaseDate ? parseInt(match.releaseDate.split("-")[0]) : null
-          const mediaResult = await createMediaItem(
-            db,
-            adminUser,
-            match.name ?? detected.name,
-            match.originalTitle ?? null,
-            libraryType,
-            tmdbYear ?? detectedYear,
-            match.isAnime ?? false,
-            match.genres || null,
-            String(match.id),
-            match.posterUrl || null,
-          )
-          if (mediaResult.success && mediaResult.mediaItem) {
-            return {
-              mediaItemId: mediaResult.mediaItem.id,
-              multipleMatches: false,
-              candidateMediaItemIds: [],
-              season,
-              episode,
-              detectedYear,
-            }
-          }
-        } else {
-          const aiWinner = await selectBestTheMovieDbMatch(db, adminUser, detectionName, filtered)
-          if (aiWinner) {
-            const tmdbYear = aiWinner.releaseDate ? parseInt(aiWinner.releaseDate.split("-")[0]) : null
-            const mediaResult = await createMediaItem(
-              db,
-              adminUser,
-              aiWinner.name ?? detected.name,
-              aiWinner.originalTitle ?? null,
-              libraryType,
-              tmdbYear ?? detectedYear,
-              aiWinner.isAnime ?? false,
-              aiWinner.genres || null,
-              String(aiWinner.id),
-              aiWinner.posterUrl || null,
-            )
-            if (mediaResult.success && mediaResult.mediaItem) {
-              return {
-                mediaItemId: mediaResult.mediaItem.id,
-                multipleMatches: false,
-                candidateMediaItemIds: [],
-                season,
-                episode,
-                detectedYear,
-              }
-            }
-          }
+        if (theMovieDbResults.length > 0) {
+          let filtered = attemptYear
+            ? theMovieDbResults.filter((r) => {
+                const releaseYear = r.releaseDate
+                  ? parseInt(r.releaseDate.split("-")[0])
+                  : r.releaseDate !== undefined
+                    ? parseInt(String(r.releaseDate).split("-")[0])
+                    : null
+                return releaseYear === null || releaseYear === attemptYear
+              })
+            : theMovieDbResults
 
-          createLog(
-            db,
-            "info",
-            "libraryScanner",
-            null,
-            `Multiple TMDb candidates for "${path.basename(fileName)}"; falling back to manual selection`,
-            {
-              fileName: path.basename(fileName),
-              candidateCount: filtered.length,
-            },
-          )
+          if (filtered.length === 0) filtered = theMovieDbResults
 
-          for (const match of filtered) {
+          if (filtered.length === 1) {
+            const match = filtered[0]
             const tmdbYear = match.releaseDate ? parseInt(match.releaseDate.split("-")[0]) : null
             const mediaResult = await createMediaItem(
               db,
@@ -1031,60 +996,186 @@ async function matchMediaForFile(
               match.name ?? detected.name,
               match.originalTitle ?? null,
               libraryType,
-              tmdbYear ?? detectedYear,
+              tmdbYear ?? attemptYear,
               match.isAnime ?? false,
               match.genres || null,
               String(match.id),
               match.posterUrl || null,
             )
             if (mediaResult.success && mediaResult.mediaItem) {
-              candidateMediaItemIds.push(mediaResult.mediaItem.id)
+              return {
+                status: "matched",
+                season: attemptSeason,
+                episode: attemptEpisode,
+                detectedYear: attemptYear,
+                mediaItemId: mediaResult.mediaItem.id,
+                candidateMediaItemIds: [],
+              }
+            }
+          } else {
+            const aiWinner = await selectBestTheMovieDbMatch(db, adminUser, detectionName, filtered)
+            if (aiWinner) {
+              const tmdbYear = aiWinner.releaseDate ? parseInt(aiWinner.releaseDate.split("-")[0]) : null
+              const mediaResult = await createMediaItem(
+                db,
+                adminUser,
+                aiWinner.name ?? detected.name,
+                aiWinner.originalTitle ?? null,
+                libraryType,
+                tmdbYear ?? attemptYear,
+                aiWinner.isAnime ?? false,
+                aiWinner.genres || null,
+                String(aiWinner.id),
+                aiWinner.posterUrl || null,
+              )
+              if (mediaResult.success && mediaResult.mediaItem) {
+                return {
+                  status: "matched",
+                  season: attemptSeason,
+                  episode: attemptEpisode,
+                  detectedYear: attemptYear,
+                  mediaItemId: mediaResult.mediaItem.id,
+                  candidateMediaItemIds: [],
+                }
+              }
+            }
+
+            createLog(
+              db,
+              "info",
+              "libraryScanner",
+              null,
+              `Multiple TMDb candidates for "${path.basename(fileName)}" from "${detectionName}"; falling back to manual selection`,
+              {
+                fileName: path.basename(fileName),
+                detectionName,
+                candidateCount: filtered.length,
+              },
+            )
+
+            for (const match of filtered) {
+              const tmdbYear = match.releaseDate ? parseInt(match.releaseDate.split("-")[0]) : null
+              const mediaResult = await createMediaItem(
+                db,
+                adminUser,
+                match.name ?? detected.name,
+                match.originalTitle ?? null,
+                libraryType,
+                tmdbYear ?? attemptYear,
+                match.isAnime ?? false,
+                match.genres || null,
+                String(match.id),
+                match.posterUrl || null,
+              )
+              if (mediaResult.success && mediaResult.mediaItem) {
+                attemptCandidates.push(mediaResult.mediaItem.id)
+              }
+            }
+            return {
+              status: "multiple",
+              season: attemptSeason,
+              episode: attemptEpisode,
+              detectedYear: attemptYear,
+              mediaItemId: null,
+              candidateMediaItemIds: attemptCandidates,
             }
           }
-          return { mediaItemId: null, multipleMatches: true, candidateMediaItemIds, season, episode, detectedYear }
-        }
-      } else if (detected.name) {
-        const existing = getMediaItemByKeys(db, detected.name, libraryType, detectedYear, null)
-        if (existing) {
-          return {
-            mediaItemId: existing.id,
-            multipleMatches: false,
-            candidateMediaItemIds: [],
-            season,
-            episode,
-            detectedYear,
+        } else if (detected.name) {
+          const existing = getMediaItemByKeys(db, detected.name, libraryType, attemptYear, null)
+          if (existing) {
+            return {
+              status: "matched",
+              season: attemptSeason,
+              episode: attemptEpisode,
+              detectedYear: attemptYear,
+              mediaItemId: existing.id,
+              candidateMediaItemIds: [],
+            }
           }
-        }
-        const mediaResult = await createMediaItem(
-          db,
-          adminUser,
-          detected.name,
-          null,
-          libraryType,
-          detectedYear,
-          false,
-          null,
-          null,
-          null,
-        )
-        if (mediaResult.success && mediaResult.mediaItem) {
-          return {
-            mediaItemId: mediaResult.mediaItem.id,
-            multipleMatches: false,
-            candidateMediaItemIds: [],
-            season,
-            episode,
-            detectedYear,
+          const mediaResult = await createMediaItem(
+            db,
+            adminUser,
+            detected.name,
+            null,
+            libraryType,
+            attemptYear,
+            false,
+            null,
+            null,
+            null,
+          )
+          if (mediaResult.success && mediaResult.mediaItem) {
+            return {
+              status: "matched",
+              season: attemptSeason,
+              episode: attemptEpisode,
+              detectedYear: attemptYear,
+              mediaItemId: mediaResult.mediaItem.id,
+              candidateMediaItemIds: [],
+            }
           }
         }
       }
+    } catch (e) {
+      createLog(db, "warning", "libraryScanner", null, `Name detection failed for file: ${path.basename(fileName)}`, {
+        fileName,
+        libraryType,
+        detectionName,
+        error: String(e),
+      })
     }
-  } catch (e) {
-    createLog(db, "warning", "libraryScanner", null, `Name detection failed for file: ${path.basename(fileName)}`, {
-      fileName,
-      libraryType,
-      error: String(e),
-    })
+
+    return {
+      status: "none",
+      season: attemptSeason,
+      episode: attemptEpisode,
+      detectedYear: attemptYear,
+      mediaItemId: null,
+      candidateMediaItemIds: [],
+    }
+  }
+
+  // Try each candidate detection name in order. A definitive match wins
+  // immediately. A "multiple" (ambiguous, needs manual pick) is remembered but we
+  // still try the next name — a cleaner single match on the folder name (or
+  // filename) is preferable to forcing manual selection. If every name is
+  // ambiguous, the first "multiple" outcome is returned so the user still gets
+  // the manual-selection candidates.
+  let multipleOutcome: DetectionOutcome | null = null
+  for (const detectionName of detectionNames) {
+    const outcome = await attemptDetectionMatch(detectionName)
+
+    if (outcome.status === "matched") {
+      return {
+        mediaItemId: outcome.mediaItemId,
+        multipleMatches: false,
+        candidateMediaItemIds: [],
+        season: outcome.season,
+        episode: outcome.episode,
+        detectedYear: outcome.detectedYear,
+      }
+    }
+
+    if (outcome.status === "multiple" && !multipleOutcome) {
+      multipleOutcome = outcome
+    }
+
+    // carry forward the best season/episode/year seen so the no-match return
+    // still populates them (e.g. an SxxExx parsed by the name formatter).
+    if (outcome.season !== null) season = outcome.season
+    if (outcome.episode !== null) episode = outcome.episode
+    if (outcome.detectedYear !== null) detectedYear = outcome.detectedYear
+  }
+
+  if (multipleOutcome) {
+    return {
+      mediaItemId: null,
+      multipleMatches: true,
+      candidateMediaItemIds: multipleOutcome.candidateMediaItemIds,
+      season: multipleOutcome.season,
+      episode: multipleOutcome.episode,
+      detectedYear: multipleOutcome.detectedYear,
+    }
   }
 
   if (season === null || episode === null) {

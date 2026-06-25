@@ -120,6 +120,7 @@ export const getSubtitleItemMediaItemFromPrompt = async (
   db: Database.Database,
   user: DBUser,
   fileName: string,
+  forcedType: "movie" | "series" | null = null,
 ): Promise<NameFormatterResult | null> => {
   if (!fileName) return null
 
@@ -145,7 +146,13 @@ export const getSubtitleItemMediaItemFromPrompt = async (
 
     const parsed = JSON.parse(jsonMatch[0]) as NameFormatterResult
 
-    const search = await searchMediaItemInTheMovieDb(db, parsed.name, parsed.type, parsed.year)
+    // The library path already declares whether this is a movie or a series, so
+    // trust that over the name formatter's guess. A series-root folder name
+    // (e.g. "The Last of Us") has no season/episode markers, so the formatter's
+    // "no markers -> movie" rule would otherwise send the search to the /movie
+    // endpoint and miss the TV show entirely.
+    const searchType = forcedType ?? parsed.type
+    const search = await searchMediaItemInTheMovieDb(db, parsed.name, searchType, parsed.year)
     if (search.success && search.items.length > 0) {
       parsed.theMovieDbRequestResult = search.items
     }
