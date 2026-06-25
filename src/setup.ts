@@ -608,11 +608,6 @@ const createTables = (db: Database.Database) => {
     whisperPositionMs INTEGER NOT NULL DEFAULT 0,
     whisperDurationMs INTEGER NOT NULL DEFAULT 0,
 
-    // Checkpoint captured when a Whisper transcription is stopped/preempted mid-run.
-    // whisperResumeSrt holds the serialized SRT of every fully-streamed segment so far;
-    // whisperResumeMs is the end-time of the last such segment. On resume, ffmpeg seek-trims
-    // the media from whisperResumeMs and only the tail is re-transcribed, then merged back.
-    // Cleared on successful finalize.
     whisperResumeSrt TEXT DEFAULT NULL,
     whisperResumeMs INTEGER NOT NULL DEFAULT 0,
 
