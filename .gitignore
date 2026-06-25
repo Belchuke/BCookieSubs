@@ -17,6 +17,9 @@ mediaItemPhotos/
 .idea/
 .claude/
 
+# graphify knowledge graph (regenerated via `graphify update .`)
+graphify-out/
+
 *.log
 npm-debug.log*
 yarn-error.log
