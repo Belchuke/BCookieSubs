@@ -1,12 +1,12 @@
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
-import { spawn } from "child_process"
+import { spawn, type ChildProcess } from "child_process"
 import axios from "axios"
 import Database from "better-sqlite3"
 import { createLog } from "../repositories/logRepository"
 import { getConfig } from "../repositories/configRepository"
-import { parseSrt, SrtEntry, serializeSrt } from "./srtService"
+import { msToSrtTime, parseSrt, SrtEntry, serializeSrt } from "./srtService"
 
 let whisperCliPathCache: string | null = null
 
@@ -174,23 +174,13 @@ function escapeShellArg(arg: string): string {
   return `"${arg}"`
 }
 
-function convertToWav(inputPath: string, outputPath: string): Promise<void> {
+function convertToWav(inputPath: string, outputPath: string, startMs = 0): Promise<void> {
   return new Promise((resolve, reject) => {
-    const args = [
-      "-nostats",
-      "-loglevel",
-      "error",
-      "-y",
-      "-i",
-      inputPath,
-      "-ar",
-      "16000",
-      "-ac",
-      "1",
-      "-c:a",
-      "pcm_s16le",
-      outputPath,
-    ]
+    const args = ["-nostats", "-loglevel", "error", "-y"]
+    // Seek-trim from startMs (used by resume: only the tail past the checkpoint is transcribed).
+    // Placed before -i for a fast+accurate seek, then re-encoded to 16 kHz mono as usual.
+    if (startMs > 0) args.push("-ss", String(startMs / 1000))
+    args.push("-i", inputPath, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", outputPath)
     const proc = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] })
     let stderr = ""
     proc.stderr?.on("data", (chunk) => {
@@ -217,6 +207,108 @@ export type WhisperTranscriptionResult =
       model: string
     }
   | { success: false; error: string }
+  // Returned when the run was aborted (Stop/preempt): the caller persists the captured segments
+  // as a checkpoint and returns without finalizing. `ms` is the end-time of the last fully
+  // streamed segment — the point resume seek-trims from.
+  | { success: false; aborted: true; checkpoint: { entries: SrtEntry[]; ms: number } }
+
+export type WhisperSegment = { startMs: number; endMs: number; text: string }
+
+// Streaming parser for whisper-cli's stdout. Each finished segment is printed as
+// `[hh:mm:ss.mmm --> hh:mm:ss.mmm]  text\n` with fflush per segment, so we capture segments
+// incrementally rather than waiting for the .srt file (which whisper-cli only writes once, at the
+// very end). A segment is only "committed" once the NEXT header arrives — that guarantees it was
+// fully flushed. The in-progress `current` segment (no following header yet) is dropped on abort,
+// so the checkpoint never contains a half-streamed line; it gets re-transcribed on resume.
+//
+// Each character is sliced out of the buffer exactly once, so total work is O(n) over the whole
+// transcription (not O(n^2) despite re-running the regex per chunk).
+class SegmentSink {
+  private buffer = ""
+  private segments: WhisperSegment[] = []
+  private current: WhisperSegment | null = null
+
+  feed(text: string): void {
+    this.buffer += text
+    // Non-global regex: find the first unprocessed header, handle it, then loop again on the
+    // remainder. lastIndex is irrelevant for a non-global regex.
+    const headerRe = /\[(\d{2}):(\d{2}):(\d{2})[.,](\d{1,3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[.,](\d{1,3})\]/
+    let m: RegExpExecArray | null
+    while ((m = headerRe.exec(this.buffer)) !== null) {
+      const before = this.buffer.slice(0, m.index)
+      if (this.current) {
+        this.current.text += before
+        this.segments.push(this.current)
+      }
+      // Text before the very first header is the whisper banner — discard it.
+      this.current = {
+        startMs: tsToMs(m[1], m[2], m[3], m[4]),
+        endMs: tsToMs(m[5], m[6], m[7], m[8]),
+        text: "",
+      }
+      this.buffer = this.buffer.slice(m.index + m[0].length)
+    }
+    // Remaining buffer is the in-progress segment's text-so-far; it stays uncommitted until the
+    // next header arrives (or the stream ends — but on abort we drop it regardless).
+  }
+
+  getSegments(): WhisperSegment[] {
+    return this.segments.map((s) => ({ ...s }))
+  }
+
+  get lastEndMs(): number {
+    if (this.segments.length > 0) return this.segments[this.segments.length - 1].endMs
+    return this.current?.endMs ?? 0
+  }
+}
+
+function tsToMs(h: string, m: string, s: string, ms: string): number {
+  return (
+    parseInt(h, 10) * 3600000 +
+    parseInt(m, 10) * 60000 +
+    parseInt(s, 10) * 1000 +
+    parseInt(ms.padEnd(3, "0"), 10)
+  )
+}
+
+// Handle owned by the worker for the duration of one transcription. `abort()` kills the running
+// whisper-cli so Stop/preempt take effect immediately instead of waiting for the process to
+// finish. The sink accumulates the checkpoint.
+export type WhisperRunHandle = {
+  aborted: boolean
+  proc: ChildProcess | null
+  sink: SegmentSink
+  abort: () => void
+}
+
+export function createWhisperRunHandle(): WhisperRunHandle {
+  const handle: WhisperRunHandle = {
+    aborted: false,
+    proc: null,
+    sink: new SegmentSink(),
+    abort: () => {
+      if (handle.aborted) return
+      handle.aborted = true
+      const proc = handle.proc
+      if (proc) {
+        try {
+          proc.kill("SIGTERM")
+        } catch {
+          /* already gone */
+        }
+        // Force-kill fallback in case whisper-cli doesn't honor SIGTERM promptly.
+        setTimeout(() => {
+          try {
+            proc.kill("SIGKILL")
+          } catch {
+            /* already exited */
+          }
+        }, 2000).unref()
+      }
+    },
+  }
+  return handle
+}
 
 export async function transcribeMediaWithWhisper(
   db: Database.Database,
@@ -225,6 +317,7 @@ export async function transcribeMediaWithWhisper(
   overrideModel?: string,
   onProgress?: WhisperTranscriptionProgress,
   displayName?: string,
+  opts?: { handle?: WhisperRunHandle | null; resumeMs?: number; fullDurationMs?: number; resumeEntries?: SrtEntry[] },
 ): Promise<WhisperTranscriptionResult> {
   const config = getConfig(db)
   const model = validateWhisperModel(overrideModel || config.whisperModel || "large-v3-turbo")
@@ -238,16 +331,30 @@ export async function transcribeMediaWithWhisper(
     } catch {}
   }
 
+  const handle = opts?.handle ?? null
+  const resumeMs = Math.max(0, Math.round(opts?.resumeMs ?? 0))
+  const fullDurationMs = Math.max(0, Math.round(opts?.fullDurationMs ?? 0))
+  const resumeEntries = opts?.resumeEntries ?? []
+  const abortedResult = (): WhisperTranscriptionResult => ({
+    success: false,
+    aborted: true,
+    checkpoint: { entries: resumeEntries, ms: resumeMs },
+  })
+
   const mediaBasename = path.basename(mediaPath)
   const tempDir = getWhisperTempDir()
   const tempMediaPath = path.join(tempDir, `${Date.now()}-${mediaBasename}`)
   const wavMediaPath = `${tempMediaPath}.wav`
   const expectedSrtPath = `${wavMediaPath}.srt`
+  // Resume runs whisper-cli on the seek-trimmed tail; it gets its own wav/srt paths.
+  const partWavPath = resumeMs > 0 ? `${tempMediaPath}.part.wav` : null
+  const partSrtPath = partWavPath ? `${partWavPath}.srt` : null
 
   createLog(db, "info", "whisper", mediaItemId, `Whisper transcription queued for media item ${mediaItemId}`, {
     model,
     mediaBasename,
     useCuda,
+    resumeMs,
   })
 
   try {
@@ -265,14 +372,17 @@ export async function transcribeMediaWithWhisper(
       mediaBasename,
       timestampsLength,
       useCuda,
+      resumeMs,
     })
 
-    createLog(db, "info", "whisper", mediaItemId, `Converting media to WAV for Whisper`, { mediaBasename })
-    await convertToWav(tempMediaPath, wavMediaPath)
-
-    // Total audio length, used to drive a reliable progress percentage by
-    // comparing it against the latest segment timestamp whisper-cli streams out.
-    const wavDurationMs = getWavDurationMs(wavMediaPath)
+    createLog(db, "info", "whisper", mediaItemId, `Converting media to WAV for Whisper`, { mediaBasename, resumeMs })
+    // Fresh run converts the whole media; resume converts only the tail past the checkpoint.
+    if (resumeMs > 0 && partWavPath) {
+      await convertToWav(tempMediaPath, partWavPath, resumeMs)
+    } else {
+      await convertToWav(tempMediaPath, wavMediaPath)
+    }
+    if (handle?.aborted) return abortedResult()
 
     const cliPath = findWhisperCliPath()
     if (!cliPath) {
@@ -290,16 +400,11 @@ export async function transcribeMediaWithWhisper(
       }
       createLog(db, "info", "whisper", mediaItemId, `Whisper model ${model} downloaded`, { modelPath })
     }
+    if (handle?.aborted) return abortedResult()
 
     const flags = ["-osrt", "-pp", "-sow", "true", "-ml", String(timestampsLength), useCuda ? undefined : "-ng"].filter(
       (f): f is string => f !== undefined,
     )
-
-    const command = [cliPath, ...flags, "-l", "auto", "-m", modelPath, "-f", wavMediaPath]
-
-    createLog(db, "info", "whisper", mediaItemId, `Running whisper-cli`, {
-      command: command.map(escapeShellArg).join(" "),
-    })
 
     // Emit a progress log for every 15 minutes of audio transcribed, e.g.
     // "Whispered 15 min for The Matrix". positionMs is the latest transcribed
@@ -321,7 +426,75 @@ export async function transcribeMediaWithWhisper(
       onProgress?.(progress, positionMs, durationMs)
     }
 
-    await runWhisperCli(command, wavDurationMs, onProgressWithLog)
+    if (resumeMs > 0 && partWavPath && partSrtPath) {
+      // ---- Resume: transcribe only the tail past the checkpoint, then merge. ----
+      const partDurationMs = getWavDurationMs(partWavPath)
+      // Map the tail-relative progress whisper-cli reports onto the whole-media scale.
+      const partOnProgress: WhisperTranscriptionProgress = (p, posMs, durMs) => {
+        const overallPos = resumeMs + posMs
+        const overallDur = fullDurationMs || resumeMs + durMs
+        const overallPct = overallDur > 0 ? Math.floor((overallPos / overallDur) * 100) : p
+        onProgressWithLog(overallPct, overallPos, overallDur)
+      }
+
+      const command = [cliPath, ...flags, "-l", "auto", "-m", modelPath, "-f", partWavPath]
+      createLog(db, "info", "whisper", mediaItemId, `Running whisper-cli (resume from ${resumeMs}ms)`, {
+        command: command.map(escapeShellArg).join(" "),
+      })
+
+      // Fresh sink for the tail so the in-progress `current` of the original run
+      // doesn't bleed into the new checkpoint if this run is itself aborted.
+      const partSink = new SegmentSink()
+      const runResult = await runWhisperCli(command, partDurationMs, partOnProgress, handle, partSink)
+      if (handle?.aborted || runResult.aborted) {
+        const partEntries = segmentsToEntries(partSink.getSegments(), resumeMs)
+        const checkpointMs = resumeMs + partSink.lastEndMs
+        createLog(
+          db,
+          "info",
+          "whisper",
+          mediaItemId,
+          `Whisper transcription paused during resume at ${checkpointMs}ms; will resume from there`,
+          { resumeMs, checkpointMs, tailSegments: partEntries.length },
+        )
+        // New checkpoint = the already-complete prefix + the tail's committed segments.
+        return {
+          success: false,
+          aborted: true,
+          checkpoint: { entries: [...resumeEntries, ...partEntries], ms: checkpointMs },
+        }
+      }
+
+      // Tail produced no speech (e.g. closing silence) — the prefix is the whole thing.
+      let partEntries: SrtEntry[] = []
+      if (fs.existsSync(partSrtPath)) {
+        partEntries = parseSrt(fs.readFileSync(partSrtPath, "utf-8")).map((e) => offsetEntry(e, resumeMs))
+      }
+      const merged = deduplicateSrtEntries([...resumeEntries, ...partEntries])
+      return { success: true, entries: merged, rawSrt: serializeSrt(merged), model }
+    }
+
+    // ---- Fresh run. ----
+    const wavDurationMs = getWavDurationMs(wavMediaPath)
+    const command = [cliPath, ...flags, "-l", "auto", "-m", modelPath, "-f", wavMediaPath]
+    createLog(db, "info", "whisper", mediaItemId, `Running whisper-cli`, {
+      command: command.map(escapeShellArg).join(" "),
+    })
+
+    const runResult = await runWhisperCli(command, wavDurationMs, onProgressWithLog, handle)
+    if (handle?.aborted || runResult.aborted) {
+      const entries = segmentsToEntries(handle ? handle.sink.getSegments() : [])
+      const checkpointMs = handle ? handle.sink.lastEndMs : 0
+      createLog(
+        db,
+        "info",
+        "whisper",
+        mediaItemId,
+        `Whisper transcription paused at ${checkpointMs}ms; will resume from there`,
+        { checkpointMs, segments: entries.length },
+      )
+      return { success: false, aborted: true, checkpoint: { entries, ms: checkpointMs } }
+    }
 
     if (!fs.existsSync(expectedSrtPath)) {
       throw new Error("Whisper finished but no SRT file was generated")
@@ -376,6 +549,38 @@ export async function transcribeMediaWithWhisper(
     safeUnlink(tempMediaPath)
     safeUnlink(wavMediaPath)
     safeUnlink(expectedSrtPath)
+    if (partWavPath) safeUnlink(partWavPath)
+    if (partSrtPath) safeUnlink(partSrtPath)
+  }
+}
+
+// Convert captured stdout segments into SrtEntry rows, optionally shifted by an offset (resume:
+// tail timestamps are relative to the part start, so they're offset by the checkpoint ms).
+function segmentsToEntries(segments: WhisperSegment[], offsetMs = 0): SrtEntry[] {
+  return segments.map((s, i) => {
+    const startMs = Math.max(0, s.startMs + offsetMs)
+    const endMs = Math.max(startMs + 1, s.endMs + offsetMs)
+    return {
+      id: String(i + 1),
+      startMs,
+      endMs,
+      startTime: msToSrtTime(startMs),
+      endTime: msToSrtTime(endMs),
+      text: s.text,
+    }
+  })
+}
+
+function offsetEntry(entry: SrtEntry, offsetMs: number): SrtEntry {
+  if (offsetMs === 0) return entry
+  const startMs = Math.max(0, entry.startMs + offsetMs)
+  const endMs = Math.max(startMs + 1, entry.endMs + offsetMs)
+  return {
+    ...entry,
+    startMs,
+    endMs,
+    startTime: msToSrtTime(startMs),
+    endTime: msToSrtTime(endMs),
   }
 }
 
@@ -396,11 +601,15 @@ function runWhisperCli(
   command: string[],
   wavDurationMs: number,
   onProgress?: WhisperTranscriptionProgress,
-): Promise<void> {
+  handle?: WhisperRunHandle | null,
+  sink?: SegmentSink,
+): Promise<{ aborted: boolean }> {
   return new Promise((resolve, reject) => {
     const proc = spawn(command[0], command.slice(1), {
       stdio: ["ignore", "pipe", "pipe"],
     })
+    if (handle) handle.proc = proc
+    const segmentSink = sink ?? handle?.sink ?? null
 
     let stderr = ""
     let lastProgress = -1
@@ -415,6 +624,8 @@ function runWhisperCli(
     }
 
     const handleChunk = (text: string): void => {
+      // Capture streamed segments for the checkpoint (used only on abort).
+      if (segmentSink) segmentSink.feed(text)
       // Primary signal: whisper-cli streams each finished segment as
       // `[hh:mm:ss.mmm --> hh:mm:ss.mmm] text`. Progress = latest end / total.
       if (wavDurationMs > 0) {
@@ -440,6 +651,13 @@ function runWhisperCli(
     })
 
     proc.on("close", (code) => {
+      if (handle?.aborted) {
+        // Stop/preempt killed the process. Resolve as aborted so the caller can
+        // persist the checkpoint; do NOT reject (that would read as a failure)
+        // and do NOT read the .srt file (it was never written).
+        resolve({ aborted: true })
+        return
+      }
       if (code === 0) {
         // whisper-cli exits 0 on success. Do NOT scan stdout for "error:" —
         // stdout IS the transcription text, which legitimately contains words
@@ -447,7 +665,7 @@ function runWhisperCli(
         // transcriptions to be falsely rejected (and then the SRT deleted in
         // the finally block, losing hours of work). The downstream SRT file
         // existence + parse checks validate that real output was produced.
-        resolve()
+        resolve({ aborted: false })
       } else {
         reject(new Error(stderr || `whisper-cli exited with code ${code}`))
       }

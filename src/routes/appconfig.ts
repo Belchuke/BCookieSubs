@@ -91,6 +91,7 @@ export function appconfigRouter(db: Database.Database) {
       cur.whisperUseCuda === 1,
       cur.whisperModelRootPath,
       cur.whisperEnabled === 1,
+      cur.whisperRunAsSeparateTask === 1,
     )
 
     if (!result.success) {
@@ -108,7 +109,7 @@ export function appconfigRouter(db: Database.Database) {
   // without clobbering the general configuration (and vice-versa).
   router.post("/whisper", requireAuth, requirePermission("canManageSettings"), upload.none(), (req, res) => {
     const user = res.locals.user!
-    const { whisperModel, whisperTimestampsLength, whisperUseCuda, whisperModelRootPath, whisperEnabled } =
+    const { whisperModel, whisperTimestampsLength, whisperUseCuda, whisperModelRootPath, whisperEnabled, whisperRunAsSeparateTask } =
       req.body as Record<string, string>
 
     const parsedTimestamps = parseInt(whisperTimestampsLength)
@@ -124,6 +125,7 @@ export function appconfigRouter(db: Database.Database) {
       requestedCuda,
       whisperModelRootPath?.trim() || null,
       whisperEnabled === "1",
+      whisperRunAsSeparateTask === "1",
     )
 
     if (!result.success) {

@@ -34,6 +34,7 @@ import {
 } from "../repositories/libraryPathRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
 import { autoTranslateItem, findCompanionSrt } from "../services/libraryPathService"
+import { isSubtitleExtension } from "../services/subtitleFormatDetector"
 import { searchMediaItemInTheMovieDb } from "../repositories/movieDbRepository"
 import { createMediaItem, getMediaItemPhotoPath, updateMediaItemPhotoPath } from "../repositories/mediaRepository"
 import { getHighestRoleUser } from "../repositories/userRepository"
@@ -469,7 +470,7 @@ export function libraryPathsRouter(db: Database.Database) {
     if (resetStatus) updateLibraryPathItemStatus(db, itemId, "not_started")
 
     let srtSource: { path: string; isTemp: boolean } | null = null
-    if (item.path.toLowerCase().endsWith(".srt")) {
+    if (isSubtitleExtension(item.path)) {
       srtSource = { path: item.path, isTemp: false }
     } else if (sourceOverride && sourceOverride.path) {
       // Use the user-selected source (embedded or external)

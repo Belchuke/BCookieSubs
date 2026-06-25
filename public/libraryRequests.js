@@ -118,6 +118,31 @@
     el.style.display = n > 0 ? "" : "none"
   }
 
+  // Preload every tab's badge number on first page load so the counts are
+  // visible before the user visits each tab. Each tab's full data still loads
+  // lazily on first open; this only fills the small count badges from a single
+  // /counts request. Once a tab is opened, its own loadTab keeps the badge in
+  // sync (and supersedes the preloaded value).
+  function preloadTabCounts() {
+    fetch("/library-requests/counts")
+      .then(function (r) { if (redirectIfUnauthorized(r)) return null; return r.json() })
+      .then(function (data) {
+        if (!data) return
+        var types = ["movie", "series", "unmatched"]
+        for (var i = 0; i < types.length; i++) {
+          var t = types[i]
+          // Don't clobber a count a tab already rendered with its own data.
+          if (S(t).loaded) { updateTabCount(t); continue }
+          var el = document.querySelector('.lr-tab-count[data-tab="' + t + '"]')
+          if (!el) continue
+          var n = data[t] || 0
+          el.textContent = String(n)
+          el.style.display = n > 0 ? "" : "none"
+        }
+      })
+      .catch(function () { /* badges fall back to lazy load on tab open */ })
+  }
+
   function loadingHtml() {
     return '<div class="card"><p class="empty-state">' + escHtml(I18N.loading || "Loading…") + "</p></div>"
   }
@@ -808,6 +833,7 @@
       if (t === "series" || t === "movie" || t === "unmatched") initial = t
     }
     lrSwitchTab(initial)
+    preloadTabCounts()
   }
 
   if (document.readyState === "loading") {

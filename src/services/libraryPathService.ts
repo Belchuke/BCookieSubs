@@ -16,8 +16,11 @@ import { fetchTheMovieDbDetailsById } from "../repositories/movieDbRepository"
 import {
   createLibraryPathItem,
   createLibraryPathItemCandidate,
+  deleteLibraryPathItem,
   findLibraryPathItemByPath,
+  getLibraryPathById,
   getLibraryPathItemById,
+  getLibraryPathItemIdsByLibraryPath,
   isLibraryPathItemBlacklisted,
   setInitialScanCompleted,
   setLibraryPathState,
@@ -30,8 +33,9 @@ import {
   getSubtitleById,
   getCompletedLibrarySubtitlesForExport,
 } from "../repositories/subtitleRepository"
-import { addCreditToSrt } from "./subtitleExportService"
-import { DBLibraryPath, DBLibraryPathItem, DBUser } from "../types/dbTypes"
+import { addCreditToSubtitle, subtitleExportExtension } from "./subtitleExportService"
+import { isSubtitleExtension, subtitleExtensionOf } from "./subtitleFormatDetector"
+import { DBLibraryPath, DBLibraryPathItem, DBSubtitle, DBUser } from "../types/dbTypes"
 
 const EXTRACT_TEMP_DIR = path.join(os.tmpdir(), `bcookiesubs-extract-${process.pid}`)
 try {
@@ -39,10 +43,11 @@ try {
 } catch {}
 
 let _extractCounter = 0
-function makeExtractTempPath(stem: string, tag: string): string {
+function makeExtractTempPath(stem: string, tag: string, ext = ".srt"): string {
   _extractCounter++
   const safeStem = stem.replace(/[/\\:*?"<>|]/g, "_")
-  return path.join(EXTRACT_TEMP_DIR, `${safeStem}.${tag}.${process.pid}-${_extractCounter}.srt`)
+  const safeExt = ext.startsWith(".") ? ext : `.${ext}`
+  return path.join(EXTRACT_TEMP_DIR, `${safeStem}.${tag}.${process.pid}-${_extractCounter}${safeExt}`)
 }
 
 function safeDeleteTempExtract(filePath: string, db?: Database.Database, itemId: number | null = null): void {
@@ -187,7 +192,7 @@ function findMediaFiles(dirPath: string): ScannedFiles {
       const ext = path.extname(entry.name).toLowerCase()
       if (VIDEO_EXTENSIONS.has(ext)) {
         if (!isSampleFile(entry.name)) videoFiles.push(full)
-      } else if (ext === ".srt") {
+      } else if (isSubtitleExtension(ext)) {
         srtFiles.push(full)
       }
     }
@@ -205,7 +210,7 @@ function findAllCompanionSrts(videoFilePath: string): string[] {
     return []
   }
   return entries
-    .filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".srt") && e.name.toLowerCase().startsWith(stem))
+    .filter((e) => e.isFile() && isSubtitleExtension(e.name) && e.name.toLowerCase().startsWith(stem))
     .map((e) => path.join(dir, e.name))
 }
 
@@ -223,7 +228,9 @@ function selectBestSrt(
   const lowerName = sourceLangName.toLowerCase()
 
   const langMatches = pool.filter((f) => {
-    const base = path.basename(f, ".srt").toLowerCase()
+    const lower = path.basename(f).toLowerCase()
+    const subExt = subtitleExtensionOf(lower)
+    const base = subExt ? lower.slice(0, lower.length - subExt.length) : lower
     const lastDotPart = base.includes(".") ? base.split(".").pop()! : ""
     const hasLangSuffix = lastDotPart.length >= 2 && lastDotPart.length <= 8
     if (!hasLangSuffix) return true
@@ -250,6 +257,23 @@ interface MkvSubTrack {
 }
 
 const MKV_TEXT_CODECS = new Set(["SubRip/SRT", "SubStationAlpha", "Advanced SubStation Alpha", "WebVTT"])
+
+// Map a probed subtitle codec name (ffmpeg codec_name or mkvmerge codec) to the
+// file extension to use when extracting that track. ASS/SSA tracks are
+// extracted with -c:s copy so their structure is preserved byte-for-byte;
+// other text codecs are converted to SRT as before.
+function codecToSubtitleExt(codec: string | null | undefined): ".srt" | ".ass" | ".ssa" {
+  if (!codec) return ".srt"
+  const c = codec.toLowerCase()
+  if (c === "ass" || c === "advanced substation alpha") return ".ass"
+  if (c === "ssa" || c === "substationalpha") return ".ssa"
+  return ".srt"
+}
+
+function isAssCodec(codec: string | null | undefined): boolean {
+  const c = (codec ?? "").toLowerCase()
+  return c === "ass" || c === "ssa" || c === "advanced substation alpha" || c === "substationalpha"
+}
 
 function probeMkvSubtitleTracks(videoFile: string): MkvSubTrack[] | null {
   try {
@@ -288,6 +312,7 @@ interface FfSubStream {
   subtitleIndex: number
   language: string | null
   title: string | null
+  codecName: string | null
 }
 
 function probeFfSubtitleStreams(videoFile: string): FfSubStream[] {
@@ -305,15 +330,19 @@ function probeFfSubtitleStreams(videoFile: string): FfSubStream[] {
         subtitleIndex: i,
         language: (s.tags?.language as string | undefined) ?? null,
         title: (s.tags?.title as string | undefined) ?? null,
+        codecName: (s.codec_name as string | undefined) ?? null,
       }))
   } catch {
     return []
   }
 }
 
-function extractFfSubtitleStream(videoFile: string, subtitleIndex: number, outputPath: string): boolean {
+function extractFfSubtitleStream(videoFile: string, subtitleIndex: number, outputPath: string, codec: string | null): boolean {
   try {
-    const r = spawnSync("ffmpeg", ["-i", videoFile, "-map", `0:s:${subtitleIndex}`, "-c:s", "srt", "-y", outputPath], {
+    // ASS/SSA: copy the track verbatim so styles/override tags survive. Other
+    // text codecs are converted to SRT (the historical behavior).
+    const codecFlag = isAssCodec(codec) ? "copy" : "srt"
+    const r = spawnSync("ffmpeg", ["-i", videoFile, "-map", `0:s:${subtitleIndex}`, "-c:s", codecFlag, "-y", outputPath], {
       encoding: "utf-8",
       timeout: 60_000,
     })
@@ -355,7 +384,7 @@ function extractBestEmbeddedSrt(
 
       for (const track of sorted) {
         const tag = track.language ?? `sub${track.id}`
-        const outputPath = makeExtractTempPath(stem, tag)
+        const outputPath = makeExtractTempPath(stem, tag, codecToSubtitleExt(track.codec))
         if (extractMkvTrack(videoFile, track.id, outputPath)) return outputPath
       }
       return null
@@ -379,8 +408,8 @@ function extractBestEmbeddedSrt(
 
   for (const stream of pool) {
     const tag = stream.language ?? `sub${stream.subtitleIndex}`
-    const outputPath = makeExtractTempPath(stem, tag)
-    if (extractFfSubtitleStream(videoFile, stream.subtitleIndex, outputPath)) return outputPath
+    const outputPath = makeExtractTempPath(stem, tag, codecToSubtitleExt(stream.codecName))
+    if (extractFfSubtitleStream(videoFile, stream.subtitleIndex, outputPath, stream.codecName)) return outputPath
   }
   return null
 }
@@ -395,8 +424,9 @@ function buildExtractFileName(
   season: number | null,
   episode: number | null,
   fallbackStem: string,
+  ext: ".srt" | ".ass" | ".ssa" = ".srt",
 ): string {
-  if (!mediaItem) return `${fallbackStem}.srt`
+  if (!mediaItem) return `${fallbackStem}${ext}`
   const sanitized = mediaItem.title
     .replace(/[/\\:*?"<>|]/g, "")
     .replace(/\s+/g, ".")
@@ -406,7 +436,7 @@ function buildExtractFileName(
     name += `.S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}`
   }
   if (mediaItem.year) name += `.(${mediaItem.year})`
-  return `${name}.srt`
+  return `${name}${ext}`
 }
 
 export type ResolvedSrt = { path: string; isTemp: boolean }
@@ -447,7 +477,7 @@ function embeddedCandidatesFor(videoFilePath: string, ext: string): { trackId: n
     }
   }
   const streams = probeFfSubtitleStreams(videoFilePath)
-  return streams.map((s) => ({ trackId: s.subtitleIndex, language: s.language, codec: "embedded" }))
+  return streams.map((s) => ({ trackId: s.subtitleIndex, language: s.language, codec: s.codecName ?? "embedded" }))
 }
 
 export function listSubtitleSourcesForVideo(
@@ -462,13 +492,14 @@ export function listSubtitleSourcesForVideo(
 
   for (const srt of externalCandidatesFor(videoFilePath)) {
     const filename = path.basename(srt)
+    const fileExt = subtitleExtensionOf(filename) ?? ".srt"
     result.push({
       type: "external",
       path: srt,
       isTemp: false,
       label: filename,
       language: null,
-      codec: ".srt",
+      codec: fileExt,
       filename,
       filenameOnly: filename,
     })
@@ -476,7 +507,8 @@ export function listSubtitleSourcesForVideo(
 
   for (const track of embeddedCandidatesFor(videoFilePath, ext)) {
     const langTag = track.language ?? `track-${track.trackId}`
-    const tempPath = makeExtractTempPath(stem, langTag)
+    const trackExt = codecToSubtitleExt(track.codec)
+    const tempPath = makeExtractTempPath(stem, langTag, trackExt)
     result.push({
       type: "embedded",
       path: tempPath,
@@ -485,7 +517,7 @@ export function listSubtitleSourcesForVideo(
       language: track.language,
       codec: track.codec,
       filename: null,
-      filenameOnly: `${stem}.${langTag}.srt`,
+      filenameOnly: `${stem}.${langTag}${trackExt}`,
     })
   }
 
@@ -550,8 +582,7 @@ export function resolveSubtitleSourceFromCandidate(
   if (candidate.type === "external") {
     return { path: candidate.path, isTemp: false }
   }
-  const ext = path.extname(candidate.path).toLowerCase()
-  if (ext === ".srt" && fs.existsSync(candidate.path)) {
+  if (isSubtitleExtension(candidate.path) && fs.existsSync(candidate.path)) {
     return { path: candidate.path, isTemp: true }
   }
   // Re-extract from media
@@ -904,6 +935,23 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
     return
   }
 
+  // Prune inventory items whose source file has been removed from the folder
+  // since the last scan. The library scan is the only place that adds items, so
+  // it is also the right place to drop them: an item with no file on disk is
+  // stale and would otherwise linger forever as a translatable card pointing at
+  // nothing. Candidate/blacklist rows cascade on delete; any linked subtitle is
+  // detached (libraryPathItem SET NULL) so finished translations/exported files
+  // are preserved.
+  const existingItems = getLibraryPathItemIdsByLibraryPath(db, libraryPath.id)
+  for (const inv of existingItems) {
+    if (fs.existsSync(inv.path)) continue
+    deleteLibraryPathItem(db, inv.id)
+    createLog(db, "info", "libraryScanner", inv.id, `Removed library item no longer on disk: ${inv.path}`, {
+      libraryPathName: libraryPath.name,
+      path: inv.path,
+    })
+  }
+
   const { videoFiles, srtFiles } = findMediaFiles(libraryPath.path)
 
   const config = getConfig(db)
@@ -1039,7 +1087,10 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
 
     if (srtBasename.startsWith("[BCookieSub]")) continue
 
-    const stem = path.basename(srtFile, ".srt")
+    const fileExt = subtitleExtensionOf(srtFile) ?? ".srt"
+    const stem = srtBasename.toLowerCase().endsWith(fileExt)
+      ? srtBasename.slice(0, srtBasename.length - fileExt.length)
+      : srtBasename
 
     if (findLibraryPathItemByPath(db, libraryPath.id, srtFile)) continue
 
@@ -1083,7 +1134,7 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
     }
 
     const mediaItem = mediaItemId ? getMediaItemById(db, mediaItemId) : null
-    const extractFileName = buildExtractFileName(mediaItem, season, episode, stem)
+    const extractFileName = buildExtractFileName(mediaItem, season, episode, stem, fileExt)
     const status: DBLibraryPathItem["status"] = mediaItemId ? "not_started" : "no_media_item"
 
     const item = createLibraryPathItem(
@@ -1225,44 +1276,98 @@ export async function autoTranslateItem(
   }
 }
 
-async function autoExtractItems(db: Database.Database, libraryPath: DBLibraryPath): Promise<void> {
-  const completedSubtitles = getCompletedLibrarySubtitlesForExport(db)
+// Export a single subtitle's files into its library folder. Writes the
+// original-language SRT (when available) and one SRT per completed translated
+// job, each with the "Translated by BCookieSubs" credit prepended. Files that
+// already exist are left untouched, so this is idempotent and safe to call
+// repeatedly as jobs complete.
+//
+// Gated on the owning library path's `autoExtract` setting. Called both from
+// the library scanner (via autoExtractItems) and from the worker threads when
+// whisper transcription / translation finalizes, so exports land without
+// requiring a library rescan.
+export async function exportSubtitleToLibraryFolder(
+  db: Database.Database,
+  subtitle: DBSubtitle,
+  opts: { includeOriginal?: boolean; includeTranslated?: boolean; markCompleted?: boolean } = {},
+): Promise<void> {
+  const includeOriginal = opts.includeOriginal !== false
+  const includeTranslated = opts.includeTranslated !== false
+  // Only flip the library item to "completed" when the caller knows the whole
+  // subtitle is done — per-job incremental exports write files but leave the
+  // item status alone so it isn't hidden from later library scans.
+  const markCompleted = opts.markCompleted !== false
+  if (!subtitle.libraryPathItem) return
 
-  for (const row of completedSubtitles) {
-    const item = getLibraryPathItemById(db, row.libraryPathItemId)
-    if (!item || item.libraryPathId !== libraryPath.id) continue
-    if (item.status === "completed") continue
-    if (isLibraryPathItemBlacklisted(db, item.id)) continue
+  const item = getLibraryPathItemById(db, subtitle.libraryPathItem)
+  if (!item) return
+  if (isLibraryPathItemBlacklisted(db, item.id)) return
 
-    const jobs = getSubtitleJobsBySubtitleId(db, row.id)
+  const libraryPath = getLibraryPathById(db, item.libraryPathId)
+  if (!libraryPath || !libraryPath.autoExtract) return
+
+  // Derive the base filename from the source media file (not the subtitle/movie title)
+  // e.g. /movies/Deadpool 2 (2018) [YTS.AM]/Deadpool.2.2018.720p.BluRay.x264-[YTS.AM].mkv
+  //   -> Deadpool.2.2018.720p.BluRay.x264-[YTS.AM]
+  const sourceBaseRaw = path.basename(item.path).replace(/\.[^.]+$/, "")
+  const sourceBase = sourceBaseRaw
+    .replace(/[/\\:*?"<>|]/g, "")
+    .replace(/\s+/g, ".")
+    .trim()
+
+  const outputDir = path.dirname(item.path)
+  let lastExportName: string | null = null
+  let anyExported = false
+
+  const ext = subtitleExportExtension(subtitle.sourceFormat)
+
+  // Original-language subtitle (e.g. the Whisper-generated source transcript).
+  if (includeOriginal && subtitle.originalText) {
+    const srcLang = subtitle.sourceLangId ? getLanguageById(db, subtitle.sourceLangId) : null
+    const srcCode = (srcLang?.iso639 ?? "original").toLowerCase()
+    const origName = `${sourceBase}.${srcCode}${ext}`
+    const origPath = path.join(outputDir, origName)
+
+    if (fs.existsSync(origPath)) {
+      lastExportName = origName
+    } else {
+      try {
+        fs.writeFileSync(origPath, addCreditToSubtitle(subtitle.originalText, subtitle.sourceFormat), "utf-8")
+        lastExportName = origName
+        anyExported = true
+        createLog(
+          db,
+          "info",
+          "libraryScanner",
+          item.id,
+          `Exported original subtitle to ${origName}`,
+          { exportPath: origPath, exportName: origName, subtitleId: subtitle.id },
+        )
+      } catch (e) {
+        createLog(
+          db,
+          "error",
+          "libraryScanner",
+          item.id,
+          `Failed to export original subtitle "${origName}": ${String(e).slice(0, 200)}`,
+          { exportPath: origPath, exportName: origName, subtitleId: subtitle.id, error: String(e) },
+        )
+      }
+    }
+  }
+
+  // Translated SRTs — one file per completed target language.
+  if (includeTranslated) {
+    const jobs = getSubtitleJobsBySubtitleId(db, subtitle.id)
     const completedJobs = jobs.filter((j) => j.status === "completed" && j.translatedText)
 
-    if (completedJobs.length === 0) continue
-
-    const subtitle = getSubtitleById(db, row.id)
-    if (!subtitle) continue
-
-    // Derive the base filename from the source media file (not the subtitle/movie title)
-    // e.g. /movies/Deadpool 2 (2018) [YTS.AM]/Deadpool.2.2018.720p.BluRay.x264-[YTS.AM].mkv
-    //   -> Deadpool.2.2018.720p.BluRay.x264-[YTS.AM]
-    const sourceBaseRaw = path.basename(item.path).replace(/\.[^.]+$/, "")
-    const sourceBase = sourceBaseRaw
-      .replace(/[/\\:*?"<>|]/g, "")
-      .replace(/\s+/g, ".")
-      .trim()
-
-    const outputDir = path.dirname(item.path)
-    let lastExportName: string | null = null
-    let anyExported = false
-
-    // Export ALL completed jobs (one file per target language)
     for (const job of completedJobs) {
       const lang = getLanguageById(db, job.targetLangId)
       if (!lang) continue
 
       const langCode = lang.iso639.toLowerCase()
       // e.g. Deadpool.2.2018.720p.BluRay.x264-[YTS.AM].th.srt
-      const exportName = `${sourceBase}.${langCode}.srt`
+      const exportName = `${sourceBase}.${langCode}${ext}`
       const exportPath = path.join(outputDir, exportName)
 
       if (fs.existsSync(exportPath)) {
@@ -1271,7 +1376,7 @@ async function autoExtractItems(db: Database.Database, libraryPath: DBLibraryPat
       }
 
       try {
-        const content = addCreditToSrt(job.translatedText!)
+        const content = addCreditToSubtitle(job.translatedText!, subtitle.sourceFormat)
         fs.writeFileSync(exportPath, content, "utf-8")
         lastExportName = exportName
         anyExported = true
@@ -1305,12 +1410,29 @@ async function autoExtractItems(db: Database.Database, libraryPath: DBLibraryPat
         )
       }
     }
+  }
 
-    if (lastExportName) {
-      updateLibraryPathItemExtractFileName(db, item.id, lastExportName)
-    }
-    if (anyExported) {
-      updateLibraryPathItemStatus(db, item.id, "completed")
-    }
+  if (lastExportName) {
+    updateLibraryPathItemExtractFileName(db, item.id, lastExportName)
+  }
+  if (markCompleted && anyExported) {
+    updateLibraryPathItemStatus(db, item.id, "completed")
+  }
+}
+
+async function autoExtractItems(db: Database.Database, libraryPath: DBLibraryPath): Promise<void> {
+  const completedSubtitles = getCompletedLibrarySubtitlesForExport(db)
+
+  for (const row of completedSubtitles) {
+    const item = getLibraryPathItemById(db, row.libraryPathItemId)
+    if (!item || item.libraryPathId !== libraryPath.id) continue
+    if (item.status === "completed") continue
+
+    const subtitle = getSubtitleById(db, row.id)
+    if (!subtitle) continue
+
+    // Delegate to the shared per-subtitle exporter (translated SRTs only here;
+    // the original-language SRT is exported as soon as whisper finishes).
+    await exportSubtitleToLibraryFolder(db, subtitle, { includeOriginal: false, includeTranslated: true })
   }
 }

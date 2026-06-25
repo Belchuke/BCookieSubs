@@ -6,13 +6,14 @@ import { getConfig, getLogs } from "../repositories/configRepository"
 import { getConfigTranslationLanguages, getLanguages, getUserConfigTranslationLanguages } from "../repositories/languageRepository"
 import { createMediaItem, getMediaItemById, MEDIA_PHOTOS_DIR } from "../repositories/mediaRepository"
 import { getSubtitleItemMediaItemFromPrompt } from "../repositories/promptFormattingRepository"
-import { cancelSubtitle, cancelSubtitleJob, createSubtitleTask, getChunksByJobId, getDashboardData, getExportFileName, getSubtitleById, getSubtitleJobById, getSubtitleJobsBySubtitleId, hideSubtitle, moveSeriesInQueue, moveSubtitleInQueue, reorderSubtitles, resetChunk, retryFailedChunk, softDeleteSubtitle } from "../repositories/subtitleRepository"
+import { cancelSubtitle, cancelSubtitleJob, createSubtitleTask, getChunksByJobId, getDashboardData, getExportFileName, getSubtitleById, getSubtitleJobById, getSubtitleJobsBySubtitleId, hideSubtitle, moveSeriesInQueue, moveSubtitleInQueue, moveWhisperSubtitleInQueue, moveWhisperSubtitleToTop, reorderSubtitles, reorderWhisperSubtitles, resetChunk, retryFailedChunk, softDeleteSubtitle, softDeleteSubtitlesByMediaItem } from "../repositories/subtitleRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
 import { requireAuth } from "../middleware/auth"
 import { requirePermission } from "../services/permissionService"
 import { NameFormatterResult } from "../types/modelTypes"
 import { getTranslateWorkerBridge } from "../tasks/translateWorkerBridge"
-import { addCreditToSrt } from "../services/subtitleExportService"
+import { getWhisperWorkerBridge } from "../tasks/whisperWorkerBridge"
+import { addCreditToSubtitle } from "../services/subtitleExportService"
 
 const upload = multer({ storage: multer.memoryStorage() })
 
@@ -36,6 +37,8 @@ export function dashboardRouter(db: Database.Database) {
       configLangs,
       userConfigLangs,
       workerPaused: getTranslateWorkerBridge().isWorkerPaused(),
+      whisperSeparate: config.whisperRunAsSeparateTask === 1,
+      whisperWorkerPaused: getWhisperWorkerBridge().isWorkerPaused(),
       showPosters: config.showPosters && user.showPosters !== 0,
       toast: req.query.toast ?? null,
       msg: req.query.msg ?? null,
@@ -43,18 +46,26 @@ export function dashboardRouter(db: Database.Database) {
     })
   })
 
-  
+
   router.get("/poll", requireAuth, (_req, res) => {
     try {
       const { subtitles, languageMap } = getDashboardData(db)
       const { logs } = getLogs(db, res.locals.user!, 20)
-      res.json({ subtitles, languageMap, logs: logs ?? [], workerPaused: getTranslateWorkerBridge().isWorkerPaused() })
+      const config = getConfig(db)
+      res.json({
+        subtitles,
+        languageMap,
+        logs: logs ?? [],
+        workerPaused: getTranslateWorkerBridge().isWorkerPaused(),
+        whisperSeparate: config.whisperRunAsSeparateTask === 1,
+        whisperWorkerPaused: getWhisperWorkerBridge().isWorkerPaused(),
+      })
     } catch (e) {
       res.status(500).json({ error: String(e) })
     }
   })
 
-  
+
   router.post("/worker/pause", requireAuth, requirePermission("canManageWorker"), async (_req, res) => {
     try {
       await getTranslateWorkerBridge().pauseWorker(res.locals.user!.username)
@@ -68,6 +79,25 @@ export function dashboardRouter(db: Database.Database) {
     try {
       await getTranslateWorkerBridge().resumeWorker(res.locals.user!.username)
       res.json({ success: true, workerPaused: getTranslateWorkerBridge().isWorkerPaused() })
+    } catch (e) {
+      res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) })
+    }
+  })
+
+  // Whisper worker pause/resume — independent of the translation worker.
+  router.post("/whisper-worker/pause", requireAuth, requirePermission("canManageWorker"), async (_req, res) => {
+    try {
+      await getWhisperWorkerBridge().pauseWorker(res.locals.user!.username)
+      res.json({ success: true, workerPaused: getWhisperWorkerBridge().isWorkerPaused() })
+    } catch (e) {
+      res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) })
+    }
+  })
+
+  router.post("/whisper-worker/resume", requireAuth, requirePermission("canManageWorker"), async (_req, res) => {
+    try {
+      await getWhisperWorkerBridge().resumeWorker(res.locals.user!.username)
+      res.json({ success: true, workerPaused: getWhisperWorkerBridge().isWorkerPaused() })
     } catch (e) {
       res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) })
     }
@@ -262,12 +292,57 @@ export function dashboardRouter(db: Database.Database) {
     res.redirect("/dashboard")
   })
 
-  
+  // Delete every subtitle in a series (all episodes) across both the translation
+  // and whisper queues. Keyed by media item so one action clears the series no
+  // matter which queue its episodes are rendered in. Permission is enforced in
+  // the repo (canDeleteTranslation), matching the per-subtitle /delete/:id route.
+  router.post("/delete-series/:mediaItemId", requireAuth, (req, res) => {
+    const result = softDeleteSubtitlesByMediaItem(db, res.locals.user!, parseInt(String(req.params.mediaItemId)))
+    if (!result.success) {
+      return res.redirect("/dashboard?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed to delete series"))
+    }
+    res.redirect("/dashboard?toast=success&msg=" + encodeURIComponent(result.msg ?? "Series deleted"))
+  })
+
+  // Whisper-queue reordering (separate whisper queue). Any reorder that can
+  // change which item is at the top preempts the in-progress transcription so
+  // the worker picks up the new top on its next tick (the killed run's progress
+  // is saved as a checkpoint and resumed later).
+  router.post("/whisper/move-up/:id", requireAuth, (req, res) => {
+    moveWhisperSubtitleInQueue(db, res.locals.user!, parseInt(String(req.params.id)), "up")
+    getWhisperWorkerBridge().preemptWorker().catch(() => {})
+    res.redirect("/dashboard")
+  })
+
+  router.post("/whisper/move-down/:id", requireAuth, (req, res) => {
+    moveWhisperSubtitleInQueue(db, res.locals.user!, parseInt(String(req.params.id)), "down")
+    getWhisperWorkerBridge().preemptWorker().catch(() => {})
+    res.redirect("/dashboard")
+  })
+
+  // "Whisper this next": move a subtitle straight to the top of the whisper
+  // queue and preempt whatever is currently transcribing so this one starts now.
+  router.post("/whisper/move-top/:id", requireAuth, (req, res) => {
+    moveWhisperSubtitleToTop(db, res.locals.user!, parseInt(String(req.params.id)))
+    getWhisperWorkerBridge().preemptWorker().catch(() => {})
+    res.redirect("/dashboard")
+  })
+
+
   router.post("/reorder", requireAuth, (req, res) => {
     const { orderedIds } = req.body as { orderedIds: unknown }
     if (!Array.isArray(orderedIds)) return res.status(400).json({ success: false, msg: "Invalid payload" })
     const ids = (orderedIds as unknown[]).map(Number).filter((n) => !isNaN(n))
     const result = reorderSubtitles(db, res.locals.user!, ids)
+    res.json(result)
+  })
+
+  router.post("/whisper/reorder", requireAuth, (req, res) => {
+    const { orderedIds } = req.body as { orderedIds: unknown }
+    if (!Array.isArray(orderedIds)) return res.status(400).json({ success: false, msg: "Invalid payload" })
+    const ids = (orderedIds as unknown[]).map(Number).filter((n) => !isNaN(n))
+    const result = reorderWhisperSubtitles(db, res.locals.user!, ids)
+    getWhisperWorkerBridge().preemptWorker().catch(() => {})
     res.json(result)
   })
 
@@ -368,9 +443,10 @@ export function dashboardRouter(db: Database.Database) {
       .replace(/\s+/g, " ")
       .trim()
 
-    const filename = getExportFileName(title, job.season, job.episode, mediaItem?.year ?? null, langCode)
+    const sourceFormat = subtitle?.sourceFormat ?? "srt"
+    const filename = getExportFileName(title, job.season, job.episode, mediaItem?.year ?? null, langCode, sourceFormat)
 
-    const exportContent = addCreditToSrt(job.translatedText)
+    const exportContent = addCreditToSubtitle(job.translatedText, sourceFormat)
 
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`)
     res.setHeader("Content-Type", "text/plain; charset=utf-8")

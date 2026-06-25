@@ -272,6 +272,10 @@
               <input type="checkbox" id="whisperEnabled" name="whisperEnabled" value="1" <%= config.whisperEnabled ? 'checked' : '' %>>
               <label for="whisperEnabled"><%= __('config.whisperEnabled') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipWhisperEnabled') %>"></i></label>
             </div>
+            <div class="field field-checkbox">
+              <input type="checkbox" id="whisperRunAsSeparateTask" name="whisperRunAsSeparateTask" value="1" <%= config.whisperRunAsSeparateTask ? 'checked' : '' %>>
+              <label for="whisperRunAsSeparateTask"><%= __('config.whisperRunAsSeparateTask') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipWhisperRunAsSeparateTask') %>"></i></label>
+            </div>
             <div class="field">
               <label for="whisperModelRootPath"><%= __('config.whisperModelRootPath') %> <span class="hint"><%= __('config.optional') %></span> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipWhisperModelRootPath') %>"></i></label>
               <input type="text" id="whisperModelRootPath" name="whisperModelRootPath" value="<%= config.whisperModelRootPath || '' %>" placeholder="e.g. /data/whisper-models">

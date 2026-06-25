@@ -75,9 +75,12 @@
   "dashboard": {
     "title": "Dashboard",
     "translationQueue": "Translation Queue",
+    "whisperQueue": "Whisper Queue",
     "recentLogs": "Recent Logs",
     "stopWorker": "⏸ Stop Worker",
     "startWorker": "▶ Start Worker",
+    "stopWhisperWorker": "⏸ Stop Whisper",
+    "startWhisperWorker": "▶ Start Whisper",
     "addSubtitle": "+ Add Subtitle",
     "addSubtitleStep1": "Add Subtitle — Step 1 of 2",
     "addSubtitleStep2": "Add Subtitle — Step 2 of 2",
@@ -234,12 +237,14 @@
     "whisperTimestampsLength": "Whisper timestamps length",
     "whisperUseCuda": "Use CUDA for Whisper",
     "whisperEnabled": "Enable Whisper subtitle generation",
+    "whisperRunAsSeparateTask": "Run Whisper as a separate task",
     "whisperModelRootPath": "Whisper model root path",
     "optional": "optional",
     "tipWhisperModel": "Whisper model used to generate source subtitles. Default is large-v3-turbo.",
     "tipWhisperTimestampsLength": "Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500.",
     "tipWhisperUseCuda": "Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support.",
     "tipWhisperEnabled": "Allow users to create source subtitles directly from media files using Whisper.",
+    "tipWhisperRunAsSeparateTask": "Run Whisper transcription on its own worker thread alongside translation, with a separate Whisper queue on the dashboard. When off, Whisper runs on the translation worker as before.",
     "tipWhisperModelRootPath": "Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."
   },
   "users": {

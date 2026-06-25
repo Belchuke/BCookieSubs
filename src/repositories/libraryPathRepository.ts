@@ -362,6 +362,23 @@ export const deleteLibraryPathItemCandidates = (db: Database.Database, libraryPa
   db.prepare(`DELETE FROM libraryPathItemCandidate WHERE libraryPathItemId = ?`).run(libraryPathItemId)
 }
 
+// Remove a library path item from the inventory. Candidate and blacklist rows
+// cascade on delete (FK ON DELETE CASCADE); subtitle.libraryPathItem is FK
+// ON DELETE SET NULL, so any translation history is preserved (detached from
+// the now-removed file) rather than destroyed. Used by the scanner to prune
+// items whose source file has been removed from the library folder.
+export const deleteLibraryPathItem = (db: Database.Database, libraryPathItemId: number): void => {
+  db.prepare(`DELETE FROM libraryPathItem WHERE id = ?`).run(libraryPathItemId)
+}
+
+// All inventory items belonging to a library path (used by the scanner to
+// detect items whose source file no longer exists on disk).
+export const getLibraryPathItemIdsByLibraryPath = (db: Database.Database, libraryPathId: number): { id: number; path: string }[] => {
+  return db
+    .prepare(`SELECT id, path FROM libraryPathItem WHERE libraryPathId = ?`)
+    .all(libraryPathId) as { id: number; path: string }[]
+}
+
 export const getLibraryPathsStuckInScanning = (db: Database.Database): DBLibraryPath[] => {
   return db
     .prepare(

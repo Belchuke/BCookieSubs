@@ -44,6 +44,23 @@
       </div>
     </div>
 
+    <% if (locals.whisperSeparate) { %>
+    <div class="card dsh-mt-15" id="whisper-queue-card">
+      <div class="card-header">
+        <h2><%= __('dashboard.whisperQueue') %></h2>
+        <div class="dsh-row-center">
+          <% if (can('canManageWorker')) { %>
+            <button id="whisper-worker-stop-btn" class="btn btn-warning" onclick="whisperWorkerControl('pause')" style="<%= whisperWorkerPaused ? 'display:none' : 'display:inline-flex' %>"><%= __('dashboard.stopWhisperWorker') %></button>
+            <button id="whisper-worker-start-btn" class="btn btn-secondary" onclick="whisperWorkerControl('resume')" style="<%= whisperWorkerPaused ? 'display:inline-flex' : 'display:none' %>"><%= __('dashboard.startWhisperWorker') %></button>
+          <% } %>
+        </div>
+      </div>
+      <div id="whisper-queue-list">
+        <p class="empty-state" id="whisper-queue-empty"><%= __('common.loading') %></p>
+      </div>
+    </div>
+    <% } %>
+
     <div class="card dsh-mt-15">
       <div class="card-header">
         <h2><%= __('dashboard.recentLogs') %></h2>

@@ -197,10 +197,14 @@ function closeModalOnOverlay(event) {
 ;(function () {
   var queueList = document.getElementById("queue-list")
   if (!queueList) return
+  var whisperQueueList = document.getElementById("whisper-queue-list")
+  var whisperSeparate = false
 
   var POLL_INTERVAL = 15000
   var openSubs = {}
   var openSeries = {}
+  var whisperOpenSubs = {}
+  var whisperOpenSeries = {}
 
   
   function posterThumb(mediaItemId) {
@@ -308,13 +312,16 @@ function closeModalOnOverlay(event) {
   }
 
   
-  function renderSubtitleRow(s, langMap, nested) {
+  function renderSubtitleRow(s, langMap, nested, queueType) {
+    var qType = queueType || "translation"
+    var moveBase = qType === "whisper" ? "/dashboard/whisper" : "/dashboard"
     var tp = targetProgressHtml(s, langMap)
     var pct =
       tp.totalChunks > 0 ? Math.round((tp.doneChunks / tp.totalChunks) * 100) : s.status === "completed" ? 100 : 0
     var failedPct = tp.totalChunks > 0 ? Math.round((tp.failedChunks / tp.totalChunks) * 100) : 0
     if (pct + failedPct > 100) failedPct = 100 - pct
     var whisperActive = s.source === "whisper" && s.whisperTranscriptionStatus && s.whisperTranscriptionStatus !== "transcription_completed"
+    var whisperTranscribing = s.whisperTranscriptionStatus === "transcribing"
     var whisperProgress = Math.max(0, Math.min(100, Math.round(parseFloat(s.whisperProgress) || 0)))
     var barRemaining = Math.max(0, tp.totalChunks - tp.doneChunks - tp.failedChunks)
     var barTitle = whisperActive
@@ -339,15 +346,25 @@ function closeModalOnOverlay(event) {
     var titleLabel = escapeHtml(s.name)
     if (s.season) titleLabel += " <small>S" + pad(s.season) + (s.episode ? "E" + pad(s.episode) : "") + "</small>"
 
-    var canMove = !nested && isActive && !whisperActive && (typeof CAN_STOP === "undefined" || CAN_STOP)
+    var canMove = !nested && isActive && !whisperTranscribing && (typeof CAN_STOP === "undefined" || CAN_STOP)
     var moveHtml = ""
     if (canMove) {
       moveHtml += '<div class="acc-inline-actions">'
-      moveHtml += '<form method="POST" action="/dashboard/move-up/' + s.id + '" style="display:inline">'
+      moveHtml += '<form method="POST" action="' + moveBase + "/move-up/" + s.id + '" style="display:inline">'
       moveHtml += '<button type="submit" class="btn btn-icon btn-xs" title="Move up">↑</button></form>'
-      moveHtml += '<form method="POST" action="/dashboard/move-down/' + s.id + '" style="display:inline">'
+      moveHtml += '<form method="POST" action="' + moveBase + "/move-down/" + s.id + '" style="display:inline">'
       moveHtml += '<button type="submit" class="btn btn-icon btn-xs" title="Move down">↓</button></form>'
       moveHtml += "</div>"
+    }
+
+    // "Whisper this next" — whisper queue only. Move this episode to the top of
+    // the whisper queue and preempt whatever is currently transcribing so this
+    // one starts now. Shown for any active whisper item that isn't the one
+    // already being transcribed (independent of nesting, so series episodes work).
+    var whisperTopHtml = ""
+    if (qType === "whisper" && isActive && !whisperTranscribing) {
+      whisperTopHtml = '<form method="POST" action="/dashboard/whisper/move-top/' + s.id + '" style="display:inline">'
+      whisperTopHtml += '<button type="submit" class="btn btn-icon btn-xs" title="Whisper this next">⤒</button></form>'
     }
 
     var itemClass = "accordion-item" + (nested ? " acc-nested" : "")
@@ -366,6 +383,7 @@ function closeModalOnOverlay(event) {
     // Always determinate — no back-and-forth indeterminate animation for Whisper.
     html += '<div class="accordion-progress">' + segmentedBar(whisperPct, whisperActive ? 0 : failedPct, barTitle, false) + '<span class="progress-label">' + (whisperActive ? whisperProgress + "%" : pct + "%") + "</span></div>"
     html += moveHtml
+    html += whisperTopHtml
     if (!nested && canMove) html += '<span class="acc-drag-handle" title="Drag to reorder">⠿</span>'
     html += '<span class="accordion-chevron">›</span>'
     html += "</div>"
@@ -380,7 +398,8 @@ function closeModalOnOverlay(event) {
   }
 
   
-  function renderSeriesGroup(group, langMap) {
+  function renderSeriesGroup(group, langMap, queueType) {
+    var qType = queueType || "translation"
     var totalChunks = 0,
       doneChunks = 0,
       failedChunks = 0
@@ -403,8 +422,10 @@ function closeModalOnOverlay(event) {
     var statusLabel = allDone ? "Done" : pct + "%"
     var isActive = !allDone
 
+    // Series-level move buttons only exist for the translation queue; the
+    // whisper queue reorders individual episodes.
     var moveHtml = ""
-    if (isActive && group.mediaItemId && (typeof CAN_STOP === "undefined" || CAN_STOP)) {
+    if (qType === "translation" && isActive && group.mediaItemId && (typeof CAN_STOP === "undefined" || CAN_STOP)) {
       moveHtml += '<div class="acc-inline-actions">'
       moveHtml +=
         '<form method="POST" action="/dashboard/move-series-up/' + group.mediaItemId + '" style="display:inline">'
@@ -415,16 +436,39 @@ function closeModalOnOverlay(event) {
       moveHtml += "</div>"
     }
 
+    // Delete the whole series (every episode) from whichever queue it's in.
+    // Keyed by media item, so one action clears the series across both the
+    // translation and whisper queues. Available on both queue cards. The confirm
+    // prompt is wired up after render (see the .lr-series-delete submit handler)
+    // rather than via an inline onsubmit, so series titles containing quotes or
+    // apostrophes can't break out of the attribute.
+    var deleteHtml = ""
+    if (group.mediaItemId && (typeof CAN_STOP === "undefined" || CAN_STOP)) {
+      deleteHtml += '<div class="acc-inline-actions">'
+      deleteHtml +=
+        '<form method="POST" action="/dashboard/delete-series/' + group.mediaItemId + '" style="display:inline" class="lr-series-delete" data-series-title="' +
+        escapeHtml(group.title || "") + '" data-media-item-id="' + group.mediaItemId + '">'
+      deleteHtml += '<button type="submit" class="btn btn-icon btn-xs btn-danger" title="Delete series">🗑</button></form>'
+      deleteHtml += "</div>"
+    }
+
     var sortedItems = group.items.slice().sort(function (a, b) {
       return (a.season || 0) - (b.season || 0) || (a.episode || 0) - (b.episode || 0)
     })
     var episodesHtml = sortedItems
       .map(function (s) {
-        return renderSubtitleRow(s, langMap, true)
+        return renderSubtitleRow(s, langMap, true, qType)
       })
       .join("")
 
-    var key = group.key
+    // Namespace the series key/body-id by queue type. A series can appear in
+    // BOTH the translation queue and the whisper queue at once (some episodes
+    // still transcribing, others already translating), and both would render
+    // id="acc-body-series-m<mediaItemId>". document.getElementById returns the
+    // first match in the DOM (the translation card), so clicking the whisper
+    // series expanded the translation one. Prefixing with the queue type keeps
+    // each queue's header resolving to its own body.
+    var key = qType + "-" + group.key
     var bodyId = "acc-body-series-" + key
 
     var html = '<div class="accordion-item" data-draggable>'
@@ -448,6 +492,7 @@ function closeModalOnOverlay(event) {
     html += "</div></div>"
     html += '<div class="accordion-progress">' + segmentedBar(pct, sFailedPct, sBarTitle) + '<span class="progress-label">' + pct + "%</span></div>"
     html += moveHtml
+    html += deleteHtml
     html += '<span class="acc-drag-handle" title="Drag to reorder">⠿</span>'
     html += '<span class="accordion-chevron">›</span>'
     html += "</div>"
@@ -456,17 +501,27 @@ function closeModalOnOverlay(event) {
     return html
   }
 
-  
-  function renderQueue(data) {
-    var subtitles = data.subtitles || []
-    var langMap = data.languageMap || (typeof LANGUAGE_MAP !== "undefined" ? LANGUAGE_MAP : {})
+  // A whisper-source subtitle is in the "whisper stage" (shown in the whisper
+  // queue) while it has a non-completed transcription status. Once handed off
+  // to translation its transcription status is cleared and it joins the
+  // translation queue.
+  function isWhisperStage(s) {
+    return (
+      s.source === "whisper" &&
+      s.whisperTranscriptionStatus &&
+      s.whisperTranscriptionStatus !== "transcription_completed"
+    )
+  }
 
+  function renderQueueList(container, subtitles, langMap, queueType, subState, seriesState) {
     if (subtitles.length === 0) {
-      queueList.innerHTML = '<p class="empty-state">No subtitle jobs yet. Add a .srt file to get started.</p>'
+      container.innerHTML = '<p class="empty-state">' + (queueType === "whisper" ? "No whisper jobs queued." : "No subtitle jobs yet. Add a .srt file to get started.") + "</p>"
       return
     }
 
-        var seriesGroupMap = {}
+    var orderField = queueType === "whisper" ? "whisperOrderNumber" : "orderNumber"
+
+    var seriesGroupMap = {}
     subtitles.forEach(function (s) {
       if (!s.season) return
       var key = s.mediaItemId != null ? "m" + s.mediaItemId : "n" + s.name
@@ -480,15 +535,15 @@ function closeModalOnOverlay(event) {
         }
       }
       seriesGroupMap[key].items.push(s)
-      var ord = s.orderNumber || 0
+      var ord = (s[orderField] != null ? s[orderField] : s.orderNumber) || 0
       if (ord < seriesGroupMap[key].minOrder) seriesGroupMap[key].minOrder = ord
     })
 
-        var entries = []
+    var entries = []
     var seenSeries = {}
     subtitles.forEach(function (s) {
       if (!s.season) {
-        entries.push({ type: "movie", sub: s, order: s.orderNumber || 0 })
+        entries.push({ type: "movie", sub: s, order: (s[orderField] != null ? s[orderField] : s.orderNumber) || 0 })
       } else {
         var key = s.mediaItemId != null ? "m" + s.mediaItemId : "n" + s.name
         if (!seenSeries[key]) {
@@ -504,66 +559,97 @@ function closeModalOnOverlay(event) {
     var html = ""
     entries.forEach(function (entry) {
       if (entry.type === "movie") {
-        html += renderSubtitleRow(entry.sub, langMap, false)
+        html += renderSubtitleRow(entry.sub, langMap, false, queueType)
       } else {
-        html += renderSeriesGroup(entry.group, langMap)
+        html += renderSeriesGroup(entry.group, langMap, queueType)
       }
     })
 
-    queueList.innerHTML = html
+    container.innerHTML = html
 
-        queueList.querySelectorAll(".acc-sub-header[data-sub-id]").forEach(function (header) {
+    container.querySelectorAll(".acc-sub-header[data-sub-id]").forEach(function (header) {
       header.addEventListener("click", function (e) {
         if (e.target.closest(".acc-inline-actions")) return
         var id = parseInt(this.dataset.subId)
         var body = document.getElementById("acc-body-sub-" + id)
         if (!body) return
-        openSubs[id] = !openSubs[id]
-        body.classList.toggle("open", !!openSubs[id])
-        this.querySelector(".accordion-chevron").style.transform = openSubs[id] ? "rotate(90deg)" : ""
+        subState[id] = !subState[id]
+        body.classList.toggle("open", !!subState[id])
+        this.querySelector(".accordion-chevron").style.transform = subState[id] ? "rotate(90deg)" : ""
       })
     })
-    queueList.querySelectorAll(".acc-series-header[data-series-key]").forEach(function (header) {
+    container.querySelectorAll(".acc-series-header[data-series-key]").forEach(function (header) {
       header.addEventListener("click", function (e) {
         if (e.target.closest(".acc-inline-actions")) return
         var key = this.dataset.seriesKey
         var body = document.getElementById("acc-body-series-" + key)
         if (!body) return
-        openSeries[key] = !openSeries[key]
-        body.classList.toggle("open", !!openSeries[key])
-        this.querySelector(".accordion-chevron").style.transform = openSeries[key] ? "rotate(90deg)" : ""
+        seriesState[key] = !seriesState[key]
+        body.classList.toggle("open", !!seriesState[key])
+        this.querySelector(".accordion-chevron").style.transform = seriesState[key] ? "rotate(90deg)" : ""
       })
     })
 
-        Object.keys(openSubs).forEach(function (id) {
-      if (openSubs[id]) {
+    // Wire up the per-series delete form: confirm before submitting so the
+    // user doesn't wipe a whole series by accident. Reads the title from the
+    // form's data attribute (HTML-decoded by the browser, so quotes in titles
+    // are safe).
+    container.querySelectorAll("form.lr-series-delete").forEach(function (form) {
+      form.addEventListener("submit", function (e) {
+        var title = this.getAttribute("data-series-title") || ""
+        var mediaItemId = this.getAttribute("data-media-item-id") || ""
+        if (!confirmDeleteSeries(title, mediaItemId)) e.preventDefault()
+      })
+    })
+
+    Object.keys(subState).forEach(function (id) {
+      if (subState[id]) {
         var body = document.getElementById("acc-body-sub-" + id)
         if (body) {
           body.classList.add("open")
-          var header = queueList.querySelector('.acc-sub-header[data-sub-id="' + id + '"] .accordion-chevron')
+          var header = container.querySelector('.acc-sub-header[data-sub-id="' + id + '"] .accordion-chevron')
           if (header) header.style.transform = "rotate(90deg)"
         }
       }
     })
-    Object.keys(openSeries).forEach(function (key) {
-      if (openSeries[key]) {
+    Object.keys(seriesState).forEach(function (key) {
+      if (seriesState[key]) {
         var body = document.getElementById("acc-body-series-" + key)
         if (body) {
           body.classList.add("open")
-          var header = queueList.querySelector('.acc-series-header[data-series-key="' + key + '"] .accordion-chevron')
+          var header = container.querySelector('.acc-series-header[data-series-key="' + key + '"] .accordion-chevron')
           if (header) header.style.transform = "rotate(90deg)"
         }
       }
     })
 
-        setupDragDrop(queueList)
+    setupDragDrop(container, queueType === "whisper" ? "/dashboard/whisper/reorder" : "/dashboard/reorder")
+  }
+
+  function renderQueue(data) {
+    var subtitles = data.subtitles || []
+    var langMap = data.languageMap || (typeof LANGUAGE_MAP !== "undefined" ? LANGUAGE_MAP : {})
+    whisperSeparate = !!data.whisperSeparate
+
+    // When the whisper queue is separate, whisper-stage items live in the
+    // whisper card; otherwise everything shows in the translation queue.
+    var translationSubs = whisperSeparate ? subtitles.filter(function (s) { return !isWhisperStage(s) }) : subtitles
+    renderQueueList(queueList, translationSubs, langMap, "translation", openSubs, openSeries)
+
+    if (whisperQueueList) {
+      var whisperSubs = whisperSeparate ? subtitles.filter(isWhisperStage) : []
+      // Hide the whisper card content when the setting is off.
+      whisperQueueList.parentElement.style.display = whisperSeparate ? "" : "none"
+      renderQueueList(whisperQueueList, whisperSubs, langMap, "whisper", whisperOpenSubs, whisperOpenSeries)
+    }
   }
 
   
   var dragSrcEl = null
 
-  function setupDragDrop(container) {
+  function setupDragDrop(container, reorderUrl) {
     if ("ontouchstart" in window) return
+    var url = reorderUrl || "/dashboard/reorder"
 
     container.querySelectorAll(".accordion-item[data-draggable]").forEach(function (item) {
       item.setAttribute("draggable", "true")
@@ -608,7 +694,7 @@ function closeModalOnOverlay(event) {
           })
         })
 
-        fetch("/dashboard/reorder", {
+        fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ orderedIds: allIds }),
@@ -645,6 +731,14 @@ function closeModalOnOverlay(event) {
     startBtn.style.display = paused ? "inline-flex" : "none"
   }
 
+  function updateWhisperWorkerButtons(paused) {
+    var stopBtn = document.getElementById("whisper-worker-stop-btn")
+    var startBtn = document.getElementById("whisper-worker-start-btn")
+    if (!stopBtn || !startBtn) return
+    stopBtn.style.display = paused ? "none" : "inline-flex"
+    startBtn.style.display = paused ? "inline-flex" : "none"
+  }
+
   // Returns a promise that settles once the poll request has finished, so the
   // scheduler below re-arms the next poll only after the previous one is done.
   function poll() {
@@ -658,6 +752,7 @@ function closeModalOnOverlay(event) {
         renderQueue(data)
         renderLogs(data.logs || [])
         updateWorkerButtons(!!data.workerPaused)
+        updateWhisperWorkerButtons(!!data.whisperWorkerPaused)
       })
       .catch(function () {})
   }
@@ -700,6 +795,44 @@ function workerControl(action) {
       if (stopBtn) stopBtn.disabled = false
       if (startBtn) startBtn.disabled = false
     })
+}
+
+function whisperWorkerControl(action) {
+  var stopBtn = document.getElementById("whisper-worker-stop-btn")
+  var startBtn = document.getElementById("whisper-worker-start-btn")
+  var btn = action === "pause" ? stopBtn : startBtn
+  if (btn) {
+    btn.disabled = true
+  }
+
+  fetch("/dashboard/whisper-worker/" + action, { method: "POST" })
+    .then(function (r) {
+      return r.json()
+    })
+    .then(function (data) {
+      if (stopBtn) stopBtn.disabled = false
+      if (startBtn) startBtn.disabled = false
+      if (typeof data.workerPaused !== "undefined") {
+        stopBtn && (stopBtn.style.display = data.workerPaused ? "none" : "inline-flex")
+        startBtn && (startBtn.style.display = data.workerPaused ? "inline-flex" : "none")
+      }
+    })
+    .catch(function () {
+      if (stopBtn) stopBtn.disabled = false
+      if (startBtn) startBtn.disabled = false
+    })
+}
+
+// Confirm before deleting an entire series (all episodes) from the queue.
+// Called from the series header's delete form onsubmit; returning true submits
+// the form, false cancels. `title` and `mediaItemId` are interpolated into the
+// prompt so the user knows exactly what gets removed.
+function confirmDeleteSeries(title, mediaItemId) {
+  return window.confirm(
+    "Delete the entire series \"" + (title || "this series") + "\" (" +
+      mediaItemId + ")?\n\nThis removes every episode from both the translation " +
+      "and whisper queues. This cannot be undone."
+  )
 }
 
 function inspectJob(id) {

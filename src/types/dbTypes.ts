@@ -1,3 +1,5 @@
+import { SubtitleFormat } from "./subtitleTypes"
+
 export type DBUser = {
   id: number
   username: string
@@ -202,6 +204,7 @@ export type DBConfig = {
   whisperUseCuda: number
   whisperModelRootPath: string | null
   whisperEnabled: number
+  whisperRunAsSeparateTask: number
   createdAt: string
   updatedAt: string
 }
@@ -270,11 +273,14 @@ export type DBSubtitle = {
   userId: number
   sourceLangId: number
   mediaItemId: number | null
+  libraryPathItem: number | null
   name: string
   originalFileHash: string
   originalTextSRTName: string
   originalText: string
+  sourceFormat: SubtitleFormat
   orderNumber: number
+  whisperOrderNumber: number | null
   hide: boolean
   source: string | null
   sourcePath: string | null
@@ -289,6 +295,9 @@ export type DBSubtitle = {
   whisperProgress: number
   whisperPositionMs: number
   whisperDurationMs: number
+  // Whisper stop/resume checkpoint. Cleared on successful finalize.
+  whisperResumeSrt: string | null
+  whisperResumeMs: number
   finishedAt: string | null
   cancelledAt: string | null
   cancelledByUserId: number | null

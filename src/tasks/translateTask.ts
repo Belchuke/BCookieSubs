@@ -1,20 +1,14 @@
 import Database from "better-sqlite3"
-import SrtParser2 from "srt-parser-2"
-import * as fs from "fs"
 // parentPort is `null` when this module runs outside a worker_threads Worker
 // (e.g. if ever imported on the main thread), so the calls below are no-ops there.
 import { parentPort } from "worker_threads"
-import { getConfig, isWhisperGpuAvailable } from "../repositories/configRepository"
-import { cleanupWhisperTempDir, transcribeMediaWithWhisper } from "../services/whisperService"
+import { getConfig } from "../repositories/configRepository"
 import {
-  getConfigTranslationLanguages,
   getLanguageById,
-  getUserConfigTranslationLanguages,
 } from "../repositories/languageRepository"
 import { createLog, deleteLogsJob } from "../repositories/logRepository"
 import { getMediaItemById } from "../repositories/mediaRepository"
 import { getActiveModelsByRole, isModelActive, modelExists } from "../repositories/modelRepository"
-import { getHighestRoleUser, getUserById } from "../repositories/userRepository"
 import { sendPrompt } from "../repositories/ollamaRepository"
 import {
   formatJudgePrompt,
@@ -28,11 +22,10 @@ import {
 } from "../repositories/promptRepository"
 import { getShouldRunNowBySchedule } from "../repositories/scheduleRepository"
 import { parseLLMResponse, sleep, srtFormatterForModel, validateChunkIntegrity } from "../repositories/shared"
+import { parseSubtitleRows, formatAwareChunkPreamble } from "../services/subtitleAdapter"
 import {
   assembleAndFinishSubtitleJob,
   createChunkCandidate,
-  createTranslationJobsForSubtitle,
-  finalizeWhisperTranscription,
   getChunksByJobId,
   getNextQueuedChunkForWorker,
   getNextWhisperSubtitleForTranscription,
@@ -46,15 +39,14 @@ import {
   markChunkFailed,
   markChunkStarted,
   setSelectedCandidateForChunk,
-  setWhisperTranscriptionStatus,
-  setWhisperProgress,
-  resetWhisperProgress,
   updateSubtitleJobProgress,
   updateSubtitleJobStatus,
   updateSubtitleStatus,
 } from "../repositories/subtitleRepository"
-import { DBModel, DBSubtitleChunk, DBSubtitleJob, DBSubtitle, DBLanguage, DBUser } from "../types/dbTypes"
+import { DBModel, DBSubtitleChunk, DBSubtitleJob, DBSubtitle, DBLanguage } from "../types/dbTypes"
 import { IDLE_INTERVAL_MS, MODEL_REQUEST_TIMEOUT_MS, TASK_INTERVAL_MS } from "../constants/timer"
+import { transcribeSubtitleAndCreateJobs } from "./whisperProcessing"
+import { exportSubtitleToLibraryFolder } from "../services/libraryPathService"
 
 type TranslationErrorCode = "timeout" | "cancelled" | "rate_limited" | "model_error" | "validation_error"
 
@@ -203,10 +195,14 @@ async function runOnce(db: Database.Database): Promise<void> {
 
   deleteLogsJob(db)
 
-  const whisperSubtitle = getNextWhisperSubtitleForTranscription(db)
-  if (whisperSubtitle) {
-    await processWhisperTranscription(db, whisperSubtitle)
-    return
+  // When Whisper runs as a separate task, the dedicated Whisper worker owns
+  // transcription; this loop must not touch whisper-source subtitles.
+  if (config.whisperRunAsSeparateTask !== 1) {
+    const whisperSubtitle = getNextWhisperSubtitleForTranscription(db)
+    if (whisperSubtitle) {
+      await processWhisperTranscription(db, whisperSubtitle)
+      return
+    }
   }
 
   const chunk = getNextQueuedChunkForWorker(db, !!config.finishSingleSubtitleFirst)
@@ -298,20 +294,20 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
   const mediaItem = subtitle.mediaItemId ? getMediaItemById(db, subtitle.mediaItemId) : null
   const mediaName = mediaItem?.title ?? subtitle.name
 
-  const srtParser = new SrtParser2()
-  const allLines = srtParser.fromSrt(subtitle.originalText)
+  const allLines = parseSubtitleRows(subtitle.originalText, subtitle.sourceFormat)
   const chunkLines = allLines.filter((l) => {
     const id = parseInt(l.id)
     return id >= chunk.srtIdFrom && id <= chunk.srtIdTo
   })
 
   if (chunkLines.length === 0) {
-    markChunkFailed(db, chunk.id, "No SRT lines found for this chunk range")
+    markChunkFailed(db, chunk.id, "No subtitle lines found for this chunk range")
     return
   }
 
   const sourceRows = chunkLines.map((l) => ({ id: l.id, text: l.text }))
-  const chunkXml = srtFormatterForModel(sourceRows)
+  const preamble = formatAwareChunkPreamble(subtitle.sourceFormat)
+  const chunkXml = preamble ? `${preamble}\n${srtFormatterForModel(sourceRows)}` : srtFormatterForModel(sourceRows)
 
   const translationModels = getActiveModelsByRole(db, "translation")
   const translationPromptVersions = getTranslationPromptVersions(db)
@@ -1043,148 +1039,31 @@ async function checkAndFinalizeJob(db: Database.Database, job: DBSubtitleJob, su
     console.log(`[worker] Job ${job.id} completed`)
   }
 
+  // Auto-export completed translated SRTs to the library folder as each job
+  // finishes (no rescan required). No-op unless the subtitle belongs to an
+  // auto-extract library path. Idempotent — existing files are skipped. The
+  // item is NOT marked completed here; that happens once the whole subtitle is
+  // done in checkAndFinalizeSubtitle.
+  if (subtitle.libraryPathItem) {
+    try {
+      await exportSubtitleToLibraryFolder(db, subtitle, {
+        includeOriginal: false,
+        includeTranslated: true,
+        markCompleted: false,
+      })
+    } catch (e) {
+      console.error(`[worker] Library export failed for subtitle ${subtitle.id}:`, e)
+    }
+  }
+
   await checkAndFinalizeSubtitle(db, subtitle)
 }
 
 async function processWhisperTranscription(db: Database.Database, subtitle: DBSubtitle): Promise<void> {
-  if (workerPaused) return
-
-  const config = getConfig(db)
-  if (!config.whisperEnabled) {
-    setWhisperTranscriptionStatus(db, subtitle.id, "transcription_failed")
-    updateSubtitleStatus(db, subtitle.id, "failed")
-    createLog(db, "warning", "subtitle", subtitle.id, "Whisper is disabled in settings; skipping transcription", {})
-    return
-  }
-
-  const mediaPath = subtitle.mediaPath
-  if (!mediaPath || !fs.existsSync(mediaPath)) {
-    setWhisperTranscriptionStatus(db, subtitle.id, "transcription_failed")
-    updateSubtitleStatus(db, subtitle.id, "failed")
-    createLog(db, "error", "subtitle", subtitle.id, "Whisper transcription failed: source media file not found", {
-      mediaPath,
-    })
-    return
-  }
-
-  setWhisperTranscriptionStatus(db, subtitle.id, "transcribing")
-  resetWhisperProgress(db, subtitle.id)
-  const useCuda = isWhisperGpuAvailable() && config.whisperUseCuda === 1
-
-  try {
-    const onWhisperProgress = (progress: number, positionMs: number, durationMs: number): void => {
-      setWhisperProgress(db, subtitle.id, progress, positionMs, durationMs)
-    }
-    const whisperMediaItem = subtitle.mediaItemId ? getMediaItemById(db, subtitle.mediaItemId) : null
-    const whisperDisplayName = whisperMediaItem?.title ?? subtitle.name
-    const result = await transcribeMediaWithWhisper(
-      db,
-      mediaPath,
-      subtitle.mediaItemId ?? subtitle.id,
-      config.whisperModel,
-      onWhisperProgress,
-      whisperDisplayName,
-    )
-
-    if (workerPaused) {
-      cleanupWhisperTempDir()
-      return
-    }
-
-    if (!result.success) {
-      setWhisperTranscriptionStatus(db, subtitle.id, "transcription_failed")
-      updateSubtitleStatus(db, subtitle.id, "failed")
-      return
-    }
-
-    finalizeWhisperTranscription(
-      db,
-      subtitle.id,
-      result.rawSrt,
-      result.entries,
-      subtitle.originalTextSRTName || "whisper.srt",
-    )
-
-    // Resolve the user who created the workflow and their target languages.
-    let actingUser: DBUser | null = getUserById(db, subtitle.userId)
-    if (!actingUser) {
-      actingUser = getHighestRoleUser(db)
-    }
-    if (!actingUser) {
-      setWhisperTranscriptionStatus(db, subtitle.id, "transcription_failed")
-      updateSubtitleStatus(db, subtitle.id, "failed")
-      createLog(
-        db,
-        "error",
-        "subtitle",
-        subtitle.id,
-        "Whisper transcription failed: no valid user to attribute jobs to",
-        {},
-      )
-      return
-    }
-
-    const userTargetLangs = getUserConfigTranslationLanguages(db, actingUser.id)
-    const targetLangIds =
-      userTargetLangs.length > 0
-        ? userTargetLangs.map((tl) => tl.languageId)
-        : getConfigTranslationLanguages(db).map((cl) => cl.languageId)
-
-    if (targetLangIds.length === 0) {
-      setWhisperTranscriptionStatus(db, subtitle.id, "transcription_failed")
-      updateSubtitleStatus(db, subtitle.id, "failed")
-      createLog(
-        db,
-        "error",
-        "subtitle",
-        subtitle.id,
-        "Whisper transcription completed but no target languages configured; cannot create translation jobs",
-        {},
-      )
-      return
-    }
-
-    setWhisperTranscriptionStatus(db, subtitle.id, "queued_for_translation")
-    const jobResult = createTranslationJobsForSubtitle(
-      db,
-      actingUser,
-      subtitle.id,
-      targetLangIds,
-      config.defaultChunkSize,
-      null,
-      null,
-    )
-
-    if (!jobResult.success) {
-      setWhisperTranscriptionStatus(db, subtitle.id, "transcription_failed")
-      updateSubtitleStatus(db, subtitle.id, "failed")
-      createLog(
-        db,
-        "error",
-        "subtitle",
-        subtitle.id,
-        `Failed to create translation jobs from Whisper SRT: ${jobResult.msg}`,
-        {},
-      )
-      return
-    }
-
-    setWhisperTranscriptionStatus(db, subtitle.id, null)
-    updateSubtitleStatus(db, subtitle.id, "queued")
-    createLog(db, "info", "subtitle", subtitle.id, "Whisper-generated SRT imported and translation jobs created", {
-      targetLangCount: targetLangIds.length,
-    })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    setWhisperTranscriptionStatus(db, subtitle.id, "transcription_failed")
-    updateSubtitleStatus(db, subtitle.id, "failed")
-    createLog(db, "error", "subtitle", subtitle.id, `Whisper transcription failed: ${msg.slice(0, 200)}`, {
-      error: msg.slice(0, 200),
-    })
-    console.error(`[worker] Whisper transcription failed for subtitle ${subtitle.id}:`, msg)
-  } finally {
-    cleanupWhisperTempDir()
-  }
+  // Delegates to the shared helper so the dedicated Whisper worker and this
+  // (translation) worker run identical transcription logic. Only used when
+  // `whisperRunAsSeparateTask` is off — otherwise the Whisper worker owns it.
+  await transcribeSubtitleAndCreateJobs(db, subtitle, () => workerPaused)
 }
 
 async function checkAndFinalizeSubtitle(db: Database.Database, subtitle: DBSubtitle): Promise<void> {
@@ -1222,5 +1101,19 @@ async function checkAndFinalizeSubtitle(db: Database.Database, subtitle: DBSubti
       },
     )
     console.log(`[worker] Subtitle "${subtitle.name}" fully completed`)
+  }
+
+  // Final export pass + mark the library item completed now that every job has
+  // settled. No-op unless tied to an auto-extract library path.
+  if (subtitle.libraryPathItem) {
+    try {
+      await exportSubtitleToLibraryFolder(db, subtitle, {
+        includeOriginal: true,
+        includeTranslated: true,
+        markCompleted: true,
+      })
+    } catch (e) {
+      console.error(`[worker] Library export failed for subtitle ${subtitle.id}:`, e)
+    }
   }
 }

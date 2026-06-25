@@ -9,8 +9,9 @@ import {
   DBSubtitleChunkCandidate,
 } from "../types/dbTypes"
 import { DefaultResponse, FinishedSubtitle } from "../types/modelTypes"
-import SrtParser2 from "srt-parser-2"
+import { SubtitleFormat } from "../types/subtitleTypes"
 import { createLog } from "./logRepository"
+import { getConfig } from "./configRepository"
 import { userHasPermission } from "./userRepository"
 import {
   getLanguageById,
@@ -21,6 +22,9 @@ import {
 } from "./languageRepository"
 import { getFileHash, parseLLMResponse } from "./shared"
 import { serializeSrt, SrtEntry } from "../services/srtService"
+import { detectSubtitleFormat } from "../services/subtitleFormatDetector"
+import { parseSubtitleRows, serializeSubtitle } from "../services/subtitleAdapter"
+import { subtitleExportExtension } from "../services/subtitleExportService"
 
 function chunkArray<T>(items: T[], size: number): T[][] {
   if (size <= 0) return [items.slice()]
@@ -43,8 +47,13 @@ export const getSubtitleByFileHash = (db: Database.Database, fileHash: string): 
   )
 }
 
-// Next whisper-source subtitle awaiting transcription, in queue order.
+// Next whisper-source subtitle awaiting transcription. When Whisper runs as a
+// separate task, order by the dedicated `whisperOrderNumber` (the whisper
+// queue's own ordering); otherwise order by `orderNumber` so the main
+// translation queue's reordering controls what gets transcribed next.
 export const getNextWhisperSubtitleForTranscription = (db: Database.Database): DBSubtitle | null => {
+  const separate = getConfig(db).whisperRunAsSeparateTask === 1
+  const orderCol = separate ? "whisperOrderNumber" : "orderNumber"
   return (
     (db
       .prepare(
@@ -53,11 +62,20 @@ export const getNextWhisperSubtitleForTranscription = (db: Database.Database): D
            AND deletedAt IS NULL
            AND status NOT IN ('cancelled', 'failed')
            AND whisperTranscriptionStatus NOT IN ('transcription_completed', 'transcription_failed')
-         ORDER BY orderNumber ASC, id ASC
+         ORDER BY COALESCE(${orderCol}, orderNumber) ASC, id ASC
          LIMIT 1`,
       )
       .get() as DBSubtitle | undefined) ?? null
   )
+}
+
+// Next order number for the dedicated whisper queue (separate from the
+// translation queue's `orderNumber`).
+export const getNextWhisperOrderNumber = (db: Database.Database): number => {
+  const result = db
+    .prepare(`SELECT MAX(whisperOrderNumber) as maxOrder FROM subtitle WHERE deletedAt IS NULL AND source = 'whisper'`)
+    .get() as { maxOrder: number | null }
+  return (result.maxOrder ?? 0) + 1
 }
 
 // Number of completed chunks for a job (drives job progress).
@@ -170,29 +188,33 @@ export const getJobLangStatusBySubtitles = (
   return map
 }
 
-// Active Whisper subtitle for many media items at once (latest non-deleted,
-// non-cancelled/failed per media item). Mirrors getActiveWhisperSubtitleForMediaItem.
-export const getActiveWhisperSubtitlesForMediaItems = (
+// Active Whisper subtitle for many library path items at once, keyed by the
+// subtitle's `libraryPathItem` (the specific episode) rather than by media
+// item. A Whisper subtitle is created per clicked episode but guarded to one
+// per series (media item), so only the episode that actually kicked off
+// transcription has a Whisper subtitle row. Keying by libraryPathItem here is
+// what makes the library-requests view show "transcribing" on that one episode
+// alone instead of bleeding onto every sibling episode that shares the
+// series media item.
+export const getActiveWhisperSubtitlesByLibraryPathItems = (
   db: Database.Database,
-  mediaItemIds: number[],
+  libraryPathItemIds: number[],
 ): Map<number, DBSubtitle> => {
   const map = new Map<number, DBSubtitle>()
-  if (mediaItemIds.length === 0) return map
-  const rows = chunkedInQuery<DBSubtitle & { rn: number }>(
+  if (libraryPathItemIds.length === 0) return map
+  const rows = chunkedInQuery<DBSubtitle>(
     db,
-    mediaItemIds,
+    libraryPathItemIds,
     (p) =>
-      `SELECT s.*, ROW_NUMBER() OVER (PARTITION BY s.mediaItemId ORDER BY s.id DESC) AS rn
-       FROM subtitle s
-       WHERE s.mediaItemId IN (${p}) AND s.source = 'whisper'
-         AND s.deletedAt IS NULL AND s.status NOT IN ('cancelled', 'failed')`,
+      `SELECT * FROM subtitle
+       WHERE libraryPathItem IN (${p}) AND source = 'whisper'
+         AND deletedAt IS NULL AND status NOT IN ('cancelled', 'failed')
+       ORDER BY id DESC`,
   )
   for (const r of rows) {
-    // Keep only the latest (rn = 1) per media item.
-    if (r.rn === 1) {
-      const { rn: _rn, ...sub } = r
-      map.set(sub.mediaItemId!, sub as DBSubtitle)
-    }
+    // Keep only the latest per library path item (ORDER BY id DESC, so the
+    // first row seen for a given libraryPathItem is the newest).
+    if (!map.has(r.libraryPathItem!)) map.set(r.libraryPathItem!, r as DBSubtitle)
   }
   return map
 }
@@ -237,6 +259,21 @@ export const resetWhisperProgress = (db: Database.Database, subtitleId: number):
   ).run(subtitleId)
 }
 
+// Persist a Whisper checkpoint captured when a transcription is stopped/preempted mid-run.
+// `srt` is the serialized SRT of every fully-streamed segment so far; `ms` is the end-time of
+// the last such segment. On resume the media is seek-trimmed from `ms` and only the tail is
+// re-transcribed, then merged back with this checkpoint.
+export const saveWhisperCheckpoint = (
+  db: Database.Database,
+  subtitleId: number,
+  srt: string,
+  ms: number,
+): void => {
+  db.prepare(
+    `UPDATE subtitle SET whisperResumeSrt = ?, whisperResumeMs = ?, updatedAt = datetime('now') WHERE id = ?`,
+  ).run(srt, Math.max(0, Math.round(ms)), subtitleId)
+}
+
 export const createWhisperSubtitle = (
   db: Database.Database,
   user: DBUser,
@@ -258,15 +295,16 @@ export const createWhisperSubtitle = (
   }
 
   const nextOrderNumber = getNextOrderNumberForSubtitle(db)
+  const nextWhisperOrderNumber = getNextWhisperOrderNumber(db)
 
   const result = db
     .prepare(
       `INSERT INTO subtitle (
         userId, sourceLangId, mediaItemId, libraryPathItem, name, originalFileHash,
-        originalTextSRTName, originalText, orderNumber, source, sourcePath, mediaPath,
+        originalTextSRTName, originalText, orderNumber, whisperOrderNumber, source, sourcePath, mediaPath,
         status, whisperTranscriptionStatus, whisperModel, whisperTimestampsLength, whisperUseCuda,
         season, episode
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       user.id,
@@ -278,6 +316,7 @@ export const createWhisperSubtitle = (
       srtFileName,
       "",
       nextOrderNumber,
+      nextWhisperOrderNumber,
       "whisper",
       null,
       mediaPath,
@@ -333,6 +372,8 @@ export const finalizeWhisperTranscription = (
       originalFileHash = ?,
       originalTextSRTName = ?,
       whisperTranscriptionStatus = 'transcription_completed',
+      whisperResumeSrt = NULL,
+      whisperResumeMs = 0,
       updatedAt = datetime('now')
      WHERE id = ?`,
   ).run(dedupedSrt, originalFileHash, srtFileName, subtitleId)
@@ -397,8 +438,7 @@ export const createTranslationJobsForSubtitle = (
   const subtitle = getSubtitleById(db, subtitleId)
   if (!subtitle) return { success: false, msg: "Subtitle not found" }
 
-  const srtParser = new SrtParser2()
-  const parsedSubtitles = srtParser.fromSrt(subtitle.originalText)
+  const parsedSubtitles = parseSubtitleRows(subtitle.originalText, subtitle.sourceFormat)
   if (parsedSubtitles.length === 0) {
     return { success: false, msg: "Original SRT could not be parsed" }
   }
@@ -550,9 +590,8 @@ export const addMissingTargetLanguageJobs = (
 
   if (newLangs.length === 0) return { success: true, msg: "All requested languages already exist" }
 
-  const srtParser = new SrtParser2()
-  const parsedSubtitles = srtParser.fromSrt(subtitle.originalText)
-  if (parsedSubtitles.length === 0) return { success: false, msg: "Original SRT could not be parsed" }
+  const parsedSubtitles = parseSubtitleRows(subtitle.originalText, subtitle.sourceFormat)
+  if (parsedSubtitles.length === 0) return { success: false, msg: "Original subtitle could not be parsed" }
 
   const existingChunkSetting = existingJobs[0]?.chunkSetting ?? 10
   const existingSeason = existingJobs[0]?.season ?? null
@@ -655,11 +694,11 @@ export const createSubtitleTask = (
     })
     .map((item) => item.lang)
 
-  const srtParser = new SrtParser2()
-  const parsedSubtitles = srtParser.fromSrt(rawContent)
+  const sourceFormat = detectSubtitleFormat(srtFileName, rawContent)
+  const parsedSubtitles = parseSubtitleRows(rawContent, sourceFormat)
 
   if (parsedSubtitles.length === 0) {
-    return { success: false, msg: "Could not parse SRT file — file may be empty or malformed" }
+    return { success: false, msg: "Could not parse subtitle file — file may be empty or malformed" }
   }
 
   const originalFileHash = getFileHash(rawContent)
@@ -725,7 +764,7 @@ export const createSubtitleTask = (
   const transaction = db.transaction(() => {
     const subtitleResult = db
       .prepare(
-        `INSERT INTO subtitle (userId, sourceLangId, mediaItemId, libraryPathItem, name, originalFileHash, originalTextSRTName, originalText, orderNumber, source, sourcePath, mediaPath) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO subtitle (userId, sourceLangId, mediaItemId, libraryPathItem, name, originalFileHash, originalTextSRTName, originalText, sourceFormat, orderNumber, source, sourcePath, mediaPath) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         user.id,
@@ -736,6 +775,7 @@ export const createSubtitleTask = (
         originalFileHash,
         srtFileName,
         rawContent,
+        sourceFormat,
         nextOrderNumber,
         source,
         sourcePath,
@@ -847,6 +887,47 @@ export const softDeleteSubtitle = (db: Database.Database, user: DBUser, subtitle
   return { success: true, msg: null }
 }
 
+// Soft-delete every non-deleted subtitle tied to a media item — i.e. the whole
+// series (every episode) across BOTH the translation queue and the whisper
+// queue. A series can straddle both queues (some episodes still transcribing
+// via Whisper, others already translating), so deleting "the series" has to
+// hit every subtitle row for that media item regardless of which queue it is
+// rendered in. Mirrors softDeleteSubtitle's per-row behavior (sets deletedAt +
+// deletedByUserId); the worker treats deletedAt as a stop signal, so in-flight
+// jobs/whisper transcription wind down on their own.
+export const softDeleteSubtitlesByMediaItem = (
+  db: Database.Database,
+  user: DBUser,
+  mediaItemId: number,
+): DefaultResponse => {
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canDeleteTranslation")
+  if (!perm) return { success: false, msg: "Permission denied" }
+
+  const subs = db
+    .prepare(
+      `SELECT id, name FROM subtitle WHERE mediaItemId = ? AND deletedAt IS NULL`,
+    )
+    .all(mediaItemId) as { id: number; name: string }[]
+
+  if (subs.length === 0) return { success: false, msg: "Series not found in queue" }
+
+  const update = db.prepare(
+    `UPDATE subtitle SET deletedAt = datetime('now'), deletedByUserId = ?, updatedAt = datetime('now') WHERE id = ?`,
+  )
+  db.transaction(() => {
+    for (const s of subs) {
+      update.run(user.id, s.id)
+      createLog(db, "info", "subtitle", s.id, "Deleted subtitle (series delete)", {
+        deletedBy: user.id,
+        mediaItemId,
+        name: s.name,
+      })
+    }
+  })()
+
+  return { success: true, msg: `Deleted ${subs.length} subtitle(s)` }
+}
+
 export const moveSubtitleInQueue = (
   db: Database.Database,
   user: DBUser,
@@ -932,7 +1013,7 @@ export const getDashboardData = (db: Database.Database) => {
   const subtitles = db
     .prepare(
       `SELECT id, userId, sourceLangId, mediaItemId, libraryPathItem, name, originalFileHash, originalTextSRTName,
-              orderNumber, hide, source, sourcePath, mediaPath, status, whisperTranscriptionStatus,
+              orderNumber, whisperOrderNumber, hide, source, sourcePath, mediaPath, status, whisperTranscriptionStatus,
               whisperModel, whisperTimestampsLength, whisperUseCuda, whisperProgress,
               finishedAt, cancelledAt, cancelledByUserId, deletedAt, deletedByUserId, createdAt, updatedAt
        FROM subtitle WHERE deletedAt IS NULL AND hide = 0 ORDER BY orderNumber ASC, createdAt DESC`,
@@ -1061,6 +1142,93 @@ export const reorderSubtitles = (db: Database.Database, user: DBUser, orderedIds
   return { success: true, msg: null }
 }
 
+// Whisper-queue reordering — operates on `whisperOrderNumber` among
+// whisper-source subtitles still in the transcription stage, independent of
+// the translation queue's `orderNumber`.
+export const moveWhisperSubtitleInQueue = (
+  db: Database.Database,
+  user: DBUser,
+  subtitleId: number,
+  direction: "up" | "down",
+): DefaultResponse => {
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canChangeSubtitlePriority")
+  if (!perm) return { success: false, msg: "User does not have permission to manage subtitles" }
+
+  const subtitle = getSubtitleById(db, subtitleId)
+  if (!subtitle || subtitle.source !== "whisper") return { success: false, msg: "Subtitle not found" }
+
+  const others = db
+    .prepare(
+      `SELECT * FROM subtitle
+       WHERE source = 'whisper' AND deletedAt IS NULL
+         AND status NOT IN ('completed','cancelled','failed')
+         AND whisperTranscriptionStatus NOT IN ('transcription_completed','transcription_failed')
+       ORDER BY COALESCE(whisperOrderNumber, orderNumber) ASC, id ASC`,
+    )
+    .all() as DBSubtitle[]
+
+  const idx = others.findIndex((s) => s.id === subtitleId)
+  if (idx === -1) return { success: false, msg: "Subtitle not in whisper queue" }
+
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1
+  if (swapIdx < 0 || swapIdx >= others.length) return { success: true, msg: null }
+
+  const a = others[idx]
+  const b = others[swapIdx]
+  const aOrder = a.whisperOrderNumber ?? a.orderNumber
+  const bOrder = b.whisperOrderNumber ?? b.orderNumber
+
+  db.prepare(`UPDATE subtitle SET whisperOrderNumber = ?, updatedAt = datetime('now') WHERE id = ?`).run(bOrder, a.id)
+  db.prepare(`UPDATE subtitle SET whisperOrderNumber = ?, updatedAt = datetime('now') WHERE id = ?`).run(aOrder, b.id)
+
+  return { success: true, msg: null }
+}
+
+export const reorderWhisperSubtitles = (
+  db: Database.Database,
+  user: DBUser,
+  orderedIds: number[],
+): DefaultResponse => {
+  const { hasPermission } = userHasPermission(db, user.id, "canChangeSubtitlePriority")
+  if (!hasPermission) return { success: false, msg: "User does not have permission to manage subtitles" }
+  const stmt = db.prepare(`UPDATE subtitle SET whisperOrderNumber = ?, updatedAt = datetime('now') WHERE id = ?`)
+  const run = db.transaction(() => orderedIds.forEach((id, idx) => stmt.run((idx + 1) * 10, id)))
+  run()
+  return { success: true, msg: null }
+}
+
+// Move a whisper-queue subtitle straight to the top so the worker transcribes it next. This is
+// the "change which one to whisper at the current time" action: the route follows up by calling
+// preemptWorker(), which kills the in-progress transcription so the loop picks this one up.
+export const moveWhisperSubtitleToTop = (
+  db: Database.Database,
+  user: DBUser,
+  subtitleId: number,
+): DefaultResponse => {
+  const { hasPermission } = userHasPermission(db, user.id, "canChangeSubtitlePriority")
+  if (!hasPermission) return { success: false, msg: "User does not have permission to manage subtitles" }
+
+  const subtitle = getSubtitleById(db, subtitleId)
+  if (!subtitle || subtitle.source !== "whisper") return { success: false, msg: "Subtitle not found" }
+
+  const minRow = db
+    .prepare(
+      `SELECT MIN(COALESCE(whisperOrderNumber, orderNumber)) as minOrd FROM subtitle
+       WHERE source = 'whisper' AND deletedAt IS NULL
+         AND status NOT IN ('completed','cancelled','failed')
+         AND whisperTranscriptionStatus NOT IN ('transcription_completed','transcription_failed')`,
+    )
+    .get() as { minOrd: number | null }
+  const minOrd = minRow?.minOrd ?? 0
+  // Slot below the current minimum so this item sorts first. -10 leaves room for future inserts.
+  db.prepare(`UPDATE subtitle SET whisperOrderNumber = ?, updatedAt = datetime('now') WHERE id = ?`).run(
+    minOrd - 10,
+    subtitleId,
+  )
+
+  return { success: true, msg: null }
+}
+
 export const getJobChunkStatsData = (db: Database.Database, jobId: number) => {
   return db
     .prepare(
@@ -1170,6 +1338,7 @@ export const getExportFileName = (
   episode: number | null,
   year: number | null,
   langCode: string,
+  format: SubtitleFormat = "srt",
 ) => {
   let fileName = `[BCookieSub]${title}`
   if (season !== null && episode !== null) {
@@ -1181,7 +1350,7 @@ export const getExportFileName = (
   if (langCode) {
     fileName += `.${langCode}`
   }
-  fileName += `.srt`
+  fileName += subtitleExportExtension(format)
   return fileName
 }
 
@@ -1406,12 +1575,11 @@ export const assembleAndFinishSubtitleJob = (
   outputDir: string | null,
 ): void => {
   const chunks = getChunksByJobId(db, job.id)
-  const srtParser = new SrtParser2()
-  const allLines = srtParser.fromSrt(subtitle.originalText)
-  const lineMap = new Map(allLines.map((l) => [l.id, l]))
 
-  const parts: string[] = []
-  let srtCounter = 1
+  // Collect translated rows across chunks in chunkIndex order. For SRT this
+  // ordering drives the 1..N renumbering; for ASS/SSA each row is mapped back
+  // to its original line position by the serializer, so order is irrelevant.
+  const allRows: { id: string; text: string }[] = []
 
   for (const chunk of chunks.sort((a, b) => a.chunkIndex - b.chunkIndex)) {
     if (!chunk.selectedCandidateId) continue
@@ -1431,14 +1599,13 @@ export const assembleAndFinishSubtitleJob = (
     }
 
     for (const row of rows) {
-      const original = lineMap.get(row.id)
-      if (!original) continue
-      parts.push(`${srtCounter}\n${original.startTime} --> ${original.endTime}\n${row.text}\n`)
-      srtCounter++
+      allRows.push({ id: row.id, text: row.text })
     }
   }
 
-  const translatedText = parts.join("\n")
+  // Serialize in the subtitle's original format. The original file structure
+  // (timing, styles, non-dialogue lines) is recovered from subtitle.originalText.
+  const translatedText = serializeSubtitle(subtitle.originalText, allRows, subtitle.sourceFormat)
   let outputFilePath: string | null = null
 
   const outputHash = translatedText ? getFileHash(translatedText) : null

@@ -9,6 +9,7 @@ import { syncSecretsFromEnv } from "./repositories/movieDbRepository"
 import { cleanupExtractTempDir } from "./services/libraryPathService"
 import { cleanupWhisperTempDir } from "./services/whisperService"
 import { getTranslateWorkerBridge } from "./tasks/translateWorkerBridge"
+import { getWhisperWorkerBridge } from "./tasks/whisperWorkerBridge"
 import { loadSession } from "./middleware/auth"
 import { requireInternalToken } from "./middleware/internalAuth"
 import { authRouter } from "./routes/auth"
@@ -117,14 +118,19 @@ export function stopOllamaServe() {
 // ── background workers (run in worker_threads so they don't block the UI) ──
 let translateWorker: Worker | null = null
 let libraryWorker: Worker | null = null
+let whisperWorker: Worker | null = null
 let shuttingDown = false
 
 // Bounded respawn for the translate worker: max 3 restarts within 10 min so a
 // broken ollama/DB doesn't get hammered forever. The scanner is idempotent and
-// self-throttling, so it respawns freely.
+// self-throttling, so it respawns freely. The whisper worker mirrors the
+// translate worker's bounded respawn.
 const TRANSLATE_RESPAWN_MAX = 3
 const TRANSLATE_RESPAWN_WINDOW_MS = 10 * 60 * 1000
 const translateRespawns: number[] = []
+const WHISPER_RESPAWN_MAX = 3
+const WHISPER_RESPAWN_WINDOW_MS = 10 * 60 * 1000
+const whisperRespawns: number[] = []
 
 function workerScriptPath(name: string): string {
   // __dirname is dist/ after tsc, so this resolves to dist/tasks/<name>.js
@@ -174,6 +180,32 @@ function spawnLibraryWorker(): Worker {
   return w
 }
 
+function spawnWhisperWorker(): Worker {
+  const w = new Worker(workerScriptPath("whisperWorker"))
+  whisperWorker = w
+  getWhisperWorkerBridge().setWorker(w)
+  w.on("error", (err) => console.error("[whisper-worker] error:", err))
+  w.on("exit", (code) => {
+    console.log(`[whisper-worker] exited (code=${code})`)
+    whisperWorker = null
+    if (shuttingDown) return
+    const now = Date.now()
+    while (whisperRespawns.length && now - whisperRespawns[0] > WHISPER_RESPAWN_WINDOW_MS) {
+      whisperRespawns.shift()
+    }
+    if (whisperRespawns.length >= WHISPER_RESPAWN_MAX) {
+      console.error("[whisper-worker] max restarts reached in 10 min — giving up; restart the process to resume")
+      return
+    }
+    whisperRespawns.push(now)
+    console.log(`[whisper-worker] restarting in 5s…`)
+    setTimeout(() => {
+      if (!shuttingDown) spawnWhisperWorker()
+    }, 5000)
+  })
+  return w
+}
+
 async function shutdown(): Promise<void> {
   if (shuttingDown) return
   shuttingDown = true
@@ -184,12 +216,19 @@ async function shutdown(): Promise<void> {
   } catch (e) {
     console.error("[shutdown] cleanup error:", e)
   }
+  try {
+    await getWhisperWorkerBridge().cleanupRunningChunks()
+  } catch (e) {
+    console.error("[shutdown] whisper cleanup error:", e)
+  }
   if (translateWorker) translateWorker.postMessage({ type: "shutdown" })
   if (libraryWorker) libraryWorker.postMessage({ type: "shutdown" })
+  if (whisperWorker) whisperWorker.postMessage({ type: "shutdown" })
   await Promise.race([
     Promise.all([
       translateWorker ? translateWorker.terminate() : Promise.resolve(),
       libraryWorker ? libraryWorker.terminate() : Promise.resolve(),
+      whisperWorker ? whisperWorker.terminate() : Promise.resolve(),
     ]),
     new Promise((r) => setTimeout(r, 5000)),
   ])
@@ -276,4 +315,5 @@ setTimeout(() => {
   console.log("[startup] Starting background workers (worker_threads)")
   spawnTranslateWorker()
   spawnLibraryWorker()
+  spawnWhisperWorker()
 }, STARTUP_DELAY_MS)

@@ -26,7 +26,7 @@ import {
   getActiveSubtitleForLibraryPathItem,
   createWhisperSubtitle,
   getActiveWhisperSubtitleForMediaItem,
-  getActiveWhisperSubtitlesForMediaItems,
+  getActiveWhisperSubtitlesByLibraryPathItems,
   createPlaceholderTranslationJobs,
   getTargetLanguagesForWhisperWorkflow,
   getJobLangStatusBySubtitle,
@@ -39,6 +39,7 @@ import {
   isVideoFile,
 } from "../services/libraryPathService"
 import { autoTranslateItem } from "../services/libraryPathService"
+import { isSubtitleExtension } from "../services/subtitleFormatDetector"
 
 type RequestGroupItem = {
   itemId: number
@@ -92,12 +93,12 @@ export function libraryRequestsRouter(db: Database.Database) {
 
     const pathIds = libraryPaths.map((lp) => lp.id)
     const enriched = enrichItems(db, getLibraryPathItemsForPaths(db, pathIds))
-    const { jobStatusBySub, whisperByMedia } = loadBatchedMaps(enriched)
+    const { jobStatusBySub, whisperByItem } = loadBatchedMaps(enriched)
 
     const groupsMap = new Map<string, RequestGroup>()
     for (const item of enriched) {
       if (!isMatched(item)) continue // unmatched — handled by buildUnmatchedGroups
-      const gi = itemToGroupItem(item, jobStatusBySub, whisperByMedia, userTargetLangIds)
+      const gi = itemToGroupItem(item, jobStatusBySub, whisperByItem, userTargetLangIds)
       if (!gi) continue
       const key = String(item.mediaItem.id)
       const existing = groupsMap.get(key)
@@ -139,12 +140,12 @@ export function libraryRequestsRouter(db: Database.Database) {
 
     const pathIds = paths.map((lp) => lp.id)
     const enriched = enrichItems(db, getLibraryPathItemsForPaths(db, pathIds))
-    const { jobStatusBySub, whisperByMedia } = loadBatchedMaps(enriched)
+    const { jobStatusBySub, whisperByItem } = loadBatchedMaps(enriched)
 
     const groups: RequestGroup[] = []
     for (const item of enriched) {
       if (isMatched(item)) continue // matched — lives on the movie/series tab
-      const gi = itemToGroupItem(item, jobStatusBySub, whisperByMedia, userTargetLangIds)
+      const gi = itemToGroupItem(item, jobStatusBySub, whisperByItem, userTargetLangIds)
       if (!gi) continue
       groups.push({
         key: `unmatched-${item.id}`,
@@ -161,14 +162,19 @@ export function libraryRequestsRouter(db: Database.Database) {
   }
 
   // Batched job-lang + Whisper status maps for a set of enriched items.
+  // Whisper status is keyed by the item's own libraryPathItem id (the specific
+  // episode file), NOT by mediaItemId — episodes of a series share a mediaItemId
+  // but a Whisper subtitle is created for only the episode that kicked off
+  // transcription. Keying by libraryPathItem keeps "transcribing" from leaking
+  // onto every sibling episode.
   function loadBatchedMaps(enriched: any[]) {
     const activeSubIds = enriched
       .filter((it) => it.subtitleInfo && !it.subtitleInfo.deleted)
       .map((it) => it.subtitleInfo!.subtitleId)
     const jobStatusBySub = getJobLangStatusBySubtitles(db, activeSubIds)
-    const mediaIds = [...new Set(enriched.map((it) => it.mediaItemId).filter((v): v is number => v != null))]
-    const whisperByMedia = getActiveWhisperSubtitlesForMediaItems(db, mediaIds)
-    return { jobStatusBySub, whisperByMedia }
+    const itemIds = enriched.map((it) => it.id).filter((v): v is number => v != null)
+    const whisperByItem = getActiveWhisperSubtitlesByLibraryPathItems(db, itemIds)
+    return { jobStatusBySub, whisperByItem }
   }
 
   // Shared per-item decision: returns a RequestGroupItem if the item still needs
@@ -176,13 +182,11 @@ export function libraryRequestsRouter(db: Database.Database) {
   function itemToGroupItem(
     item: any,
     jobStatusBySub: Map<number, { targetLangId: number; status: string }[]>,
-    whisperByMedia: Map<number, any>,
+    whisperByItem: Map<number, any>,
     userTargetLangIds: number[],
   ): RequestGroupItem | null {
     if (item.blacklist) return null
-    const whisperStatus = item.mediaItemId
-      ? (whisperByMedia.get(item.mediaItemId)?.whisperTranscriptionStatus ?? null)
-      : null
+    const whisperStatus = whisperByItem.get(item.id)?.whisperTranscriptionStatus ?? null
 
     if (item.status === "not_started" || item.status === "no_srts_found") {
       return makeGroupItem(item, null, userTargetLangIds, false, whisperStatus)
@@ -325,6 +329,20 @@ export function libraryRequestsRouter(db: Database.Database) {
     res.json({ groups, allGenres })
   })
 
+  // Tab counts only — lets the page preload the badge numbers on first load
+  // instead of waiting until each tab is visited. Reuses the same group builders
+  // as /data (the count is "groups that still need work" after filtering), so the
+  // numbers always match what a tab render would show.
+  router.get("/counts", (req, res) => {
+    const user = res.locals.user!
+    const userTargetLangIds = getUserConfigTranslationLanguages(db, user.id).map((tl) => tl.languageId)
+    res.json({
+      movie: buildRequestGroups("movie", userTargetLangIds).length,
+      series: buildRequestGroups("series", userTargetLangIds).length,
+      unmatched: buildUnmatchedGroups(userTargetLangIds).length,
+    })
+  })
+
   // Returns available subtitle sources for a library path item
   router.get("/item/:itemId/subtitle-sources", (req, res) => {
     const itemId = parseInt(String(req.params.itemId))
@@ -337,9 +355,9 @@ export function libraryRequestsRouter(db: Database.Database) {
     const sourceLang = getLanguageById(db, lp.sourceLangId)
     if (!sourceLang) return res.json({ success: false, msg: "Source language not found", sources: [] })
 
-    // Only list sources for video files (not standalone .srt)
-    if (item.path.toLowerCase().endsWith(".srt")) {
-      return res.json({ success: true, sources: [], message: "Standalone SRT — no source selection needed" })
+    // Only list sources for video files (not standalone subtitle files)
+    if (isSubtitleExtension(item.path)) {
+      return res.json({ success: true, sources: [], message: "Standalone subtitle — no source selection needed" })
     }
 
     const sources = listSubtitleSourcesForVideo(
@@ -536,9 +554,10 @@ export function libraryRequestsRouter(db: Database.Database) {
         }
       }
 
-      // Resolve SRT
+      // Resolve subtitle source: standalone subtitle files are used directly;
+      // video files need a companion or embedded track extracted.
       let srtSource: { path: string; isTemp: boolean } | null = null
-      if (item.path.toLowerCase().endsWith(".srt")) {
+      if (isSubtitleExtension(item.path)) {
         srtSource = { path: item.path, isTemp: false }
       } else {
         srtSource = findCompanionSrt(

@@ -411,6 +411,7 @@ const createTables = (db: Database.Database) => {
     whisperUseCuda INTEGER NOT NULL DEFAULT 0,
     whisperModelRootPath TEXT DEFAULT NULL,
     whisperEnabled INTEGER NOT NULL DEFAULT 1,
+    whisperRunAsSeparateTask INTEGER NOT NULL DEFAULT 0,
 
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -581,8 +582,11 @@ const createTables = (db: Database.Database) => {
     originalFileHash TEXT NOT NULL,
     originalTextSRTName TEXT NOT NULL,
     originalText TEXT NOT NULL,
+    sourceFormat TEXT NOT NULL DEFAULT 'srt'
+      CHECK (sourceFormat IN ('srt', 'ass', 'ssa')),
 
     orderNumber INTEGER NOT NULL DEFAULT 0,
+    whisperOrderNumber INTEGER,
     hide INTEGER NOT NULL DEFAULT 0,
 
     source TEXT DEFAULT NULL
@@ -603,6 +607,14 @@ const createTables = (db: Database.Database) => {
     whisperProgress INTEGER NOT NULL DEFAULT 0,
     whisperPositionMs INTEGER NOT NULL DEFAULT 0,
     whisperDurationMs INTEGER NOT NULL DEFAULT 0,
+
+    // Checkpoint captured when a Whisper transcription is stopped/preempted mid-run.
+    // whisperResumeSrt holds the serialized SRT of every fully-streamed segment so far;
+    // whisperResumeMs is the end-time of the last such segment. On resume, ffmpeg seek-trims
+    // the media from whisperResumeMs and only the tail is re-transcribed, then merged back.
+    // Cleared on successful finalize.
+    whisperResumeSrt TEXT DEFAULT NULL,
+    whisperResumeMs INTEGER NOT NULL DEFAULT 0,
 
     finishedAt DATETIME DEFAULT NULL,
     cancelledAt DATETIME DEFAULT NULL,
@@ -783,7 +795,28 @@ const validateDb = (db: Database.Database) => {
   }
 }
 
-const runMigrations = (db: Database.Database): void => {}
+// Idempotently add columns introduced after the initial schema. CREATE TABLE
+// only runs for brand-new databases, so existing DBs need ALTER TABLE to pick
+// up new columns. PRAGMA table_info is checked first so re-runs are no-ops.
+const COLUMN_MIGRATIONS: { table: string; column: string; definition: string }[] = [
+  { table: "config", column: "whisperRunAsSeparateTask", definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "subtitle", column: "whisperOrderNumber", definition: "INTEGER" },
+  { table: "subtitle", column: "sourceFormat", definition: "TEXT NOT NULL DEFAULT 'srt'" },
+  { table: "subtitle", column: "whisperResumeSrt", definition: "TEXT DEFAULT NULL" },
+  { table: "subtitle", column: "whisperResumeMs", definition: "INTEGER NOT NULL DEFAULT 0" },
+]
+
+function applyColumnMigrations(db: Database.Database): void {
+  for (const { table, column, definition } of COLUMN_MIGRATIONS) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+    if (cols.some((c) => c.name === column)) continue
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+    } catch {
+      /* column may have been added concurrently by another connection */
+    }
+  }
+}
 
 export function getDb(): Database.Database {
   const dbExists = fs.existsSync(dbName)
@@ -805,7 +838,7 @@ export function getDb(): Database.Database {
     validateDb(db)
   }
 
-  runMigrations(db)
+  applyColumnMigrations(db)
 
   return db
 }
