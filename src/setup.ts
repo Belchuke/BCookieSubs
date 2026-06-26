@@ -407,7 +407,7 @@ const createTables = (db: Database.Database) => {
     defaultLanguage TEXT NOT NULL DEFAULT 'en',
 
     whisperModel TEXT NOT NULL DEFAULT 'large-v3-turbo',
-    whisperTimestampsLength INTEGER NOT NULL DEFAULT 80,
+    whisperTimestampsLength INTEGER NOT NULL DEFAULT 60,
     whisperUseCuda INTEGER NOT NULL DEFAULT 0,
     whisperModelRootPath TEXT DEFAULT NULL,
     whisperEnabled INTEGER NOT NULL DEFAULT 1,
@@ -427,7 +427,7 @@ const createTables = (db: Database.Database) => {
 
     db.prepare(
       `INSERT INTO config (id, defaultChunkSize, theMovieDbActive, showPosters, rootLibraryPath, scanLibraryPaths, defaultLanguage, whisperModel, whisperTimestampsLength)
-       VALUES (1, 12, ?, ?, ?, ?, ?, 'large-v3-turbo', 80)
+       VALUES (1, 12, ?, ?, ?, ?, ?, 'large-v3-turbo', 60)
        ON CONFLICT(id) DO NOTHING`,
     ).run(theMovieDbActiveDefault, showPostersDefault, rootLibraryPathDefault, scanLibraryPathsDefault, defaultLanguage)
 
@@ -570,11 +570,6 @@ const createTables = (db: Database.Database) => {
       FOREIGN KEY (mediaItemId) REFERENCES mediaItem(id) ON DELETE CASCADE
     )`)
 
-    // Files BCookieSubs itself exported into a library folder. The scanner
-    // skips these as translation sources (they are output, not input) — except
-    // whisper-generated transcripts (isWhisper = 1), which remain valid
-    // sources. Lets the Library Requests page hide BCookieSubs's own output
-    // while still offering Whisper transcripts to translate from.
     db.exec(`CREATE TABLE IF NOT EXISTS bcsubExportedFile (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       libraryPathId INTEGER NOT NULL,

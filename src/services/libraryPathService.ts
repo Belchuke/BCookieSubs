@@ -21,6 +21,7 @@ import {
   getExportedFileByPath,
   getLibraryPathById,
   getLibraryPathItemById,
+  getLibraryPathItemCandidates,
   getLibraryPathItemIdsByLibraryPath,
   isLibraryPathItemBlacklisted,
   pruneMissingExportedFiles,
@@ -156,14 +157,16 @@ function parseSeasonFolderName(folderName: string): number | null {
 
 function parseEpisodeFromFilename(filename: string): number | null {
   const base = path.basename(filename, path.extname(filename))
-  // SxxExx — highest priority
-  const se = base.match(/[Ss]\d{1,2}[Ee](\d{1,3})/)
+  // SxxExx / SxxEPxx — highest priority (the EP variant is used by some releases)
+  const se = base.match(/[Ss]\d{1,2}[Ee][Pp]?(\d{1,3})/)
   if (se) return parseInt(se[1])
   // 1x01 format
   const x = base.match(/\b\d{1,2}[xX](\d{2,3})\b/)
   if (x) return parseInt(x[1])
-  // E01 / EP01 standalone (we already returned above if SxxExx matched)
-  const e = base.match(/\bE[Pp]?(\d{1,3})\b/)
+  // E01 / EP01 standalone (we already returned above if SxxExx matched).
+  // Lookarounds rather than \b so underscore/dot/hyphen separators count as
+  // boundaries, e.g. "[Exiled-Destiny]_Ghost_Stories_Ep01_(...)".
+  const e = base.match(/(?<![A-Za-z0-9])E[Pp]?(\d{1,3})(?![A-Za-z0-9])/)
   if (e) return parseInt(e[1])
   // "Episode 01" literal
   const ep = base.match(/\bepisode\s*(\d{1,3})\b/i)
@@ -171,19 +174,77 @@ function parseEpisodeFromFilename(filename: string): number | null {
   // SP00 specials: " - SP01" or "SP01"
   const sp = base.match(/\bSP(\d{1,3})\b/i)
   if (sp) return parseInt(sp[1])
-  // Anime-style " - 01 - Title" or " - 01" at end (2–3 digit episode, not a year)
-  const anime = base.match(/\s+-\s+(\d{2,3})(?:\s+-\s+|\s*$|\s+\()/)
+  // Anime-style " - 01 - Title" / " - 01" at end (2–3 digit episode, not a
+  // year). Separators may be spaces, dots or underscores, e.g.
+  // "[Cleo]91_Days_-_01_(...)" or "[Anime Time] Show Season 02 - 04". The
+  // leading hyphen is what marks it as an episode number rather than a year,
+  // so this stays specific and won't grab "2007" from a movie title.
+  const anime = base.match(/[\s._-]+-[\s._-]+(\d{2,3})(?:[\s._-]+-[\s._-]+|[\s._-]*$|[\s._-]*\()/)
   if (anime) return parseInt(anime[1])
   return null
 }
 
 function parseSeasonFromFilename(filename: string): number | null {
   const base = path.basename(filename, path.extname(filename))
-  const se = base.match(/[Ss](\d{1,2})[Ee]\d{1,3}/)
+  const se = base.match(/[Ss](\d{1,2})[Ee][Pp]?\d{1,3}/)
   if (se) return parseInt(se[1])
   const x = base.match(/\b(\d{1,2})[xX]\d{2,3}\b/)
   if (x) return parseInt(x[1])
+  // "Season N" / "Season 02" literal in the filename — covers files that
+  // carry season info as a word rather than SxxExx, e.g.
+  // "Show Season 02 - 04" or "Show Season 1 Episode 01".
+  const seasonWord = base.match(/\bseason\s*0?(\d{1,2})\b/i)
+  if (seasonWord) return parseInt(seasonWord[1])
   return null
+}
+
+// A stable identity for a season folder so the pre-pass and the main scan
+// loop agree on which episodes belong to the same season. The series root
+// disambiguates two different shows that both happen to have a "Season 3".
+function seasonFolderKey(seriesRoot: string, seasonFolder: string): string {
+  return path.normalize(seriesRoot) + path.sep + seasonFolder
+}
+
+// Some releases put episodes in a season folder but number them as absolute,
+// show-wide continuation numbers instead of 1-based per-season numbers — e.g. a
+// "Season 03" folder whose files are "Show - 073 - Title" through "100". When a
+// whole season folder uses absolute numbering (no SxxExx markers anywhere) and
+// doesn't already start at 1, rebase so the lowest episode in that folder
+// becomes episode 1 of the season, offsetting the rest by the same amount
+// (073→1, 074→2, …, 100→28). Gaps in the source numbering are preserved. A
+// folder that carries SxxExx anywhere is already 1-based per season and is left
+// alone. Returns a map of season-folder key → offset where finalEpisode =
+// parsedEpisode - offset.
+function computeSeasonEpisodeRebase(
+  videoFiles: string[],
+  libraryRootPath: string,
+): Map<string, number> {
+  const groups = new Map<string, { min: number; hasSxxExx: boolean; any: boolean }>()
+  for (const vf of videoFiles) {
+    const seriesRoot = getSeriesRootDir(vf, libraryRootPath)
+    const seasonFolder = getSeasonFolderNameBetween(vf, seriesRoot)
+    if (seasonFolder === null) continue // files in the series root: no rebase
+    const key = seasonFolderKey(seriesRoot, seasonFolder)
+    const base = path.basename(vf, path.extname(vf))
+    const hasSxxExx = /[Ss]\d{1,2}[Ee][Pp]?\d{1,3}/.test(base)
+    const ep = parseEpisodeFromFilename(vf)
+    let g = groups.get(key)
+    if (!g) {
+      g = { min: Number.POSITIVE_INFINITY, hasSxxExx: false, any: false }
+      groups.set(key, g)
+    }
+    if (hasSxxExx) g.hasSxxExx = true
+    if (ep !== null) {
+      g.any = true
+      if (ep < g.min) g.min = ep
+    }
+  }
+  const offsets = new Map<string, number>()
+  for (const [key, g] of groups) {
+    if (!g.any || g.hasSxxExx || g.min <= 1) continue
+    offsets.set(key, g.min - 1)
+  }
+  return offsets
 }
 
 type ScannedFiles = { videoFiles: string[]; srtFiles: string[] }
@@ -200,6 +261,10 @@ function findMediaFiles(dirPath: string): ScannedFiles {
   for (const entry of entries) {
     const full = path.join(dirPath, entry.name)
     if (entry.isDirectory()) {
+      // Skip Jellyfin/Plex trickplay thumbnail bundles outright — they hold
+      // hundreds of preview images per episode, never video or subtitles, and
+      // recursing into them just slows the scan.
+      if (entry.name.toLowerCase().endsWith(".trickplay")) continue
       const sub = findMediaFiles(full)
       videoFiles.push(...sub.videoFiles)
       srtFiles.push(...sub.srtFiles)
@@ -285,6 +350,68 @@ function selectBestSrt(
       return best
     }
   })
+}
+
+// Language tokens (ISO 639-1 / 639-2/B codes + common English names) for the
+// languages BCookieSubs typically translates. A subtitle whose entire stem is
+// one of these — e.g. "english.srt", "spa.srt", "en.srt", "pt-BR.srt" — is a
+// bare language tag with no movie title in the filename, so matching it on its
+// own stem is garbage ("english" is not a movie). For movies we instead attach
+// it to the owning video in the same folder tree (see findOwningVideoFile).
+const LANGUAGE_NAME_TOKENS = new Set<string>([
+  // ISO 639-2/B + 639-1 codes
+  "eng", "en", "spa", "es", "fre", "fra", "fr", "ger", "de", "ita", "it", "por", "pt",
+  "rus", "ru", "jpn", "ja", "kor", "ko", "chi", "zho", "zh", "ara", "ar", "hin", "hi",
+  "tur", "tr", "dut", "nld", "nl", "pol", "pl", "swe", "sv", "nor", "no", "dan", "da",
+  "fin", "fi", "gre", "ell", "el", "cze", "ces", "cs", "heb", "he", "hun", "hu", "rom",
+  "ron", "ro", "tha", "th", "vie", "vi", "ind", "id", "may", "msa", "ms", "ukr", "uk",
+  "bul", "bg", "hrv", "hr", "srp", "sr", "slk", "sk", "slv", "sl", "est", "et", "lav",
+  "lv", "lit", "lt", "per", "fas", "fa", "cat", "ca", "glg", "gl", "ben", "bn", "tam",
+  "ta", "tel", "te", "mal", "ml", "pan", "pa", "gla", "gd", "wel", "cym", "cy",
+  // common English names
+  "english", "spanish", "french", "german", "italian", "portuguese", "russian",
+  "japanese", "korean", "chinese", "arabic", "hindi", "turkish", "dutch", "polish",
+  "swedish", "norwegian", "danish", "finnish", "greek", "czech", "hebrew", "hungarian",
+  "romanian", "thai", "vietnamese", "indonesian", "malay", "ukrainian", "bulgarian",
+  "croatian", "serbian", "slovak", "slovenian", "estonian", "latvian", "lithuanian",
+  "persian", "catalan", "galician", "bengali", "tamil", "telugu", "malayalam", "punjabi",
+  "scottish", "welsh",
+])
+
+// True when a subtitle stem is just a language tag (optionally with a region or
+// hearing-impaired suffix), carrying no movie title. The year guard keeps a
+// stray "french.2007" from being misread as a bare language.
+function isLanguageOnlyStem(stem: string): boolean {
+  const raw = stem.trim().toLowerCase()
+  if (!raw || /\b(?:19|20)\d{2}\b/.test(raw)) return false
+  const parts = raw.split(/[._-]+/).filter(Boolean)
+  if (parts.length === 0) return false
+  if (!LANGUAGE_NAME_TOKENS.has(parts[0])) return false
+  // Allow a single region/hearing-impaired suffix (e.g. "pt-BR", "en-SDH",
+  // "es.HI"); anything longer than that is probably a real title.
+  const suffix = parts.slice(1).join("-")
+  if (suffix.length > 6) return false
+  return true
+}
+
+// For a standalone subtitle, find the video file in the same folder tree whose
+// directory is the nearest enclosing ancestor of the subtitle's directory
+// (the "Subs" subfolder case: the subtitle lives one level under the video's
+// folder). Returns the deepest-matching video, or null if none encloses it.
+function findOwningVideoFile(srtPath: string, videoFiles: string[]): string | null {
+  const srtDir = path.normalize(path.dirname(srtPath)) + path.sep
+  let best: string | null = null
+  let bestLen = -1
+  for (const vf of videoFiles) {
+    const vDir = path.normalize(path.dirname(vf))
+    if (srtDir === vDir + path.sep || srtDir.startsWith(vDir + path.sep)) {
+      if (vDir.length > bestLen) {
+        best = vf
+        bestLen = vDir.length
+      }
+    }
+  }
+  return best
 }
 
 interface MkvSubTrack {
@@ -661,6 +788,12 @@ function parseNfoFile(nfoPath: string): NfoMetadata | null {
     return null
   }
 
+  // An episode .nfo (<episodedetails>) carries the episode's title, its
+  // thumbnail, and an episode-level tmdb id — none of which identify the
+  // show. Refuse it so the caller falls back to folder-id / name-detection
+  // instead of building a media item titled after episode 1.
+  if (/<episodedetails\b/i.test(content)) return null
+
   const pick = (tag: string): string | null => {
     const m = content.match(new RegExp(`<${tag}[^>]*>\\s*([\\s\\S]*?)\\s*<\\/${tag}>`, "i"))
     if (!m) return null
@@ -717,9 +850,14 @@ function parseNfoFile(nfoPath: string): NfoMetadata | null {
   return { title, originalTitle, year, genres, tmdbId, posterValue }
 }
 
-// Prefer the canonical Jellyfin/Kodi filename (movie.nfo / tvshow.nfo) and fall
-// back to any other .nfo in the folder (e.g. a release-named "Free Guy.nfo").
-// Returns null when the folder has no .nfo at all.
+// Prefer the canonical Jellyfin/Kodi filename (movie.nfo / tvshow.nfo) and,
+// for MOVIES only, fall back to any other .nfo in the folder (e.g. a
+// release-named "Free Guy.nfo"). For SERIES, never fall back: a series root
+// without a tvshow.nfo almost certainly contains per-episode .nfo files
+// (<episodedetails>), and matching against one would use the episode's title
+// and episode thumbnail as if they were the show's — producing a garbage
+// media item named after episode 1. Returning null lets the caller fall
+// through to the folder-id / name-detection paths instead.
 function findPrimaryNfoPath(dir: string, libraryType: "movie" | "series"): string | null {
   let entries: fs.Dirent[]
   try {
@@ -733,7 +871,8 @@ function findPrimaryNfoPath(dir: string, libraryType: "movie" | "series"): strin
   if (nfos.length === 0) return null
   const preferred = libraryType === "movie" ? "movie.nfo" : "tvshow.nfo"
   const canonical = nfos.find((p) => path.basename(p).toLowerCase() === preferred)
-  return canonical ?? nfos[0]
+  if (canonical) return canonical
+  return libraryType === "movie" ? nfos[0] : null
 }
 
 // Resolve the NFO's poster reference to an actual image file on disk. The
@@ -764,16 +903,19 @@ function getSeriesDetectionName(filePath: string, libraryPathRoot: string): stri
 
 // Parse an embedded TMDB id from a Jellyfin/Plex-style folder name, e.g.
 // "Captain America: Civil War (2016) [tmdbid-271110]" or "... {tmdb-271110}".
+// Recognises the common "tmdb"/"tmdbid" tags as well as the "tmbid" misspelling
+// some metadata tools emit (e.g. "[tmbid-42942]").
 function parseTmdbIdFromFolderName(folderName: string): number | null {
-  const m = folderName.match(/[[{]\s*tmdb(?:id)?-(\d+)\s*[\]}]/i)
+  const m = folderName.match(/[[{]\s*tm(?:db(?:id)?|bid)-(\d+)\s*[\]}]/i)
   return m ? parseInt(m[1]) : null
 }
 
 // Strip id/source tags so the LLM matcher sees a clean title, e.g.
 // "Captain America: Civil War (2016) [tmdbid-271110]" -> "Captain America: Civil War (2016)".
+// Recognises tmdb/tmdbid/tmbid alongside imdb/tvdb variants.
 function stripFolderIdTags(folderName: string): string {
   return folderName
-    .replace(/[[{]\s*(?:tmdb|imdb|tvdb)(?:id)?-[^\]}]*[\]}]/gi, "")
+    .replace(/[[{]\s*(?:tm(?:db(?:id)?|bid)|imdb|tvdb)-[^\]}]*[\]}]/gi, "")
     .replace(/\s+/g, " ")
     .trim()
 }
@@ -1292,6 +1434,14 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
 
   const companionSrtPaths = new Set<string>()
 
+  // Pre-compute per-season episode rebase offsets (absolute → 1-based) before
+  // the per-file loop, since a season's offset depends on the lowest episode
+  // number across all of its files. See computeSeasonEpisodeRebase.
+  const episodeRebase =
+    libraryPath.type === "series"
+      ? computeSeasonEpisodeRebase(videoFiles, libraryPath.path)
+      : new Map<string, number>()
+
   const seriesFolderCache = new Map<
     string,
     {
@@ -1322,11 +1472,12 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
       if (extracted) resolvedSrt = { path: extracted, isTemp: true }
     }
 
-    if (!resolvedSrt) {
-      createLibraryPathItem(db, libraryPath.id, videoFile, `${stem}.srt`, null, "no_srts_found", null, null)
-      continue
-    }
-
+    // Match the media item regardless of whether a subtitle was found. A video
+    // with no companion/extractable SRT (e.g. a dual-audio release waiting for
+    // Whisper) still belongs to a series/movie, so it should be matched via
+    // NFO/folder-id/name-detection and shown with the correct title rather than
+    // left as an anonymous "no_srts_found" row. The match is cached per series
+    // root, so this adds at most one TheMovieDatabase/AI call per series.
     let mediaItemId: number | null = null
     let multipleMatches = false
     let candidateMediaItemIds: number[] = []
@@ -1359,6 +1510,13 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
       // Files directly in the series root with no season info default to season 1
       if (season === null && seasonFolder === null) season = 1
       episode = parseEpisodeFromFilename(videoFile)
+      // Rebase absolute (show-wide) episode numbers to 1-based per-season
+      // numbers when the whole season folder lacks SxxExx markers, e.g. a
+      // "Season 03" folder of "Show - 073".."100" becomes 1..28.
+      if (episode !== null && seasonFolder !== null) {
+        const rebaseOffset = episodeRebase.get(seasonFolderKey(seriesRoot, seasonFolder))
+        if (rebaseOffset) episode = episode - rebaseOffset
+      }
     } else {
       const detection = await matchMediaForFile(db, adminUser, videoFile, libraryPath.type, libraryPath.path)
       mediaItemId = detection.mediaItemId
@@ -1370,6 +1528,16 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
 
     const mediaItem = mediaItemId ? getMediaItemById(db, mediaItemId) : null
     const extractFileName = buildExtractFileName(mediaItem, season, episode, stem)
+
+    if (!resolvedSrt) {
+      // No subtitle to translate yet, but the media item is still matched so
+      // the card shows the right show/episode and the video can be queued for
+      // Whisper transcription later. Season/episode come from the folder/
+      // filename (not the SRT), so they are available here too.
+      createLibraryPathItem(db, libraryPath.id, videoFile, extractFileName, mediaItemId, "no_srts_found", season, episode)
+      continue
+    }
+
     const status: DBLibraryPathItem["status"] = mediaItemId ? "not_started" : "no_media_item"
 
     const item = createLibraryPathItem(
@@ -1470,37 +1638,88 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
     let season: number | null = null
     let episode: number | null = null
 
-    if (libraryPath.type === "series") {
-      const seriesRoot = getSeriesRootDir(srtFile, libraryPath.path)
-      let cached = seriesFolderCache.get(seriesRoot)
-      if (!cached) {
-        const detection = await matchMediaForFile(db, adminUser, srtFile, libraryPath.type, libraryPath.path)
-        cached = {
-          mediaItemId: detection.mediaItemId,
-          multipleMatches: detection.multipleMatches,
-          candidateMediaItemIds: detection.candidateMediaItemIds,
-          detectedYear: detection.detectedYear,
+    // Movies-only: a bare-language subtitle (e.g. "english.srt", "spa.srt")
+    // often ships in a "Subs" subfolder next to the video with no movie title in
+    // its filename. Matching it on its own stem is garbage ("english" is not a
+    // movie), so attach it to the owning video in the same folder tree and
+    // inherit that video's media item — the subtitle becomes a translatable
+    // track for the correct movie. Series are folder-matched and excluded by
+    // request.
+    let matchedViaOwningVideo = false
+    if (libraryPath.type === "movie" && isLanguageOnlyStem(stem)) {
+      const owningVideo = findOwningVideoFile(srtFile, videoFiles)
+      const owningItem = owningVideo ? findLibraryPathItemByPath(db, libraryPath.id, owningVideo) : null
+      if (owningItem) {
+        mediaItemId = owningItem.mediaItemId
+        if (mediaItemId) {
+          multipleMatches = false
+          candidateMediaItemIds = []
+        } else {
+          // Video itself is unresolved — mirror its candidates so the user can
+          // pick the same match for this subtitle.
+          const owningCandidates = getLibraryPathItemCandidates(db, owningItem.id)
+          if (owningCandidates.length > 0) {
+            multipleMatches = true
+            candidateMediaItemIds = owningCandidates.map((c) => c.mediaItemId)
+          }
         }
-        seriesFolderCache.set(seriesRoot, cached)
+        matchedViaOwningVideo = true
+        createLog(
+          db,
+          "info",
+          "libraryScanner", "libraryScanner",
+          null,
+          `Bare-language subtitle "${srtBasename}" attached to movie video "${path.basename(owningVideo!)}"`,
+          { libraryPathName: libraryPath.name, srtPath: srtFile, owningVideo: owningVideo! },
+        )
+      } else {
+        // No owning movie video in the folder tree — leave Unmatched instead of
+        // garbage-matching on a language name.
+        matchedViaOwningVideo = true
+        createLog(
+          db,
+          "info",
+          "libraryScanner", "libraryScanner",
+          null,
+          `Bare-language subtitle "${srtBasename}" has no owning movie video; leaving Unmatched`,
+          { libraryPathName: libraryPath.name, srtPath: srtFile },
+        )
       }
-      mediaItemId = cached.mediaItemId
-      multipleMatches = cached.multipleMatches
-      candidateMediaItemIds = cached.candidateMediaItemIds
+    }
 
-      const seasonFolder = getSeasonFolderNameBetween(srtFile, seriesRoot)
-      season =
-        seasonFolder !== null
-          ? (parseSeasonFolderName(seasonFolder) ?? parseSeasonFromFilename(srtFile))
-          : parseSeasonFromFilename(srtFile)
-      if (season === null && seasonFolder === null) season = 1
-      episode = parseEpisodeFromFilename(srtFile)
-    } else {
-      const detection = await matchMediaForFile(db, adminUser, srtFile, libraryPath.type, libraryPath.path)
-      mediaItemId = detection.mediaItemId
-      multipleMatches = detection.multipleMatches
-      candidateMediaItemIds = detection.candidateMediaItemIds
-      season = detection.season
-      episode = detection.episode
+    if (!matchedViaOwningVideo) {
+      if (libraryPath.type === "series") {
+        const seriesRoot = getSeriesRootDir(srtFile, libraryPath.path)
+        let cached = seriesFolderCache.get(seriesRoot)
+        if (!cached) {
+          const detection = await matchMediaForFile(db, adminUser, srtFile, libraryPath.type, libraryPath.path)
+          cached = {
+            mediaItemId: detection.mediaItemId,
+            multipleMatches: detection.multipleMatches,
+            candidateMediaItemIds: detection.candidateMediaItemIds,
+            detectedYear: detection.detectedYear,
+          }
+          seriesFolderCache.set(seriesRoot, cached)
+        }
+        mediaItemId = cached.mediaItemId
+        multipleMatches = cached.multipleMatches
+        candidateMediaItemIds = cached.candidateMediaItemIds
+
+        const seasonFolder = getSeasonFolderNameBetween(srtFile, seriesRoot)
+        season =
+          seasonFolder !== null
+            ? (parseSeasonFolderName(seasonFolder) ?? parseSeasonFromFilename(srtFile))
+            : parseSeasonFromFilename(srtFile)
+        if (season === null && seasonFolder === null) season = 1
+        episode = parseEpisodeFromFilename(srtFile)
+      } else {
+        const detection = await matchMediaForFile(db, adminUser, srtFile, libraryPath.type, libraryPath.path)
+        mediaItemId = detection.mediaItemId
+        multipleMatches = detection.multipleMatches
+        candidateMediaItemIds = detection.candidateMediaItemIds
+        season = detection.season
+        episode = detection.episode
+      }
     }
 
     const mediaItem = mediaItemId ? getMediaItemById(db, mediaItemId) : null
