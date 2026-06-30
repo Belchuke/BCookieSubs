@@ -44,6 +44,21 @@
       </div>
     </div>
 
+    <div class="card dsh-mt-15" id="ocr-queue-card">
+      <div class="card-header">
+        <h2><%= __('dashboard.ocrQueue') %></h2>
+        <div class="dsh-row-center">
+          <% if (can('canManageWorker')) { %>
+            <button id="ocr-worker-stop-btn" class="btn btn-warning" onclick="ocrWorkerControl('pause')" style="<%= ocrWorkerPaused ? 'display:none' : 'display:inline-flex' %>"><%= __('dashboard.stopOcrWorker') %></button>
+            <button id="ocr-worker-start-btn" class="btn btn-secondary" onclick="ocrWorkerControl('resume')" style="<%= ocrWorkerPaused ? 'display:inline-flex' : 'display:none' %>"><%= __('dashboard.startOcrWorker') %></button>
+          <% } %>
+        </div>
+      </div>
+      <div id="ocr-queue-list">
+        <p class="empty-state" id="ocr-queue-empty"><%= __('common.loading') %></p>
+      </div>
+    </div>
+
     <% if (locals.whisperSeparate) { %>
     <div class="card dsh-mt-15" id="whisper-queue-card">
       <div class="card-header">
@@ -260,7 +275,10 @@
     whisperStatus_transcription_completed:'<%= __("dashboard.whisperStatusTranscriptionCompleted") %>',
     whisperStatus_queued_for_translation:   '<%= __("dashboard.whisperStatusQueuedForTranslation") %>',
     whisperStatus_translating:              '<%= __("dashboard.whisperStatusTranslating") %>',
-    whispering:                             '<%= __("dashboard.whispering") %>'
+    whispering:                             '<%= __("dashboard.whispering") %>',
+    ocrStatus_queued:                       '<%= __("dashboard.ocrStatusQueued") %>',
+    ocrStatus_processing:                   '<%= __("dashboard.ocrStatusProcessing") %>',
+    ocrStatus_failed:                       '<%= __("dashboard.ocrStatusFailed") %>'
   };
 
   function toggleSeriesFields(val) {

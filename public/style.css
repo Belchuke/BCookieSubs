@@ -398,6 +398,21 @@ tr:hover td { background: var(--surface-2); }
 .mini-fill { height: 100%; background: var(--success); border-radius: 99px; }
 .mini-fill-accent { background: var(--accent); }
 
+/* Inline spinner shown on a source-picker Translate button while its (possibly
+   long, OCR-heavy) translate request is in flight off-thread on the server. */
+.lr-btn-spinner {
+  display: inline-block;
+  width: .9em;
+  height: .9em;
+  margin-right: .35em;
+  vertical-align: -.05em;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: lr-btn-spin .7s linear infinite;
+}
+@keyframes lr-btn-spin { to { transform: rotate(360deg); } }
+
 /* ── Modals ─────────────────────────────────────────────────────────────── */
 .modal-overlay {
   display: none;
@@ -1362,6 +1377,12 @@ canvas { max-width: 100%; display: block; }
   text-overflow: ellipsis;
   color: var(--text-dim);
 }
+/* Movie extras (Featurettes) sub-rows under a movie card */
+.lr-extras { margin-top:.5rem;display:flex;flex-direction:column;gap:.3rem; }
+.lr-extras-label { font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim); }
+.lr-extra-row { display:flex;align-items:center;gap:.5rem;flex-wrap:wrap; }
+.lr-extra-title { flex:1;min-width:0;font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.lr-extras-target { width:100%;text-align:left;justify-content:flex-start; }
 /* Season two-panel interaction (series cards) */
 .lr-season-list {
   flex: 1;
@@ -1539,13 +1560,29 @@ canvas { max-width: 100%; display: block; }
   text-align: left;
 }
 .lr-source-detail { font-size: .78rem; }
+.lr-source-note    { font-size: .76rem; line-height: 1.25; }
+.lr-source-control { display: flex; align-items: center; gap: .4rem; font-size: .8rem; margin-top: .15rem; }
+.lr-source-control select,
+.lr-source-control input { width: auto; min-width: 7rem; }
+.lr-source-use      { align-self: flex-start; margin-top: .35rem; }
+.lr-source-disabled { opacity: .6; cursor: not-allowed; }
+
+/* Track-name highlight: make the dialogue track visually stand out from a
+   sparse "Signs / Songs" track so the user picks the right one. */
+.lr-source-dialogue { border-left: 3px solid var(--success, #2ecc71); padding-left: calc(.85rem - 3px); }
+.lr-source-signs    { border-left: 3px solid var(--text-dim, #888);    padding-left: calc(.85rem - 3px); opacity: .92; }
+.lr-source-check    { margin-right: .4rem; transform: translateY(-1px); }
+.lr-source-row      { display: flex; flex-direction: column; align-items: flex-start; gap: .2rem; padding: .65rem .85rem; width: 100%; text-align: left; }
+.lr-source-row-top  { display: flex; align-items: center; width: 100%; }
 
 /* ── Library Requests: season episode rows + track radios (item 6) ───────── */
 .lr-episode-row {
   display: flex;
   align-items: center;
-  gap: .5rem;
+  gap: 0;
   flex-wrap: wrap;
+  padding-bottom: 0.5rem;
+  padding-top: 0.5rem;
 }
 .lr-episode-badge { font-size: .7rem; flex-shrink: 0; }
 .lr-card-actions {
@@ -1788,6 +1825,15 @@ details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg);
 
 /* ── dsh ── */
 .dsh-row-center { display:flex; gap:.5rem; align-items:center; }
+.ocr-queue-row {
+  display:flex; align-items:flex-start; justify-content:space-between; gap:.75rem;
+  padding:.65rem .75rem; border-bottom:1px solid var(--border, rgba(255,255,255,.06));
+}
+.ocr-queue-row:last-child { border-bottom:none; }
+.ocr-queue-row-main { display:flex; flex-direction:column; gap:.2rem; min-width:0; }
+.ocr-queue-row-main strong { word-break:break-word; }
+.ocr-queue-row-controls { display:flex; align-items:center; gap:.25rem; flex-shrink:0; }
+.ocr-queue-row-controls form { display:inline; }
 .dsh-mt-15 { margin-top:1.5rem; }
 .dsh-p-5 { padding:.5rem; }
 .dsh-hidden { display:none; }
@@ -1944,7 +1990,8 @@ details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg);
 .lpx-ep-chevron { font-size:.72rem;color:var(--text-dim);transition:transform .2s;flex-shrink:0; }
 .lpx-fs-81 { font-size:.81rem; }
 .lpx-col { display:flex;flex-direction:column; }
-.lpx-item-row { padding:.6rem .85rem;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:.35rem; }
+.lpx-item-row { padding:.6rem .85rem;border-top:1px solid var(--border);display:flex;flex-direction:row;align-items:center;gap:.5rem; }
+.lpx-item-main { flex:0 0 80%;min-width:0; }
 .lpx-min0 { min-width:0; }
 .lpx-row-center { display:flex;align-items:center;gap:.4rem; }
 .lpx-se-label { font-weight:600;font-size:.85rem;flex-shrink:0; }
@@ -1952,7 +1999,7 @@ details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg);
 .lpx-item-path { font-size:.72rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:.1rem;word-break:break-all; }
 .lpx-badge-row { display:flex;gap:.35rem;margin-top:.2rem;flex-wrap:wrap;align-items:center; }
 .lpx-fs-70 { font-size:.7rem; }
-.lpx-item-actions { display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;justify-content:flex-end; }
+.lpx-item-actions { display:flex;gap:.35rem;align-items:center;justify-content:flex-end;min-width:8rem; }
 .lpx-hidden { display:none; }
 .lpx-overflow-x { overflow-x:auto; }
 .lpx-table { width:100%;border-collapse:collapse; }
@@ -1981,6 +2028,14 @@ details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg);
 .lpx-flex1 { flex:1; }
 .lpx-flex-shrink0 { flex-shrink:0; }
 .lpx-warn-note { font-size:.85rem;margin-top:0; }
+/* ── scan-frequency (Task 7) ── */
+.lpx-scan-radios { display:flex;gap:1rem;flex-wrap:wrap;margin-top:.15rem; }
+.lpx-radio { display:inline-flex;align-items:center;gap:.3rem;font-size:.85rem;cursor:pointer; }
+.lpx-radio input { margin:0; }
+.lpx-scan-custom { margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--border); }
+.lpx-scan-custom .field-row { display:flex;gap:.6rem;flex-wrap:wrap; }
+.lpx-scan-custom .field-row .field { flex:1;min-width:5rem; }
+.lpx-scan-never-hint { font-size:.78rem;margin:.35rem 0 0; }
 
 /* ── libraryrequests.ejs migrated styles ── */
 /* libraryrequests.ejs — migrated static inline styles */

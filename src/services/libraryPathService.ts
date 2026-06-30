@@ -4,7 +4,12 @@ import * as path from "path"
 import { spawnSync } from "child_process"
 import Database from "better-sqlite3"
 import { getConfig } from "../repositories/configRepository"
-import { getConfigTranslationLanguages, getLanguageById } from "../repositories/languageRepository"
+import {
+  getConfigTranslationLanguages,
+  getLanguageById,
+  getLanguageByIso,
+  getUserConfigTranslationLanguages,
+} from "../repositories/languageRepository"
 import { createLog } from "../repositories/logRepository"
 import { createMediaItem, getMediaItemById, getMediaItemByKeys } from "../repositories/mediaRepository"
 import { getHighestRoleUser } from "../repositories/userRepository"
@@ -37,8 +42,26 @@ import {
   getSubtitleById,
   getCompletedLibrarySubtitlesForExport,
 } from "../repositories/subtitleRepository"
+import {
+  upsertItemSubtitleSources,
+  getItemSubtitleSources,
+} from "../repositories/subtitleSourceCacheRepository"
 import { addCreditToSubtitle, subtitleExportExtension } from "./subtitleExportService"
-import { isSubtitleExtension, subtitleExtensionOf } from "./subtitleFormatDetector"
+import {
+  isSubtitleExtension,
+  subtitleExtensionOf,
+  subtitleFileExtensionOf,
+  isSubFile,
+  isSupFile,
+  isVobSubCodec,
+  isPgsCodec,
+  imageSubtitleKindFromCodec,
+} from "./subtitleFormatDetector"
+import { convertSubToSrt, SubParseError, detectSubKind } from "./subSubtitleAdapter"
+import { VobSubOcrError, parseVobSubIdx } from "./vobSubOcrService"
+import { ocrPgsToSrt, PgsOcrError, parsePgsSup } from "./pgsOcrService"
+import { TesseractUnavailableError, TesseractLangMissingError } from "./tesseractOcrService"
+import { resolveOcrLang } from "./subtitleOcrLanguageMapper"
 import { DBLibraryPath, DBLibraryPathItem, DBSubtitle, DBUser } from "../types/dbTypes"
 
 const EXTRACT_TEMP_DIR = path.join(os.tmpdir(), `bcookiesubs-extract-${process.pid}`)
@@ -68,14 +91,22 @@ function isBlockedTmdbId(tmdbId: number | null | undefined, libraryType: "movie"
 
 function safeDeleteTempExtract(filePath: string, db?: Database.Database, itemId: number | null = null): void {
   if (!filePath.startsWith(EXTRACT_TEMP_DIR)) return
-  try {
-    fs.unlinkSync(filePath)
-  } catch (e: any) {
-    if (e?.code !== "ENOENT" && db) {
-      createLog(db, "warning", "libraryScanner", "libraryScanner", itemId, "Failed to delete temporary extracted subtitle file", {
-        path: filePath,
-        error: String(e),
-      })
+  // VobSub extraction produces a .sub + .idx pair; delete the .idx sibling too
+  // so temp OCR files never leak. (.sup / PGS extraction is a single file.)
+  const siblings: string[] = []
+  if (filePath.toLowerCase().endsWith(".sub")) {
+    siblings.push(filePath.replace(/\.sub$/i, ".idx"))
+  }
+  for (const f of [filePath, ...siblings]) {
+    try {
+      fs.unlinkSync(f)
+    } catch (e: any) {
+      if (e?.code !== "ENOENT" && db) {
+        createLog(db, "warning", "libraryScanner", "libraryScanner", itemId, "Failed to delete temporary extracted subtitle file", {
+          path: f,
+          error: String(e),
+        })
+      }
     }
   }
 }
@@ -198,6 +229,16 @@ function parseSeasonFromFilename(filename: string): number | null {
   return null
 }
 
+// True for fractional-episode filenames like "S01E18.5-…" — some anime insert a
+// ".5" recap/extra between real episodes. parseEpisodeFromFilename reads these
+// as the integer part (E18), which would land them as a duplicate of the real
+// E18. They are extras, so callers route them to season 0 (specials) with no
+// episode number instead.
+function isFractionalSpecial(filename: string): boolean {
+  const base = path.basename(filename, path.extname(filename))
+  return /[Ss]\d{1,2}[Ee][Pp]?\d{1,3}\.\d/.test(base)
+}
+
 // A stable identity for a season folder so the pre-pass and the main scan
 // loop agree on which episodes belong to the same season. The series root
 // disambiguates two different shows that both happen to have a "Season 3".
@@ -224,6 +265,7 @@ function computeSeasonEpisodeRebase(
     const seriesRoot = getSeriesRootDir(vf, libraryRootPath)
     const seasonFolder = getSeasonFolderNameBetween(vf, seriesRoot)
     if (seasonFolder === null) continue // files in the series root: no rebase
+    if (isFractionalSpecial(vf)) continue // .5 extras → season 0, not part of a season's run
     const key = seasonFolderKey(seriesRoot, seasonFolder)
     const base = path.basename(vf, path.extname(vf))
     const hasSxxExx = /[Ss]\d{1,2}[Ee][Pp]?\d{1,3}/.test(base)
@@ -343,7 +385,13 @@ function selectBestSrt(
 
   const candidates = langMatches.length > 0 ? langMatches : pool
 
-  return candidates.reduce((best, f) => {
+  // Prefer text subtitle formats (.srt/.ass/.ssa) over image-based .sub/.sup,
+  // which would force an OCR pass — only fall back to .sub/.sup when no text
+  // companion exists. Among the same class, pick the largest file as before.
+  const textCandidates = candidates.filter((f) => !isSubFile(f) && !isSupFile(f))
+  const sameClass = textCandidates.length > 0 ? textCandidates : candidates
+
+  return sameClass.reduce((best, f) => {
     try {
       return fs.statSync(f).size > fs.statSync(best).size ? f : best
     } catch {
@@ -394,6 +442,16 @@ function isLanguageOnlyStem(stem: string): boolean {
   return true
 }
 
+// True when a subtitle sits inside a "subs"/"Subs" subfolder of a movie folder.
+// RARBG/YTS releases ship many language tracks there with filenames that don't
+// share the movie stem (e.g. "10_Finnish.srt", "English (SDH).eng.srt",
+// "Français.fre.srt") — they fail isLanguageOnlyStem and would otherwise be
+// garbage-matched on a language name. For movies every file in a subs folder
+// belongs to the owning movie video, so we attach it the same way.
+function isInSubsFolder(srtPath: string): boolean {
+  return /^subs$/i.test(path.basename(path.dirname(srtPath)))
+}
+
 // For a standalone subtitle, find the video file in the same folder tree whose
 // directory is the nearest enclosing ancestor of the subtitle's directory
 // (the "Subs" subfolder case: the subtitle lives one level under the video's
@@ -414,10 +472,45 @@ function findOwningVideoFile(srtPath: string, videoFiles: string[]): string | nu
   return best
 }
 
+// Extra/bonus content under a movie folder lives in a named subfolder
+// ("Featurettes", "Extras", "Special Features", "Bonus"). Such a video is NOT
+// the movie — it is a featurette that should attach to the owning movie. The
+// folder name match is intentionally narrow (immediate parent dir only) so a
+// real movie file sitting directly in the movie root is never misread as an
+// extra.
+function isInExtrasFolder(videoPath: string): boolean {
+  return /^(featurettes?|extras?|special\s*features?|bonus)$/i.test(path.basename(path.dirname(videoPath)))
+}
+
+// For a featurette/extra, find the owning movie video: the deepest video whose
+// directory is a strict ancestor of the extra's directory AND is not itself an
+// extra (so a sibling featurette in the same "Featurettes" folder can't own
+// another — findOwningVideoFile would wrongly pick that sibling). For
+// "movieRoot/Featurettes/x.mkv" this returns the video in "movieRoot".
+function findOwningMovieVideoForExtra(extraPath: string, videoFiles: string[]): string | null {
+  const extraDir = path.normalize(path.dirname(extraPath))
+  let best: string | null = null
+  let bestLen = -1
+  for (const vf of videoFiles) {
+    if (isInExtrasFolder(vf)) continue // a sibling extra never owns another extra
+    const vDir = path.normalize(path.dirname(vf))
+    if (vDir === extraDir) continue // same folder as the extra
+    if (extraDir.startsWith(vDir + path.sep) && vDir.length > bestLen) {
+      best = vf
+      bestLen = vDir.length
+    }
+  }
+  return best
+}
+
 interface MkvSubTrack {
   id: number
   codec: string
   language: string | null
+  // mkvmerge track_name (e.g. "Dialogue", "Signs / Songs", "Commentary"). Lets
+  // the picker tell same-language tracks apart so the user doesn't pick the
+  // signs/songs track expecting dialogue.
+  title: string | null
   defaultTrack: boolean
   numIndexEntries: number
 }
@@ -452,6 +545,7 @@ function probeMkvSubtitleTracks(videoFile: string): MkvSubTrack[] | null {
         id: t.id as number,
         codec: t.codec as string,
         language: (t.properties?.language as string | undefined) ?? null,
+        title: (t.properties?.track_name as string | undefined) ?? null,
         defaultTrack: Boolean(t.properties?.default_track),
         numIndexEntries: (t.properties?.num_index_entries as number | undefined) ?? 0,
       }))
@@ -518,6 +612,122 @@ function extractFfSubtitleStream(videoFile: string, subtitleIndex: number, outpu
   }
 }
 
+// ─── Embedded image subtitles (VobSub / PGS) ─────────────────────────────────
+// Image subtitle tracks carry bitmaps, not text. VobSub/DVD subtitles extract
+// as a .sub + .idx pair and are OCR'd via vobSubOcrService. PGS/HDMV subtitles
+// extract as a .sup and are OCR'd via pgsOcrService. Both are surfaced in the
+// source picker as image-based / OCR-required.
+
+interface MkvImageSubTrack {
+  id: number
+  codec: string
+  language: string | null
+  // mkvmerge track_name (e.g. "Dialogue", "Signs / Songs"). Without this the
+  // picker can't distinguish two same-language PGS tracks, so a user picking
+  // "the second subtrack" can accidentally grab the signs/songs track (which
+  // has no dialogue) instead of the dialogue track.
+  title: string | null
+  defaultTrack: boolean
+  numIndexEntries: number
+  kind: "vobsub" | "pgs"
+}
+
+function probeMkvImageSubtitleTracks(videoFile: string): MkvImageSubTrack[] | null {
+  try {
+    const r = spawnSync("mkvmerge", ["-J", videoFile], { encoding: "utf-8", timeout: 15_000 })
+    if (r.status !== 0 || r.error || !r.stdout) return null
+    const data = JSON.parse(r.stdout) as { tracks?: any[] }
+    return (data.tracks ?? [])
+      .filter((t) => t.type === "subtitles")
+      .map((t) => {
+        const kind = imageSubtitleKindFromCodec(t.codec as string)
+        if (!kind) return null
+        return {
+          id: t.id as number,
+          codec: t.codec as string,
+          language: (t.properties?.language as string | undefined) ?? null,
+          title: (t.properties?.track_name as string | undefined) ?? null,
+          defaultTrack: Boolean(t.properties?.default_track),
+          numIndexEntries: (t.properties?.num_index_entries as number | undefined) ?? 0,
+          kind,
+        } as MkvImageSubTrack
+      })
+      .filter((t): t is MkvImageSubTrack => t !== null)
+  } catch {
+    return null
+  }
+}
+
+// Extract an embedded VobSub track with mkvextract, which writes a .sub + .idx
+// pair when the output path ends in .sub. Returns the .sub path on success
+// (with the .idx sibling present), null otherwise.
+function extractMkvVobSubTrack(videoFile: string, trackId: number, outputPath: string): boolean {
+  try {
+    const r = spawnSync("mkvextract", ["tracks", videoFile, `${trackId}:${outputPath}`], {
+      encoding: "utf-8",
+      timeout: 120_000,
+    })
+    return (
+      r.status === 0 &&
+      !r.error &&
+      fs.existsSync(outputPath) &&
+      fs.existsSync(outputPath.replace(/\.sub$/i, ".idx"))
+    )
+  } catch {
+    return false
+  }
+}
+
+// Extract an embedded PGS/HDMV track with mkvextract, which writes a .sup when
+// the output path ends in .sup. Returns true on success (with the .sup present).
+function extractMkvPgsTrack(videoFile: string, trackId: number, outputPath: string): boolean {
+  try {
+    const r = spawnSync("mkvextract", ["tracks", videoFile, `${trackId}:${outputPath}`], {
+      encoding: "utf-8",
+      timeout: 180_000,
+    })
+    return r.status === 0 && !r.error && fs.existsSync(outputPath)
+  } catch {
+    return false
+  }
+}
+
+interface FfImageSubStream {
+  subtitleIndex: number
+  language: string | null
+  title: string | null
+  codecName: string | null
+  kind: "vobsub" | "pgs"
+}
+
+function probeFfImageSubtitleStreams(videoFile: string): FfImageSubStream[] {
+  try {
+    const r = spawnSync(
+      "ffprobe",
+      ["-v", "quiet", "-print_format", "json", "-show_streams", "-select_streams", "s", videoFile],
+      { encoding: "utf-8", timeout: 15_000 },
+    )
+    if (r.status !== 0 || r.error) return []
+    const data = JSON.parse(r.stdout) as { streams?: any[] }
+    return (data.streams ?? [])
+      .map((s, i) => {
+        const codecName = (s.codec_name as string | undefined) ?? null
+        const kind = imageSubtitleKindFromCodec(codecName)
+        if (!kind) return null
+        return {
+          subtitleIndex: i,
+          language: (s.tags?.language as string | undefined) ?? null,
+          title: (s.tags?.title as string | undefined) ?? null,
+          codecName,
+          kind,
+        } as FfImageSubStream
+      })
+      .filter((s): s is FfImageSubStream => s !== null)
+  } catch {
+    return []
+  }
+}
+
 function trackLangMatches(trackLang: string | null, sourceIso1: string, sourceIso2b: string | null): boolean {
   if (!trackLang) return false
   const t = trackLang.toLowerCase()
@@ -526,19 +736,88 @@ function trackLangMatches(trackLang: string | null, sourceIso1: string, sourceIs
   return false
 }
 
+type ExtractOpts = {
+  // Restrict extraction to a specific embedded track (by mkv/ffmpeg id/index).
+  preferTrackId?: number | null
+  // Restrict extraction to a codec family, e.g. "vobsub"/"dvd_subtitle" when the
+  // user picked a VobSub image track from the source picker.
+  preferCodec?: string | null
+  // When false, image-based tracks (VobSub) are NOT considered as a fallback
+  // (used by callers that only want a text subtitle). Default true.
+  allowImageFallback?: boolean
+}
+
 function extractBestEmbeddedSrt(
   videoFile: string,
   sourceIso1: string,
   sourceIso2b: string | null,
   langName: string,
+  opts: ExtractOpts = {},
 ): string | null {
   const stem = path.basename(videoFile, path.extname(videoFile))
   const ext = path.extname(videoFile).toLowerCase()
+  const preferCodecKind = opts.preferCodec ? imageSubtitleKindFromCodec(opts.preferCodec) : null
+  const allowImage = opts.allowImageFallback !== false
 
   if (ext === ".mkv") {
     const tracks = probeMkvSubtitleTracks(videoFile)
     if (tracks !== null) {
-      if (tracks.length === 0) return null
+      const imageTracks = allowImage ? probeMkvImageSubtitleTracks(videoFile) ?? [] : []
+
+      // If a specific VobSub track was requested, extract just that one.
+      if (preferCodecKind === "vobsub" || (opts.preferTrackId != null && imageTracks.some((t) => t.id === opts.preferTrackId && t.kind === "vobsub"))) {
+        const target = imageTracks.find((t) => t.kind === "vobsub" && (opts.preferTrackId == null || t.id === opts.preferTrackId))
+        if (target) {
+          const tag = target.language ?? `sub${target.id}`
+          const outputPath = makeExtractTempPath(stem, tag, ".sub")
+          if (extractMkvVobSubTrack(videoFile, target.id, outputPath)) return outputPath
+        }
+        return null
+      }
+
+      // If a specific PGS track was requested, extract it to a .sup (OCR path).
+      if (preferCodecKind === "pgs" || (opts.preferTrackId != null && imageTracks.some((t) => t.id === opts.preferTrackId && t.kind === "pgs"))) {
+        const target = imageTracks.find((t) => t.kind === "pgs" && (opts.preferTrackId == null || t.id === opts.preferTrackId))
+        if (target) {
+          const tag = target.language ?? `sub${target.id}`
+          const outputPath = makeExtractTempPath(stem, tag, ".sup")
+          if (extractMkvPgsTrack(videoFile, target.id, outputPath)) return outputPath
+        }
+        return null
+      }
+
+      if (tracks.length === 0) {
+        // No text tracks — fall back to an image track (VobSub or PGS, OCR
+        // path). When several image tracks exist, pick the one with the MOST
+        // subtitles (num_index_entries) so the OCR yields the densest transcript.
+        // NOTE: the MKV `default_track` flag is NOT a good primary signal here —
+        // for PGS it frequently marks the "Signs / Songs" track (the one players
+        // show by default for on-screen foreign text), which has far fewer
+        // subtitles than the dialogue track. Subtitle count wins; default and
+        // track id only break ties.
+        if (allowImage) {
+          const imagePool = imageTracks
+          if (imagePool.length > 0) {
+            const langMatch = imagePool.filter((t) => trackLangMatches(t.language, sourceIso1, sourceIso2b))
+            const pool = langMatch.length > 0 ? langMatch : imagePool
+            const sorted = [...pool].sort((a, b) => {
+              if (b.numIndexEntries !== a.numIndexEntries) return b.numIndexEntries - a.numIndexEntries
+              if (a.defaultTrack !== b.defaultTrack) return a.defaultTrack ? -1 : 1
+              return a.id - b.id
+            })
+            for (const track of sorted) {
+              const tag = track.language ?? `sub${track.id}`
+              const ext = track.kind === "pgs" ? ".sup" : ".sub"
+              const outputPath = makeExtractTempPath(stem, tag, ext)
+              const ok = track.kind === "pgs"
+                ? extractMkvPgsTrack(videoFile, track.id, outputPath)
+                : extractMkvVobSubTrack(videoFile, track.id, outputPath)
+              if (ok) return outputPath
+            }
+          }
+        }
+        return null
+      }
 
       const langMatch = tracks.filter((t) => trackLangMatches(t.language, sourceIso1, sourceIso2b))
       const pool = langMatch.length > 0 ? langMatch : tracks
@@ -549,6 +828,7 @@ function extractBestEmbeddedSrt(
       })
 
       for (const track of sorted) {
+        if (opts.preferTrackId != null && track.id !== opts.preferTrackId) continue
         const tag = track.language ?? `sub${track.id}`
         const outputPath = makeExtractTempPath(stem, tag, codecToSubtitleExt(track.codec))
         if (extractMkvTrack(videoFile, track.id, outputPath)) return outputPath
@@ -558,6 +838,48 @@ function extractBestEmbeddedSrt(
   }
 
   const streams = probeFfSubtitleStreams(videoFile)
+  const imageStreams = allowImage ? probeFfImageSubtitleStreams(videoFile) : []
+
+  // Specific VobSub track requested (non-MKV container).
+  if (preferCodecKind === "vobsub") {
+    const vobsubStreams = imageStreams.filter((s) => s.kind === "vobsub")
+    if (vobsubStreams.length > 0) {
+      const target = vobsubStreams.find((s) => opts.preferTrackId == null || s.subtitleIndex === opts.preferTrackId) ?? vobsubStreams[0]
+      const tag = target.language ?? `sub${target.subtitleIndex}`
+      const outputPath = makeExtractTempPath(stem, tag, ".sub")
+      // ffmpeg can copy dvd_subtitle to a raw .sub (VobSub) for some containers.
+      const r = spawnSync(
+        "ffmpeg",
+        ["-y", "-i", videoFile, "-map", `0:s:${target.subtitleIndex}`, "-c:s", "copy", outputPath],
+        { encoding: "utf-8", timeout: 120_000 },
+      )
+      if (r.status === 0 && !r.error && fs.existsSync(outputPath) && fs.existsSync(outputPath.replace(/\.sub$/i, ".idx"))) {
+        return outputPath
+      }
+    }
+    return null
+  }
+
+  // Specific PGS track requested (non-MKV container).
+  if (preferCodecKind === "pgs") {
+    const pgsStreams = imageStreams.filter((s) => s.kind === "pgs")
+    if (pgsStreams.length > 0) {
+      const target = pgsStreams.find((s) => opts.preferTrackId == null || s.subtitleIndex === opts.preferTrackId) ?? pgsStreams[0]
+      const tag = target.language ?? `sub${target.subtitleIndex}`
+      const outputPath = makeExtractTempPath(stem, tag, ".sup")
+      // ffmpeg can copy hdmv_pgs_subtitle to a raw .sup for some containers.
+      const r = spawnSync(
+        "ffmpeg",
+        ["-y", "-i", videoFile, "-map", `0:s:${target.subtitleIndex}`, "-c:s", "copy", outputPath],
+        { encoding: "utf-8", timeout: 180_000 },
+      )
+      if (r.status === 0 && !r.error && fs.existsSync(outputPath)) {
+        return outputPath
+      }
+    }
+    return null
+  }
+
   if (streams.length === 0) return null
 
   const lowerName = langName.toLowerCase()
@@ -573,6 +895,7 @@ function extractBestEmbeddedSrt(
   const pool = langMatch.length > 0 ? langMatch : streams
 
   for (const stream of pool) {
+    if (opts.preferTrackId != null && stream.subtitleIndex !== opts.preferTrackId) continue
     const tag = stream.language ?? `sub${stream.subtitleIndex}`
     const outputPath = makeExtractTempPath(stem, tag, codecToSubtitleExt(stream.codecName))
     if (extractFfSubtitleStream(videoFile, stream.subtitleIndex, outputPath, stream.codecName)) return outputPath
@@ -612,11 +935,18 @@ export function findCompanionSrt(
   sourceLangIso639: string,
   sourceLangIso2b: string | null = null,
   sourceLangName = "",
+  opts: ExtractOpts = {},
 ): ResolvedSrt | null {
+  // When a specific image track/codec was chosen, skip companion-file
+  // selection and go straight to embedded extraction.
+  if (opts.preferCodec || opts.preferTrackId != null) {
+    const extracted = extractBestEmbeddedSrt(videoFilePath, sourceLangIso639, sourceLangIso2b, sourceLangName, opts)
+    return extracted ? { path: extracted, isTemp: true } : null
+  }
   const companions = findAllCompanionSrts(videoFilePath)
   const best = selectBestSrt(companions, [], sourceLangIso639, sourceLangName)
   if (best) return { path: best, isTemp: false }
-  const extracted = extractBestEmbeddedSrt(videoFilePath, sourceLangIso639, sourceLangIso2b, sourceLangName)
+  const extracted = extractBestEmbeddedSrt(videoFilePath, sourceLangIso639, sourceLangIso2b, sourceLangName, opts)
   return extracted ? { path: extracted, isTemp: true } : null
 }
 
@@ -629,21 +959,162 @@ export type SubtitleSourceCandidate = {
   codec: string | null
   filename: string | null
   filenameOnly: string
+  // True for image-based sources (VobSub .sub+.idx, embedded VobSub/PGS, .sup)
+  // that must be OCR'd before translation.
+  imageBased?: boolean
+  // True when BCookieSubs will OCR this source with Tesseract (VobSub / PGS).
+  requiresOcr?: boolean
+  // Tesseract language code derived from the source language, surfaced so the
+  // picker can show/override it.
+  ocrLang?: string | null
+  // Embedded track id/index, sent back to re-extract the exact chosen track.
+  trackId?: number | null
+  // Embedded track title/name from the container (e.g. "Dialogue",
+  // "Signs / Songs"). Surfaced in the picker so the user can distinguish
+  // same-language image tracks — the most common reason for "missing dialogue"
+  // is picking the signs/songs track by mistake.
+  title?: string | null
+  // Image-based but no OCR pipeline is implemented. Currently unused (VobSub and
+  // PGS both have OCR pipelines); kept for future formats the picker should
+  // disable.
+  unsupported?: boolean
+  // Image subtitle family: "vobsub" (VobSub .sub+.idx), "pgs" (PGS/.sup), or
+  // "text" for a text .sub (MicroDVD/SubViewer). null for srt/ass/ssa.
+  subKind?: "vobsub" | "pgs" | "text" | null
+  // For image tracks: number of mkvmerge index entries (~2x subtitle count).
+  // The picker ranks image sources by this so the densest dialogue track sorts
+  // ahead of sparse "Signs / Songs" tracks. 0/undefined for text sources.
+  numIndexEntries?: number
+  // For image-based sources: the number of subtitle pictures/bitmap events the
+  // source contains — parsed from the .sup (PGS) / .idx (VobSub) for external
+  // files, or numIndexEntries for embedded tracks (no extraction at list time).
+  // The picker orders image sources by this DESC and displays it so the user
+  // can tell the dialogue track from sparse "Signs / Songs" tracks. Undefined
+  // for text sources or when the count could not be determined.
+  pictureCount?: number
 }
 
 function externalCandidatesFor(videoFilePath: string): string[] {
   return findAllCompanionSrts(videoFilePath)
 }
 
-function embeddedCandidatesFor(videoFilePath: string, ext: string): { trackId: number; language: string | null; codec: string }[] {
+type EmbeddedCandidateInfo = {
+  trackId: number
+  language: string | null
+  codec: string
+  kind: "text" | "vobsub" | "pgs"
+  // Track title/name from the container (mkvmerge track_name / ffprobe tag).
+  // Surfaced in the picker so the user can tell "Dialogue" from "Signs / Songs".
+  title: string | null
+  // Number of subtitle index entries (= roughly 2x subtitle count) for image
+  // tracks. Used to rank image tracks so the densest dialogue track sorts ahead
+  // of sparse "Signs / Songs" tracks. 0 for text tracks (not ranked).
+  numIndexEntries: number
+}
+
+function embeddedCandidatesFor(videoFilePath: string, ext: string): EmbeddedCandidateInfo[] {
+  const out: EmbeddedCandidateInfo[] = []
   if (ext === ".mkv") {
     const tracks = probeMkvSubtitleTracks(videoFilePath)
     if (tracks) {
-      return tracks.map((t) => ({ trackId: t.id, language: t.language, codec: t.codec }))
+      for (const t of tracks) out.push({ trackId: t.id, language: t.language, codec: t.codec, kind: "text", title: t.title, numIndexEntries: t.numIndexEntries })
+      const imageTracks = probeMkvImageSubtitleTracks(videoFilePath)
+      if (imageTracks) {
+        for (const t of imageTracks) out.push({ trackId: t.id, language: t.language, codec: t.codec, kind: t.kind, title: t.title, numIndexEntries: t.numIndexEntries })
+      }
+      return out
     }
   }
-  const streams = probeFfSubtitleStreams(videoFilePath)
-  return streams.map((s) => ({ trackId: s.subtitleIndex, language: s.language, codec: s.codecName ?? "embedded" }))
+  for (const s of probeFfSubtitleStreams(videoFilePath)) {
+    out.push({ trackId: s.subtitleIndex, language: s.language, codec: s.codecName ?? "embedded", kind: "text", title: s.title, numIndexEntries: 0 })
+  }
+  for (const s of probeFfImageSubtitleStreams(videoFilePath)) {
+    out.push({ trackId: s.subtitleIndex, language: s.language, codec: s.codecName ?? s.kind, kind: s.kind, title: s.title, numIndexEntries: 0 })
+  }
+  return out
+}
+
+// Count the subtitle pictures/bitmap events in an external image source, for
+// ordering + display in the source picker. PGS (.sup) events come from
+// parsePgsSup; VobSub (.sub+.idx) events come from parseVobSubIdx. Returns
+// undefined when the file is missing/malformed so the picker still works —
+// ordering falls back to 0 and the count simply isn't shown.
+function countExternalPictures(filePath: string, subKind: "vobsub" | "pgs"): number | undefined {
+  try {
+    if (subKind === "pgs") {
+      return parsePgsSup(filePath).events.length
+    }
+    const idxPath = filePath.replace(/\.sub$/i, ".idx")
+    if (!fs.existsSync(idxPath)) return undefined
+    return parseVobSubIdx(idxPath).events.length
+  } catch {
+    return undefined
+  }
+}
+
+// Count the subtitle pictures/bitmap events in embedded image tracks. mkvmerge's
+// `num_index_entries` track property is only present for files mkvmerge itself
+// muxed, so for typical MKVs (MakeMKV/downloaded) it reads as 0 — which is why
+// embedded PGS/VobSub tracks used to always display "0 pictures". Instead we
+// extract each image track with a single mkvextract call (one file scan for all
+// tracks), parse the resulting .sup/.idx for the real event count, and clean up
+// the temp files. Returns a Map< trackId, count >. Best-effort: a track that
+// fails to extract/parse is simply absent from the map (no badge shown).
+function countEmbeddedPicturesBatch(
+  videoFilePath: string,
+  tracks: { trackId: number; kind: "vobsub" | "pgs" }[],
+): Map<number, number> {
+  const result = new Map<number, number>()
+  if (tracks.length === 0) return result
+  const stem = path.basename(videoFilePath, path.extname(videoFilePath))
+  const temps: { trackId: number; kind: "vobsub" | "pgs"; subPath: string; idxPath: string | null }[] = []
+  const args = ["tracks", videoFilePath]
+  for (const t of tracks) {
+    const ext = t.kind === "vobsub" ? ".sub" : ".sup"
+    const subPath = makeExtractTempPath(stem, `count-track-${t.trackId}`, ext)
+    temps.push({
+      trackId: t.trackId,
+      kind: t.kind,
+      subPath,
+      idxPath: t.kind === "vobsub" ? subPath.replace(/\.sub$/i, ".idx") : null,
+    })
+    args.push(`${t.trackId}:${subPath}`)
+  }
+  try {
+    // mkvextract exits non-zero if ANY track fails, but partial outputs may still
+    // exist — parse whichever temp files are present so one bad track doesn't
+    // hide the rest.
+    spawnSync("mkvextract", args, { encoding: "utf-8", timeout: 180_000 })
+    for (const tp of temps) {
+      try {
+        if (tp.kind === "pgs") {
+          if (fs.existsSync(tp.subPath)) result.set(tp.trackId, parsePgsSup(tp.subPath).events.length)
+        } else if (tp.idxPath && fs.existsSync(tp.idxPath)) {
+          result.set(tp.trackId, parseVobSubIdx(tp.idxPath).events.length)
+        }
+      } catch {
+        /* skip this track */
+      }
+    }
+  } catch {
+    /* mkvextract unavailable / failed — leave counts absent */
+  } finally {
+    for (const tp of temps) {
+      try {
+        if (fs.existsSync(tp.subPath)) fs.unlinkSync(tp.subPath)
+      } catch {
+        /* ignore */
+      }
+      if (tp.idxPath) {
+        try {
+          if (fs.existsSync(tp.idxPath)) fs.unlinkSync(tp.idxPath)
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+  return result
 }
 
 export function listSubtitleSourcesForVideo(
@@ -651,14 +1122,33 @@ export function listSubtitleSourcesForVideo(
   sourceLangIso639: string,
   sourceLangIso2b: string | null = null,
   sourceLangName = "",
+  opts: { withPictureCounts?: boolean } = {},
 ): SubtitleSourceCandidate[] {
+  // Computing picture counts for embedded image tracks requires extracting them
+  // (mkvextract). Callers that only need to know *whether* an embedded track
+  // exists (e.g. extraHasEmbedded) pass { withPictureCounts: false } to skip the
+  // extraction. The picker endpoint offloads the full call to the translate-prep
+  // worker so the extraction runs off the Express event loop.
+  const withPictureCounts = opts.withPictureCounts !== false
   const result: SubtitleSourceCandidate[] = []
   const ext = path.extname(videoFilePath).toLowerCase()
   const stem = path.basename(videoFilePath, path.extname(videoFilePath))
+  const ocrLangDefault = resolveOcrLang(sourceLangIso639, sourceLangIso2b, sourceLangName)
 
   for (const srt of externalCandidatesFor(videoFilePath)) {
     const filename = path.basename(srt)
-    const fileExt = subtitleExtensionOf(filename) ?? ".srt"
+    const fileExt = subtitleFileExtensionOf(filename) ?? ".srt"
+    const isSub = isSubFile(filename)
+    const isSup = isSupFile(filename)
+    // .sub is image-based only when a sibling .idx exists (VobSub); a text .sub
+    // (MicroDVD/SubViewer) is parsed directly without OCR. .sup is always
+    // image-based (PGS) and OCR'd.
+    const subKind: "vobsub" | "pgs" | "text" | null = isSup
+      ? "pgs"
+      : isSub
+        ? (fs.existsSync(srt.replace(/\.sub$/i, ".idx")) ? "vobsub" : "text")
+        : null
+    const imageBased = subKind === "vobsub" || subKind === "pgs"
     result.push({
       type: "external",
       path: srt,
@@ -668,29 +1158,92 @@ export function listSubtitleSourcesForVideo(
       codec: fileExt,
       filename,
       filenameOnly: filename,
+      imageBased,
+      requiresOcr: imageBased,
+      ocrLang: imageBased ? ocrLangDefault : null,
+      trackId: null,
+      unsupported: false,
+      subKind,
+      pictureCount:
+        withPictureCounts && imageBased && subKind !== null && (subKind === "vobsub" || subKind === "pgs")
+          ? countExternalPictures(srt, subKind)
+          : undefined,
     })
   }
 
-  for (const track of embeddedCandidatesFor(videoFilePath, ext)) {
+  const embedded = embeddedCandidatesFor(videoFilePath, ext)
+  // Extract every embedded image track in one mkvextract pass and parse the
+  // resulting .sup/.idx for the real picture count. mkvmerge's num_index_entries
+  // is only present for files mkvmerge muxed, so for typical MKVs it reads 0 —
+  // extraction is what gives an accurate, non-zero count. mkvextract only handles
+  // .mkv, so skip it (and leave counts absent) for other containers.
+  const embeddedImageTracks = embedded
+    .filter((t) => t.kind === "vobsub" || t.kind === "pgs")
+    .map((t) => ({ trackId: t.trackId, kind: t.kind as "vobsub" | "pgs" }))
+  const embeddedPictureCounts =
+    withPictureCounts && ext === ".mkv" && embeddedImageTracks.length > 0
+      ? countEmbeddedPicturesBatch(videoFilePath, embeddedImageTracks)
+      : new Map<number, number>()
+
+  for (const track of embedded) {
     const langTag = track.language ?? `track-${track.trackId}`
-    const trackExt = codecToSubtitleExt(track.codec)
+    const isImage = track.kind === "vobsub" || track.kind === "pgs"
+    // VobSub extracts to .sub (+.idx); PGS extracts to .sup; text uses codec ext.
+    const trackExt = track.kind === "vobsub" ? ".sub" : track.kind === "pgs" ? ".sup" : codecToSubtitleExt(track.codec)
     const tempPath = makeExtractTempPath(stem, langTag, trackExt)
+    // Include the track title ("Dialogue" vs "Signs / Songs") in the label when
+    // present so the user can pick the right one. Fall back to a kind hint for
+    // image tracks with no title so it's still obvious which carries dialogue.
+    const titlePart = track.title
+      ? track.title
+      : isImage
+        ? "untitled image track"
+        : null
     result.push({
       type: "embedded",
       path: tempPath,
       isTemp: true,
-      label: `Embedded · ${track.codec} · ${track.language ?? "unknown"}`,
+      label: titlePart
+        ? `Embedded · ${track.codec} · ${track.language ?? "unknown"} · ${titlePart}`
+        : `Embedded · ${track.codec} · ${track.language ?? "unknown"}`,
       language: track.language,
       codec: track.codec,
       filename: null,
       filenameOnly: `${stem}.${langTag}${trackExt}`,
+      imageBased: isImage,
+      requiresOcr: isImage,
+      ocrLang: isImage ? resolveOcrLang(track.language, sourceLangIso639, sourceLangIso2b, sourceLangName) : null,
+      trackId: track.trackId,
+      title: track.title,
+      unsupported: false,
+      subKind: track.kind === "vobsub" ? "vobsub" : track.kind === "pgs" ? "pgs" : null,
+      numIndexEntries: track.numIndexEntries,
+      // Real picture count from extraction+parse (see countEmbeddedPicturesBatch);
+      // undefined when counting was skipped or the track couldn't be parsed.
+      pictureCount: isImage && withPictureCounts ? embeddedPictureCounts.get(track.trackId) : undefined,
     })
   }
 
-  // Default ordering: external first, then embedded; prefer embedded when matched to source language
+  // Default ordering: external text first, then embedded text, then image-based
+  // (OCR) sources last so the cheapest path is presented first. Within the
+  // image-based group, rank by pictureCount DESC so the dialogue track (most
+  // pictures) sorts ahead of sparse "Signs / Songs" tracks — these often share
+  // a language and only the picture count reliably distinguishes them.
+  const rank = (r: SubtitleSourceCandidate): number => {
+    if (r.unsupported) return 3
+    if (r.requiresOcr || r.imageBased) return 2
+    if (r.type === "external") return 0
+    return 1
+  }
   result.sort((a, b) => {
-    if (a.type === b.type) return 0
-    return a.type === "external" ? -1 : 1
+    const ra = rank(a), rb = rank(b)
+    if (ra !== rb) return ra - rb
+    // Within the same rank group, image-based sources are ordered by picture
+    // count (densest first); everything else keeps insertion order (stable).
+    if (ra === 2 && ra === rb) {
+      return (b.pictureCount ?? 0) - (a.pictureCount ?? 0)
+    }
+    return 0
   })
 
   // Mark preferred (matches source lang) for the picker
@@ -709,7 +1262,6 @@ export function listSubtitleSourcesForVideo(
       }
     }
   }
-  // If only one, mark preferred if it's embedded
   return result
 }
 
@@ -1370,7 +1922,60 @@ async function matchMediaForFile(
   return { mediaItemId: null, multipleMatches: false, candidateMediaItemIds: [], season, episode, detectedYear }
 }
 
-export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibraryPath): Promise<void> {
+/**
+ * Thrown by `scanLibraryPath` when an abort is requested (a rescan of the path
+ * currently being scanned). Distinct from a real scan failure — the caller
+ * (libraryTask) catches it separately and restarts the scan from the beginning
+ * without marking the path as errored.
+ */
+export class ScanAbortedError extends Error {
+  constructor(message = "Scan aborted by rescan") {
+    super(message)
+    this.name = "ScanAbortedError"
+  }
+}
+
+// Pre-compute + cache the subtitle source list for a library path item's video
+// file, so the source picker reads from cache instead of probing/extracting the
+// media on every open. Runs in the scanner worker (off the Express loop), so the
+// mkvextract pass for embedded picture counts is acceptable here. Best-effort:
+// any failure is swallowed so it never aborts the scan.
+function cacheItemSubtitleSources(
+  db: Database.Database,
+  itemId: number,
+  videoFilePath: string,
+  iso: string,
+  iso2b: string | null,
+  langName: string,
+): void {
+  try {
+    const st = fs.statSync(videoFilePath)
+    const sources = listSubtitleSourcesForVideo(videoFilePath, iso, iso2b, langName)
+    upsertItemSubtitleSources(db, itemId, sources, Math.floor(st.mtimeMs), st.size)
+  } catch {
+    /* probe/extract failed — leave the cache empty; picker falls back to live */
+  }
+}
+
+// Whether the cached sources for an item are still fresh (match the live file's
+// mtime + size). False when there's no cache or the file changed since caching.
+function cachedSourcesAreFresh(db: Database.Database, itemId: number, videoFilePath: string): boolean {
+  const cached = getItemSubtitleSources(db, itemId)
+  if (!cached) return false
+  try {
+    const st = fs.statSync(videoFilePath)
+    return cached.fileMtimeMs === Math.floor(st.mtimeMs) && cached.fileSize === st.size
+  } catch {
+    return false
+  }
+}
+
+export async function scanLibraryPath(
+  db: Database.Database,
+  libraryPath: DBLibraryPath,
+  shouldAbort?: () => boolean,
+): Promise<void> {
+  if (shouldAbort?.()) throw new ScanAbortedError()
   const adminUser = getHighestRoleUser(db)
   if (!adminUser) {
     createLog(
@@ -1452,11 +2057,38 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
     }
   >()
 
+  // For movie library paths, cache the per-movie-root match (the movie video's
+  // directory) so featurettes/extras in a "Featurettes" subfolder inherit the
+  // owning movie's media item without an independent (garbage) match — and so
+  // the movie is matched exactly once even when "Featurettes" sorts before the
+  // movie file in findMediaFiles (then the extra populates the cache and the
+  // later movie video reuses it).
+  const movieRootCache = new Map<
+    string,
+    {
+      mediaItemId: number | null
+      multipleMatches: boolean
+      candidateMediaItemIds: number[]
+      season: number | null
+      episode: number | null
+      detectedYear: number | null
+    }
+  >()
+
   for (const videoFile of videoFiles) {
+    if (shouldAbort?.()) throw new ScanAbortedError()
     const stem = path.basename(videoFile, path.extname(videoFile))
 
-    if (findLibraryPathItemByPath(db, libraryPath.id, videoFile)) {
+    const existingItem = findLibraryPathItemByPath(db, libraryPath.id, videoFile)
+    if (existingItem) {
       findAllCompanionSrts(videoFile).forEach((s) => companionSrtPaths.add(s))
+      // Refresh the cached subtitle sources if the media file changed (re-muxed)
+      // since it was last cached. If the cache is still fresh, skip — this is the
+      // common case on rescan and avoids re-extracting every file every scan.
+      if (!cachedSourcesAreFresh(db, existingItem.id, videoFile)) {
+        if (shouldAbort?.()) throw new ScanAbortedError()
+        cacheItemSubtitleSources(db, existingItem.id, videoFile, iso, iso2b, langName)
+      }
       continue
     }
 
@@ -1483,6 +2115,7 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
     let candidateMediaItemIds: number[] = []
     let season: number | null = null
     let episode: number | null = null
+    let isExtra = false
 
     if (libraryPath.type === "series") {
       const seriesRoot = getSeriesRootDir(videoFile, libraryPath.path)
@@ -1503,27 +2136,98 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
 
       // Season: prefer folder name, then fall back to filename
       const seasonFolder = getSeasonFolderNameBetween(videoFile, seriesRoot)
-      season =
-        seasonFolder !== null
-          ? (parseSeasonFolderName(seasonFolder) ?? parseSeasonFromFilename(videoFile))
-          : parseSeasonFromFilename(videoFile)
-      // Files directly in the series root with no season info default to season 1
-      if (season === null && seasonFolder === null) season = 1
-      episode = parseEpisodeFromFilename(videoFile)
-      // Rebase absolute (show-wide) episode numbers to 1-based per-season
-      // numbers when the whole season folder lacks SxxExx markers, e.g. a
-      // "Season 03" folder of "Show - 073".."100" becomes 1..28.
-      if (episode !== null && seasonFolder !== null) {
-        const rebaseOffset = episodeRebase.get(seasonFolderKey(seriesRoot, seasonFolder))
-        if (rebaseOffset) episode = episode - rebaseOffset
+      if (isFractionalSpecial(videoFile)) {
+        // A ".5" episode (e.g. "S01E18.5") is a recap/extra, not a real
+        // episode — route it to season 0 (specials) with no episode number.
+        season = 0
+        episode = null
+      } else {
+        season =
+          seasonFolder !== null
+            ? (parseSeasonFolderName(seasonFolder) ?? parseSeasonFromFilename(videoFile))
+            : parseSeasonFromFilename(videoFile)
+        // Files directly in the series root with no season info default to season 1
+        if (season === null && seasonFolder === null) season = 1
+        episode = parseEpisodeFromFilename(videoFile)
+        // Rebase absolute (show-wide) episode numbers to 1-based per-season
+        // numbers when the whole season folder lacks SxxExx markers, e.g. a
+        // "Season 03" folder of "Show - 073".."100" becomes 1..28.
+        if (episode !== null && seasonFolder !== null) {
+          const rebaseOffset = episodeRebase.get(seasonFolderKey(seriesRoot, seasonFolder))
+          if (rebaseOffset) episode = episode - rebaseOffset
+        }
       }
     } else {
-      const detection = await matchMediaForFile(db, adminUser, videoFile, libraryPath.type, libraryPath.path)
-      mediaItemId = detection.mediaItemId
-      multipleMatches = detection.multipleMatches
-      candidateMediaItemIds = detection.candidateMediaItemIds
-      season = detection.season
-      episode = detection.episode
+      // Movie library path. A video inside a "Featurettes"/"Extras" subfolder is
+      // bonus content, not the movie: attach it to the owning movie video's
+      // media item (inheriting its match — including unresolved candidates —
+      // via the per-movie-root cache) and flag it as an extra with no
+      // season/episode. Skip matchMediaForFile for extras so a featurette
+      // named e.g. "Clash of the Titans" isn't AI/TMDB-matched to that movie.
+      if (isInExtrasFolder(videoFile)) {
+        const owner = findOwningMovieVideoForExtra(videoFile, videoFiles)
+        if (owner) {
+          const ownerRoot = path.dirname(owner)
+          let cached = movieRootCache.get(ownerRoot)
+          if (!cached) {
+            const detection = await matchMediaForFile(db, adminUser, owner, libraryPath.type, libraryPath.path)
+            cached = {
+              mediaItemId: detection.mediaItemId,
+              multipleMatches: detection.multipleMatches,
+              candidateMediaItemIds: detection.candidateMediaItemIds,
+              season: detection.season,
+              episode: detection.episode,
+              detectedYear: detection.detectedYear,
+            }
+            movieRootCache.set(ownerRoot, cached)
+          }
+          mediaItemId = cached.mediaItemId
+          multipleMatches = cached.multipleMatches
+          candidateMediaItemIds = cached.candidateMediaItemIds
+          season = 0
+          episode = null
+          isExtra = true
+          createLog(
+            db,
+            "info",
+            "libraryScanner", "libraryScanner",
+            null,
+            `Extra "${path.basename(videoFile)}" attached to movie video "${path.basename(owner)}"`,
+            { libraryPathName: libraryPath.name, extraPath: videoFile, owningVideo: owner },
+          )
+        } else {
+          // No owning movie video found — leave it as a plain unmatched item
+          // rather than garbage-matching the featurette's own title.
+          createLog(
+            db,
+            "info",
+            "libraryScanner", "libraryScanner",
+            null,
+            `Extra "${path.basename(videoFile)}" has no owning movie video; leaving Unmatched`,
+            { libraryPathName: libraryPath.name, extraPath: videoFile },
+          )
+        }
+      } else {
+        const movieRoot = path.dirname(videoFile)
+        let cached = movieRootCache.get(movieRoot)
+        if (!cached) {
+          const detection = await matchMediaForFile(db, adminUser, videoFile, libraryPath.type, libraryPath.path)
+          cached = {
+            mediaItemId: detection.mediaItemId,
+            multipleMatches: detection.multipleMatches,
+            candidateMediaItemIds: detection.candidateMediaItemIds,
+            season: detection.season,
+            episode: detection.episode,
+            detectedYear: detection.detectedYear,
+          }
+          movieRootCache.set(movieRoot, cached)
+        }
+        mediaItemId = cached.mediaItemId
+        multipleMatches = cached.multipleMatches
+        candidateMediaItemIds = cached.candidateMediaItemIds
+        season = cached.season
+        episode = cached.episode
+      }
     }
 
     const mediaItem = mediaItemId ? getMediaItemById(db, mediaItemId) : null
@@ -1534,7 +2238,10 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
       // the card shows the right show/episode and the video can be queued for
       // Whisper transcription later. Season/episode come from the folder/
       // filename (not the SRT), so they are available here too.
-      createLibraryPathItem(db, libraryPath.id, videoFile, extractFileName, mediaItemId, "no_srts_found", season, episode)
+      const noSrtItem = createLibraryPathItem(db, libraryPath.id, videoFile, extractFileName, mediaItemId, "no_srts_found", season, episode, isExtra)
+      // Cache embedded/external subtitle sources so the picker (if the user opens
+      // it to grab an embedded track) doesn't have to re-probe the file later.
+      if (noSrtItem) cacheItemSubtitleSources(db, noSrtItem.id, videoFile, iso, iso2b, langName)
       continue
     }
 
@@ -1549,11 +2256,16 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
       status,
       season,
       episode,
+      isExtra,
     )
     if (!item) {
       if (resolvedSrt.isTemp) safeDeleteTempExtract(resolvedSrt.path, db)
       continue
     }
+
+    // Cache this item's subtitle sources (embedded tracks + companion files,
+    // with picture counts) so the source picker reads from cache on open.
+    cacheItemSubtitleSources(db, item.id, videoFile, iso, iso2b, langName)
 
     if (multipleMatches && candidateMediaItemIds.length > 0) {
       for (const candidateId of candidateMediaItemIds) {
@@ -1572,6 +2284,9 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
         season,
         episode,
         config.defaultChunkSize,
+        undefined,
+        undefined,
+        videoFile,
       )
     } else if (resolvedSrt.isTemp) {
       safeDeleteTempExtract(resolvedSrt.path, db, item.id)
@@ -1579,6 +2294,7 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
   }
 
   for (const srtFile of srtFiles) {
+    if (shouldAbort?.()) throw new ScanAbortedError()
     if (companionSrtPaths.has(srtFile)) {
       // This subtitle is a companion of a video in the same folder, so it is
       // the video item's source — not its own translatable row. An older,
@@ -1638,15 +2354,17 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
     let season: number | null = null
     let episode: number | null = null
 
-    // Movies-only: a bare-language subtitle (e.g. "english.srt", "spa.srt")
-    // often ships in a "Subs" subfolder next to the video with no movie title in
-    // its filename. Matching it on its own stem is garbage ("english" is not a
-    // movie), so attach it to the owning video in the same folder tree and
-    // inherit that video's media item — the subtitle becomes a translatable
+    // Movies-only: a subtitle that carries no usable movie title in its
+    // filename — a bare language tag ("english.srt", "spa.srt") OR any file
+    // inside a "Subs"/"subs" subfolder of a movie folder (RARBG/YTS releases
+    // ship "10_Finnish.srt", "English (SDH).eng.srt", "Français.fre.srt",
+    // etc.). Matching such a file on its own stem is garbage ("english" / "10"
+    // is not a movie), so attach it to the owning video in the same folder tree
+    // and inherit that video's media item — the subtitle becomes a translatable
     // track for the correct movie. Series are folder-matched and excluded by
     // request.
     let matchedViaOwningVideo = false
-    if (libraryPath.type === "movie" && isLanguageOnlyStem(stem)) {
+    if (libraryPath.type === "movie" && (isLanguageOnlyStem(stem) || isInSubsFolder(srtFile))) {
       const owningVideo = findOwningVideoFile(srtFile, videoFiles)
       const owningItem = owningVideo ? findLibraryPathItemByPath(db, libraryPath.id, owningVideo) : null
       if (owningItem) {
@@ -1669,7 +2387,7 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
           "info",
           "libraryScanner", "libraryScanner",
           null,
-          `Bare-language subtitle "${srtBasename}" attached to movie video "${path.basename(owningVideo!)}"`,
+          `Subtitle "${srtBasename}" attached to movie video "${path.basename(owningVideo!)}"`,
           { libraryPathName: libraryPath.name, srtPath: srtFile, owningVideo: owningVideo! },
         )
       } else {
@@ -1681,7 +2399,7 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
           "info",
           "libraryScanner", "libraryScanner",
           null,
-          `Bare-language subtitle "${srtBasename}" has no owning movie video; leaving Unmatched`,
+          `Subtitle "${srtBasename}" has no owning movie video; leaving Unmatched`,
           { libraryPathName: libraryPath.name, srtPath: srtFile },
         )
       }
@@ -1706,12 +2424,18 @@ export async function scanLibraryPath(db: Database.Database, libraryPath: DBLibr
         candidateMediaItemIds = cached.candidateMediaItemIds
 
         const seasonFolder = getSeasonFolderNameBetween(srtFile, seriesRoot)
-        season =
-          seasonFolder !== null
-            ? (parseSeasonFolderName(seasonFolder) ?? parseSeasonFromFilename(srtFile))
-            : parseSeasonFromFilename(srtFile)
-        if (season === null && seasonFolder === null) season = 1
-        episode = parseEpisodeFromFilename(srtFile)
+        if (isFractionalSpecial(srtFile)) {
+          // A ".5" subtitle (e.g. "S01E18.5") is a recap/extra → season 0.
+          season = 0
+          episode = null
+        } else {
+          season =
+            seasonFolder !== null
+              ? (parseSeasonFolderName(seasonFolder) ?? parseSeasonFromFilename(srtFile))
+              : parseSeasonFromFilename(srtFile)
+          if (season === null && seasonFolder === null) season = 1
+          episode = parseEpisodeFromFilename(srtFile)
+        }
       } else {
         const detection = await matchMediaForFile(db, adminUser, srtFile, libraryPath.type, libraryPath.path)
         mediaItemId = detection.mediaItemId
@@ -1780,6 +2504,14 @@ export async function autoTranslateItem(
   chunkSetting: number,
   overrideTargetLangIds?: number[],
   sourceLangIdOverride?: number | null,
+  // Associated video path — used for MicroDVD FPS detection when the source is
+  // a text .sub, and informational for OCR logging.
+  associatedVideoPath?: string | null,
+  // OCR language override (Tesseract code) from the source picker, if the user
+  // chose one for a VobSub image source.
+  ocrLangOverride?: string | null,
+  // FPS override for MicroDVD text .sub (from the picker).
+  fpsOverride?: number | null,
 ): Promise<{ success: boolean; msg: string }> {
   const { path: srtFilePath, isTemp } = srtSource
 
@@ -1787,21 +2519,131 @@ export async function autoTranslateItem(
     if (isTemp) safeDeleteTempExtract(srtFilePath, db, libraryPathItemId)
     return { success: false, msg: "Item is blacklisted from translation" }
   }
-  let srtContent: string
-  try {
-    srtContent = fs.readFileSync(srtFilePath, "utf-8")
-  } catch (e) {
-    createLog(db, "error", "libraryScanner", "libraryScanner", libraryPathItemId, "Failed to read SRT file for auto-translate", {
-      path: srtFilePath,
-      isTemp,
-      error: String(e),
-    })
-    updateLibraryPathItemStatus(db, libraryPathItemId, "failed")
-    if (isTemp) safeDeleteTempExtract(srtFilePath, db, libraryPathItemId)
-    return { success: false, msg: "Could not read SRT file" }
-  }
 
-  if (isTemp) safeDeleteTempExtract(srtFilePath, db, libraryPathItemId)
+  const effectiveSourceLangId = sourceLangIdOverride ?? libraryPath.sourceLangId
+  const sourceLang = getLanguageById(db, effectiveSourceLangId)
+  const sourceLangHints = [sourceLang?.iso639, sourceLang?.iso6392b]
+
+  let srtContent: string
+  // Provenance metadata stored on the subtitle row so the dashboard/logs can
+  // show that a translation came from a .sub via parse vs OCR.
+  let textOrigin: string | null = null
+  let originalSourceFormat: string | null = null
+
+  if (isSubFile(srtFilePath) || isSupFile(srtFilePath)) {
+    // Image/text source that needs conversion to an SRT intermediate before
+    // entering the standard translation pipeline:
+    //   .sub → text parse (MicroDVD/SubViewer) or VobSub OCR (subSubtitleAdapter)
+    //   .sup → PGS bitmap OCR (pgsOcrService)
+    // Failures are handled here so a bad file / missing Tesseract never crashes
+    // the worker loop.
+    const isPgs = isSupFile(srtFilePath)
+    try {
+      if (isPgs) {
+        const ocrLang = ocrLangOverride ?? resolveOcrLang(...sourceLangHints)
+        const converted = ocrPgsToSrt(srtFilePath, {
+          ocrLang,
+          sourceLangHints,
+        })
+        srtContent = converted.srt
+        textOrigin = "ocr"
+        originalSourceFormat = "sup"
+        createLog(
+          db,
+          "info",
+          "libraryScanner", "libraryScanner",
+          libraryPathItemId,
+          `Imported .sup (PGS) subtitle via OCR for translation`,
+          {
+            sourceFormat: "sup",
+            textOrigin: "ocr",
+            ocrLang,
+            rows: converted.entries.length,
+            ocrRows: converted.ocrRows,
+            emptyOcrRows: converted.emptyRows,
+            fromEmbeddedExtract: isTemp,
+          },
+        )
+      } else {
+        const converted = convertSubToSrt(srtFilePath, {
+          videoPath: associatedVideoPath,
+          ocrLang: ocrLangOverride ?? null,
+          sourceLangHints,
+          fpsOverride: fpsOverride ?? null,
+        })
+        srtContent = converted.srt
+        textOrigin = converted.textOrigin
+        originalSourceFormat = converted.originalSourceFormat
+
+        const ocrLang = ocrLangOverride ?? resolveOcrLang(...sourceLangHints)
+        createLog(
+          db,
+          "info",
+          "libraryScanner", "libraryScanner",
+          libraryPathItemId,
+          `Imported .sub subtitle (${converted.kind}, ${converted.textOrigin}) for translation`,
+          {
+            sourceFormat: "sub",
+            textOrigin: converted.textOrigin,
+            subKind: converted.kind,
+            ocrLang: converted.textOrigin === "ocr" ? ocrLang : null,
+            rows: converted.entries.length,
+            ocrRows: converted.ocrRows,
+            emptyOcrRows: converted.emptyRows,
+            fpsUsed: converted.fpsUsed,
+            fromEmbeddedExtract: isTemp,
+          },
+        )
+        if (converted.fpsAssumedDefault) {
+          createLog(
+            db,
+            "warning",
+            "libraryScanner", "libraryScanner",
+            libraryPathItemId,
+            `MicroDVD .sub FPS could not be detected from media; assumed default ${converted.fpsUsed} fps. Timing may be off — set FPS via the source picker if needed.`,
+            { fpsUsed: converted.fpsUsed },
+          )
+        }
+      }
+    } catch (e: any) {
+      const reason = e?.message ?? String(e)
+      const errorType =
+        e instanceof TesseractUnavailableError ? "tesseract_missing"
+        : e instanceof TesseractLangMissingError ? "tesseract_lang_missing"
+        : e instanceof VobSubOcrError ? "vobsub_ocr_failed"
+        : e instanceof PgsOcrError ? "pgs_ocr_failed"
+        : e instanceof SubParseError ? "sub_parse_failed"
+        : isPgs ? "sup_import_failed"
+        : "sub_import_failed"
+      createLog(
+        db,
+        "error",
+        "libraryScanner", "libraryScanner",
+        libraryPathItemId,
+        `Failed to import ${isPgs ? ".sup (PGS)" : ".sub"} subtitle for translation: ${reason}`,
+        { sourceFormat: isPgs ? "sup" : "sub", errorType, error: String(reason).slice(0, 300) },
+      )
+      updateLibraryPathItemStatus(db, libraryPathItemId, "failed")
+      if (isTemp) safeDeleteTempExtract(srtFilePath, db, libraryPathItemId)
+      return { success: false, msg: reason }
+    }
+    // Temp extraction files (.sub+.idx pair or .sup) are cleaned after conversion.
+    if (isTemp) safeDeleteTempExtract(srtFilePath, db, libraryPathItemId)
+  } else {
+    try {
+      srtContent = fs.readFileSync(srtFilePath, "utf-8")
+    } catch (e) {
+      createLog(db, "error", "libraryScanner", "libraryScanner", libraryPathItemId, "Failed to read SRT file for auto-translate", {
+        path: srtFilePath,
+        isTemp,
+        error: String(e),
+      })
+      updateLibraryPathItemStatus(db, libraryPathItemId, "failed")
+      if (isTemp) safeDeleteTempExtract(srtFilePath, db, libraryPathItemId)
+      return { success: false, msg: "Could not read SRT file" }
+    }
+    if (isTemp) safeDeleteTempExtract(srtFilePath, db, libraryPathItemId)
+  }
 
   const targetLangIds = overrideTargetLangIds ?? getConfigTranslationLanguages(db).map((cl) => cl.languageId)
   if (targetLangIds.length === 0) {
@@ -1827,7 +2669,7 @@ export async function autoTranslateItem(
     db,
     adminUser,
     mediaItemId,
-    sourceLangIdOverride ?? libraryPath.sourceLangId,
+    effectiveSourceLangId,
     targetLangIds,
     srtContent,
     chunkSetting,
@@ -1839,6 +2681,8 @@ export async function autoTranslateItem(
     storedSourcePath,
     storedMediaDir,
     libraryPathItemId,
+    textOrigin,
+    originalSourceFormat,
   )
 
   if (result.success) {
@@ -1847,6 +2691,8 @@ export async function autoTranslateItem(
       srtFileName,
       targetLangIds,
       fromEmbeddedExtract: isTemp,
+      textOrigin,
+      originalSourceFormat,
     })
     return { success: true, msg: result.msg ?? "Queued for translation" }
   } else {
@@ -1862,6 +2708,136 @@ export async function autoTranslateItem(
       },
     )
     return { success: false, msg: result.msg ?? "Failed to create subtitle task" }
+  }
+}
+
+// Shape of a user-selected source from the subtitle source picker (embedded
+// track or external file). Mirrors the route body's sourceOverride; shared by
+// the route handlers and the translate-prep worker so the heavy work runs off
+// the Express main thread.
+export type TranslateSourceOverride = {
+  type: string
+  path: string
+  language: string
+  codec: string
+  trackId?: number | null
+  ocrLang?: string | null
+  fps?: number | null
+  // True when the source is image-based (PGS/VobSub) and needs Tesseract OCR.
+  // Set by the source picker from the candidate; routes use it to decide whether
+  // to enqueue a background OCR job (async) instead of running the translate
+  // synchronously behind the modal.
+  imageBased?: boolean
+}
+
+// Resolve a subtitle source for a library path item, run any OCR/conversion
+// needed to produce an SRT intermediate, and queue translation jobs. This is
+// the off-thread body of the per-item Translate / re-add / season-batch flows:
+// the route handlers send a request to the translate-prep worker, which calls
+// this. PGS/VobSub OCR and embedded-track extraction (mkvextract) run here, so
+// the Express event loop never blocks on them.
+export async function prepareTranslationForItem(
+  db: Database.Database,
+  itemId: number,
+  resetStatus: boolean,
+  userId: number,
+  sourceOverride?: TranslateSourceOverride | null,
+  sourceLanguageHint?: string | null,
+): Promise<{ success: boolean; msg: string }> {
+  const item = getLibraryPathItemById(db, itemId)
+  if (!item) return { success: false, msg: "Item not found" }
+
+  if (isLibraryPathItemBlacklisted(db, itemId)) {
+    return { success: false, msg: "Item is blacklisted — remove it from the blacklist first" }
+  }
+
+  const libraryPath = getLibraryPathById(db, item.libraryPathId)
+  if (!libraryPath) return { success: false, msg: "Library path not found" }
+
+  if (resetStatus) updateLibraryPathItemStatus(db, itemId, "not_started")
+
+  // The associated video path (for MicroDVD FPS detection). When the library
+  // item itself is a subtitle (standalone .sub), there is no video in scope.
+  const associatedVideoPath = isSubtitleExtension(item.path) ? null : item.path
+
+  let srtSource: { path: string; isTemp: boolean } | null = null
+  if (isSubtitleExtension(item.path)) {
+    srtSource = { path: item.path, isTemp: false }
+  } else if (sourceOverride && sourceOverride.path) {
+    // Use the user-selected source (embedded or external)
+    if (sourceOverride.type === "external" && fs.existsSync(sourceOverride.path)) {
+      srtSource = { path: sourceOverride.path, isTemp: false }
+    } else if (sourceOverride.type === "embedded") {
+      // Re-extract the exact chosen embedded track from the media file
+      // (embedded temp files are per-scan, so they don't persist). Threading
+      // the codec/trackId lets findCompanionSrt extract a VobSub image track
+      // to .sub+.idx rather than only text tracks.
+      const sourceLang = getLanguageById(db, libraryPath.sourceLangId)
+      srtSource = sourceLang
+        ? findCompanionSrt(
+            item.path,
+            sourceLang.iso639,
+            sourceLang.iso6392b ?? null,
+            sourceLang.name ?? "",
+            {
+              preferCodec: sourceOverride.codec || null,
+              preferTrackId: sourceOverride.trackId ?? null,
+            },
+          )
+        : null
+    } else {
+      const sourceLang = getLanguageById(db, libraryPath.sourceLangId)
+      srtSource = sourceLang
+        ? findCompanionSrt(item.path, sourceLang.iso639, sourceLang.iso6392b ?? null, sourceLang.name ?? "")
+        : null
+    }
+  } else {
+    const sourceLang = getLanguageById(db, libraryPath.sourceLangId)
+    srtSource = sourceLang
+      ? findCompanionSrt(item.path, sourceLang.iso639, sourceLang.iso6392b ?? null, sourceLang.name ?? "")
+      : null
+  }
+
+  if (!srtSource) return { success: false, msg: "No SRT file found next to video file" }
+
+  const adminUser = getHighestRoleUser(db)
+  if (!adminUser) return { success: false, msg: "No admin user found" }
+
+  const config = getConfig(db)
+
+  const userTargetLangs = getUserConfigTranslationLanguages(db, userId)
+  const targetLangIds =
+    userTargetLangs.length > 0
+      ? userTargetLangs.map((tl) => tl.languageId)
+      : getConfigTranslationLanguages(db).map((cl) => cl.languageId)
+
+  // If the user picked a specific subtitle track (or we guessed a language from
+  // the subtitle filename), use that as the translation source language instead
+  // of the library path default.
+  const sourceLangCode = (sourceOverride && sourceOverride.language) || sourceLanguageHint || ""
+  const sourceLangIdOverride: number | null = sourceLangCode
+    ? getLanguageByIso(db, sourceLangCode)?.id ?? null
+    : null
+
+  try {
+    return await autoTranslateItem(
+      db,
+      adminUser,
+      libraryPath,
+      itemId,
+      srtSource,
+      item.mediaItemId,
+      item.season,
+      item.episode,
+      config.defaultChunkSize,
+      targetLangIds,
+      sourceLangIdOverride,
+      associatedVideoPath,
+      sourceOverride?.ocrLang ?? null,
+      sourceOverride?.fps ?? null,
+    )
+  } catch {
+    return { success: false, msg: "Failed to queue translation" }
   }
 }
 

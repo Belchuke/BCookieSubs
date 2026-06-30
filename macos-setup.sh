@@ -64,6 +64,19 @@ ensure_native_ollama() {
 
 ensure_native_ollama
 
+# ─── Optional: native Tesseract for .sub (VobSub) OCR ────────────────────────
+# The Docker image already ships tesseract-ocr + language packs (eng, dan, tha,
+# jpn, deu, fra, spa), so .sub OCR works out of the box in the container. These
+# checks are only relevant if you run the Node app natively on the Mac instead of
+# through Docker. `tesseract-lang` pulls every language pack — large; install
+# only if you need OCR languages beyond the bundled set.
+if ! command -v tesseract >/dev/null 2>&1; then
+  warn "Tesseract not found on the host (not required for the Docker stack)."
+  warn "For native runs with .sub OCR: brew install tesseract tesseract-lang"
+else
+  ok "Tesseract found: $(tesseract --version 2>/dev/null | head -1)"
+fi
+
 step "Bootstrapping .env"
 ensure_env_file "$ROOT"
 

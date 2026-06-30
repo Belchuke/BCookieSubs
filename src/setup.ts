@@ -526,6 +526,20 @@ const createTables = (db: Database.Database) => {
           CHECK (state IN ('idle', 'scanning', 'error')),
       type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
       initialScanCompleted INTEGER NOT NULL DEFAULT 0,
+      scanMode TEXT NOT NULL DEFAULT 'hourly'
+          CHECK (scanMode IN ('hourly', 'custom', 'never')),
+      scanRepeatInterval INTEGER NOT NULL DEFAULT 1,
+      scanRepeatUnit TEXT NOT NULL DEFAULT 'day'
+          CHECK (scanRepeatUnit IN ('day', 'week', 'month')),
+      scanDayOfWeek INTEGER NOT NULL DEFAULT 0,
+      scanStartTimeHour INTEGER NOT NULL DEFAULT 0,
+      scanStartTimeMinute INTEGER NOT NULL DEFAULT 0,
+      scanDurationMinutes INTEGER NOT NULL DEFAULT 60,
+      scanFirstStartAt DATETIME DEFAULT NULL,
+      initialScanDurationMs INTEGER DEFAULT NULL,
+      postInitialScanCount INTEGER NOT NULL DEFAULT 0,
+      postInitialScanTotalMs INTEGER NOT NULL DEFAULT 0,
+      lastScanDurationMs INTEGER DEFAULT NULL,
       createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`)
@@ -538,6 +552,7 @@ const createTables = (db: Database.Database) => {
         CHECK (status IN ('not_started', 'queued', 'no_srts_found', 'completed', 'failed', 'no_media_item')),
       season INTEGER DEFAULT NULL,
       episode INTEGER DEFAULT NULL,
+      isExtra INTEGER NOT NULL DEFAULT 0,
       path TEXT NOT NULL,
       extractFileName TEXT NOT NULL,
       createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -570,6 +585,48 @@ const createTables = (db: Database.Database) => {
       FOREIGN KEY (mediaItemId) REFERENCES mediaItem(id) ON DELETE CASCADE
     )`)
 
+    // Pre-computed subtitle source list (SubtitleSourceCandidate[] as JSON) for a
+    // library path item, populated by the library scanner so the source picker
+    // reads from cache instead of probing/extracting the media file on every
+    // open. 1:1 with libraryPathItem; cascade-deleted with the item. fileMtimeMs
+    // + fileSize are the staleness key: if the media file changes (re-mux) the
+    // cached row is ignored and recomputed.
+    db.exec(`CREATE TABLE IF NOT EXISTS libraryPathItemSubtitleSource (
+      libraryPathItemId INTEGER PRIMARY KEY,
+      sourcesJson TEXT NOT NULL,
+      fileMtimeMs INTEGER NOT NULL,
+      fileSize INTEGER NOT NULL,
+      scannedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (libraryPathItemId) REFERENCES libraryPathItem(id) ON DELETE CASCADE
+    )`)
+
+    // Background OCR queue. When an image-based subtitle track (PGS/VobSub) is
+    // queued for translation from the Library Requests page, the work is
+    // enqueued here instead of run synchronously behind a blocking HTTP request.
+    // A dedicated worker (ocrWorker) picks the next 'queued' row, runs the
+    // extract+OCR+createSubtitleTask pipeline, and on success DELETES the row
+    // (removes itself from the queue); on failure it stays for retry. See
+    // src/repositories/ocrJobRepository.ts.
+    db.exec(`CREATE TABLE IF NOT EXISTS libraryPathOcrJob (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      libraryPathItemId INTEGER NOT NULL,
+      userId INTEGER NOT NULL,
+      name TEXT,
+      sourceOverrideJson TEXT NOT NULL,
+      sourceLanguageHint TEXT,
+      resetStatus INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'queued'
+        CHECK (status IN ('queued', 'processing', 'failed')),
+      progress INTEGER NOT NULL DEFAULT 0,
+      errorMessage TEXT,
+      orderNumber INTEGER NOT NULL DEFAULT 0,
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      startedAt DATETIME,
+      finishedAt DATETIME,
+      FOREIGN KEY (libraryPathItemId) REFERENCES libraryPathItem(id) ON DELETE CASCADE
+    )`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_libraryPathOcrJob_status ON libraryPathOcrJob(status, orderNumber)`)
+
     db.exec(`CREATE TABLE IF NOT EXISTS bcsubExportedFile (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       libraryPathId INTEGER NOT NULL,
@@ -583,6 +640,11 @@ const createTables = (db: Database.Database) => {
       FOREIGN KEY (subtitleId) REFERENCES subtitle(id) ON DELETE SET NULL
     )`)
 
+    // Provenance for .sub/.sup-derived subtitles. sourceFormat stays 'srt' (the
+    // .sub/.sup is converted to an SRT intermediate before storage); textOrigin +
+    // originalSourceFormat record that the source was a .sub or .sup (PGS) and
+    // whether the text came from parsing or OCR. (Comment kept outside the SQL
+    // string — SQLite does not understand // comments.)
     db.exec(`CREATE TABLE IF NOT EXISTS subtitle (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 
@@ -597,6 +659,10 @@ const createTables = (db: Database.Database) => {
     originalText TEXT NOT NULL,
     sourceFormat TEXT NOT NULL DEFAULT 'srt'
       CHECK (sourceFormat IN ('srt', 'ass', 'ssa')),
+    textOrigin TEXT DEFAULT NULL
+      CHECK (textOrigin IN (NULL, 'ocr', 'parsed')),
+    originalSourceFormat TEXT DEFAULT NULL
+      CHECK (originalSourceFormat IN (NULL, 'sub', 'sup')),
 
     orderNumber INTEGER NOT NULL DEFAULT 0,
     whisperOrderNumber INTEGER,
@@ -811,9 +877,27 @@ const COLUMN_MIGRATIONS: { table: string; column: string; definition: string }[]
   { table: "config", column: "whisperRunAsSeparateTask", definition: "INTEGER NOT NULL DEFAULT 0" },
   { table: "subtitle", column: "whisperOrderNumber", definition: "INTEGER" },
   { table: "subtitle", column: "sourceFormat", definition: "TEXT NOT NULL DEFAULT 'srt'" },
+  // .sub provenance metadata (see subtitle table). Nullable so existing rows
+  // and existing-DB migrations are safe (ALTER TABLE ADD COLUMN with no NOT
+  // NULL is always valid). The CHECK constraints only apply on fresh DBs.
+  { table: "subtitle", column: "textOrigin", definition: "TEXT DEFAULT NULL" },
+  { table: "subtitle", column: "originalSourceFormat", definition: "TEXT DEFAULT NULL" },
   { table: "subtitle", column: "whisperResumeSrt", definition: "TEXT DEFAULT NULL" },
   { table: "subtitle", column: "whisperResumeMs", definition: "INTEGER NOT NULL DEFAULT 0" },
   { table: "log", column: "type", definition: "TEXT DEFAULT NULL" },
+  { table: "libraryPathItem", column: "isExtra", definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "libraryPath", column: "scanMode", definition: "TEXT NOT NULL DEFAULT 'hourly'" },
+  { table: "libraryPath", column: "scanRepeatInterval", definition: "INTEGER NOT NULL DEFAULT 1" },
+  { table: "libraryPath", column: "scanRepeatUnit", definition: "TEXT NOT NULL DEFAULT 'day'" },
+  { table: "libraryPath", column: "scanDayOfWeek", definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "libraryPath", column: "scanStartTimeHour", definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "libraryPath", column: "scanStartTimeMinute", definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "libraryPath", column: "scanDurationMinutes", definition: "INTEGER NOT NULL DEFAULT 60" },
+  { table: "libraryPath", column: "scanFirstStartAt", definition: "DATETIME DEFAULT NULL" },
+  { table: "libraryPath", column: "initialScanDurationMs", definition: "INTEGER DEFAULT NULL" },
+  { table: "libraryPath", column: "postInitialScanCount", definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "libraryPath", column: "postInitialScanTotalMs", definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "libraryPath", column: "lastScanDurationMs", definition: "INTEGER DEFAULT NULL" },
 ]
 
 function applyColumnMigrations(db: Database.Database): void {

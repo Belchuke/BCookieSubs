@@ -76,10 +76,22 @@ RUN npm prune --omit=dev
 FROM build AS dev
 
 # Runtime system deps the scanner/extractor/whisper need (the build stage only
-# has build tooling, not ffmpeg/mkvtoolnix).
+# has build tooling, not ffmpeg/mkvtoolnix). tesseract-ocr + language packs are
+# required to OCR image-based VobSub (.sub + .idx) subtitles into text (see
+# vobSubOcrService / tesseractOcrService). eng is always installed; a few
+# common packs are bundled. To support more OCR languages, add the matching
+# tesseract-ocr-<lang> package here (e.g. tesseract-ocr-chi-sim, -kor, -ara).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       mkvtoolnix \
       ffmpeg \
+      tesseract-ocr \
+      tesseract-ocr-eng \
+      tesseract-ocr-dan \
+      tesseract-ocr-tha \
+      tesseract-ocr-jpn \
+      tesseract-ocr-deu \
+      tesseract-ocr-fra \
+      tesseract-ocr-spa \
       tini \
       ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -106,9 +118,20 @@ FROM node:24-bookworm-slim AS runtime
 #   - git        : whisper.cpp CMake configure requires git for build info
 #   - ca-certs   : outbound HTTPS (TheMovieDB, Ollama Cloud, OpenAI, Anthropic)
 #   - tini       : PID 1 init so SIGTERM is forwarded to Node cleanly
+#   - tesseract  : OCR of image-based VobSub (.sub + .idx) subtitles into text
+#                  (eng always installed; dan/tha/jpn/deu/fra/spa bundled for
+#                  common sources). Add tesseract-ocr-<lang> for more languages.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       mkvtoolnix \
       ffmpeg \
+      tesseract-ocr \
+      tesseract-ocr-eng \
+      tesseract-ocr-dan \
+      tesseract-ocr-tha \
+      tesseract-ocr-jpn \
+      tesseract-ocr-deu \
+      tesseract-ocr-fra \
+      tesseract-ocr-spa \
       build-essential \
       cmake \
       wget \

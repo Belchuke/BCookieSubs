@@ -10,7 +10,7 @@
 // season click (no hidden giant DOM, no extra fetch). Actions patch the active
 // tab in place by re-fetching its (small, filtered) JSON and re-rendering —
 // never `location.reload()`, so search/scroll/open-season state survives.
-(function () {
+;(function () {
   "use strict"
 
   var I18N = window.LR_I18N || {}
@@ -26,24 +26,34 @@
   function newState() {
     return { loaded: false, loading: false, groups: [], genres: [] }
   }
-  function S(type) { return state[type] }
+  function S(type) {
+    return state[type]
+  }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   function escHtml(str) {
     return String(str == null ? "" : str)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
   }
   function escAttr(str) {
     return String(str == null ? "" : str)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
   }
   function whisperLabel(status) {
     return (I18N.whisperStatus && I18N.whisperStatus[status]) || status || ""
   }
-  function langById(id) { return LANG_BY_ID[id] }
+  function langById(id) {
+    return LANG_BY_ID[id]
+  }
 
-  function fileNameOf(it) { return it.fileName || "" }
+  function fileNameOf(it) {
+    return it.fileName || ""
+  }
 
   // ── Tab switching ────────────────────────────────────────────────────────
   window.lrSwitchTab = function lrSwitchTab(tab) {
@@ -71,7 +81,10 @@
     var root = document.querySelector('[data-lr-root="' + type + '"]')
     if (root) root.innerHTML = loadingHtml()
     fetch("/library-requests/data?type=" + type)
-      .then(function (r) { if (redirectIfUnauthorized(r)) return null; return r.json() })
+      .then(function (r) {
+        if (redirectIfUnauthorized(r)) return null
+        return r.json()
+      })
       .then(function (data) {
         st.loading = false
         if (!data) return
@@ -95,7 +108,10 @@
     var scrollTop = window.scrollY
     st.loading = true
     fetch("/library-requests/data?type=" + activeTab)
-      .then(function (r) { if (redirectIfUnauthorized(r)) return null; return r.json() })
+      .then(function (r) {
+        if (redirectIfUnauthorized(r)) return null
+        return r.json()
+      })
       .then(function (data) {
         st.loading = false
         if (!data) return
@@ -107,7 +123,9 @@
         applyFilters()
         window.scrollTo(0, scrollTop)
       })
-      .catch(function () { st.loading = false })
+      .catch(function () {
+        st.loading = false
+      })
   }
 
   function updateTabCount(type) {
@@ -125,14 +143,20 @@
   // sync (and supersedes the preloaded value).
   function preloadTabCounts() {
     fetch("/library-requests/counts")
-      .then(function (r) { if (redirectIfUnauthorized(r)) return null; return r.json() })
+      .then(function (r) {
+        if (redirectIfUnauthorized(r)) return null
+        return r.json()
+      })
       .then(function (data) {
         if (!data) return
         var types = ["movie", "series", "unmatched"]
         for (var i = 0; i < types.length; i++) {
           var t = types[i]
           // Don't clobber a count a tab already rendered with its own data.
-          if (S(t).loaded) { updateTabCount(t); continue }
+          if (S(t).loaded) {
+            updateTabCount(t)
+            continue
+          }
           var el = document.querySelector('.lr-tab-count[data-tab="' + t + '"]')
           if (!el) continue
           var n = data[t] || 0
@@ -140,7 +164,9 @@
           el.style.display = n > 0 ? "" : "none"
         }
       })
-      .catch(function () { /* badges fall back to lazy load on tab open */ })
+      .catch(function () {
+        /* badges fall back to lazy load on tab open */
+      })
   }
 
   function loadingHtml() {
@@ -154,8 +180,10 @@
     if (!root) return
     populateGenres(type)
     if (st.groups.length === 0) {
-      root.innerHTML = '<div class="card"><p class="empty-state">' +
-        escHtml(type === "movie" ? I18N.noMovies : type === "series" ? I18N.noSeries : I18N.noUnmatched) + "</p></div>"
+      root.innerHTML =
+        '<div class="card"><p class="empty-state">' +
+        escHtml(type === "movie" ? I18N.noMovies : type === "series" ? I18N.noSeries : I18N.noUnmatched) +
+        "</p></div>"
       return
     }
     var frag = document.createDocumentFragment()
@@ -176,22 +204,28 @@
     var current = sel.value
     var opts = '<option value="">' + escHtml(I18N.allGenres) + "</option>"
     var genres = S(type).genres
-    for (var i = 0; i < genres.length; i++) opts += '<option value="' + escAttr(genres[i]) + '">' + escHtml(genres[i]) + "</option>"
+    for (var i = 0; i < genres.length; i++)
+      opts += '<option value="' + escAttr(genres[i]) + '">' + escHtml(genres[i]) + "</option>"
     sel.innerHTML = opts
     if (current) sel.value = current
   }
 
   function posterHtml(group, iconClass) {
     if (SHOW_POSTERS && group.posterPath) {
-      return '<img class="lr-lazy" data-src="/media-photos/' + escAttr(group.posterPath) +
-        '" alt="' + escAttr(group.title) + '" loading="lazy" decoding="async">'
+      return (
+        '<img class="lr-lazy" data-src="/media-photos/' +
+        escAttr(group.posterPath) +
+        '" alt="' +
+        escAttr(group.title) +
+        '" loading="lazy" decoding="async">'
+      )
     }
     return '<div class="lr-card-placeholder"><i class="fa-solid ' + iconClass + '"></i></div>'
   }
 
   function metaHtml(group) {
     var html = ""
-    if (group.year) html += '<span>(' + escHtml(group.year) + ") · </span>"
+    if (group.year) html += "<span>(" + escHtml(group.year) + ") · </span>"
     html += '<span class="lr-card-genres">' + escHtml(group.genres || "") + "</span>"
     return html
   }
@@ -202,12 +236,20 @@
       var langId = item.missingTargetLangIds[i]
       var lang = langById(langId)
       if (!lang) continue
-      html += '<button type="button" class="btn btn-secondary lr-add-missing-lang-btn"' +
-        ' data-item-id="' + escAttr(item.itemId) + '"' +
-        ' data-lang-id="' + escAttr(langId) + '"' +
-        ' title="Add ' + escAttr(lang.name) + ' to existing subtitle">' +
+      html +=
+        '<button type="button" class="btn btn-secondary lr-add-missing-lang-btn"' +
+        ' data-item-id="' +
+        escAttr(item.itemId) +
+        '"' +
+        ' data-lang-id="' +
+        escAttr(langId) +
+        '"' +
+        ' title="Add ' +
+        escAttr(lang.name) +
+        ' to existing subtitle">' +
         (lang.flagCode ? '<span class="fi fi-' + escAttr(lang.flagCode) + '"></span> ' : "") +
-        escHtml(lang.iso639) + "</button>"
+        escHtml(lang.iso639) +
+        "</button>"
     }
     html += "</div>"
     return html
@@ -221,26 +263,72 @@
   // Movie card — mirrors the original movieGroups EJS block exactly.
   function movieCardHtml(group) {
     var items = group.items || []
-    var searchText = ((group.title || "") + " " + items.map(fileNameOf).join(" ")).toLowerCase()
-    var trans = items.filter(function (i) { return !i.subtitleId && !i.whisperStatus })
-    var srt = trans.filter(function (i) { return i.hasSrt })
-    var whisper = trans.filter(function (i) { return i.isVideo })[0]
-    var missing = items.filter(function (i) { return i.subtitleId && i.missingTargetLangIds.length > 0 })
-    var badges = items.filter(function (i) { return !i.subtitleId && i.whisperStatus })
+    var extras = group.extras || []
+    var searchText = (
+      (group.title || "") +
+      " " +
+      items.map(fileNameOf).join(" ") +
+      " " +
+      extras
+        .map(function (e) {
+          return e.title || ""
+        })
+        .join(" ")
+    ).toLowerCase()
+    var trans = items.filter(function (i) {
+      return !i.subtitleId && !i.whisperStatus
+    })
+    var srt = trans.filter(function (i) {
+      return i.hasSrt
+    })
+    var whisper = trans.filter(function (i) {
+      return i.isVideo
+    })[0]
+    var missing = items.filter(function (i) {
+      return i.subtitleId && i.missingTargetLangIds.length > 0
+    })
+    var badges = items.filter(function (i) {
+      return !i.subtitleId && i.whisperStatus
+    })
 
-    var html = '<div class="lr-card"' +
-      ' data-group-key="' + escAttr(group.key) + '"' +
-      ' data-search="' + escAttr(searchText) + '"' +
-      ' data-genre="' + escAttr((group.genres || "").toLowerCase()) + '">'
+    // Extras picker targets: the movie's own video item (when it can be
+    // Whisper-transcribed) plus each named extra. Encoded on every Create-
+    // subtitle button in this card so any of them opens the same picker. Only
+    // used when the movie actually has extras (otherwise Create-subtitle posts
+    // directly, as before).
+    var hasExtras = extras.length > 0
+    var pickerTargets = []
+    if (whisper) pickerTargets.push({ id: whisper.itemId, label: I18N.theMovie || "The movie" })
+    extras.forEach(function (e) {
+      pickerTargets.push({ id: e.itemId, label: (I18N.extraLabel || "Extra") + " · " + (e.title || e.fileName) })
+    })
+    var pickerAttr =
+      hasExtras && pickerTargets.length > 1 ? ' data-extras-pick="' + escAttr(JSON.stringify(pickerTargets)) + '"' : ""
+
+    var html =
+      '<div class="lr-card"' +
+      ' data-group-key="' +
+      escAttr(group.key) +
+      '"' +
+      ' data-search="' +
+      escAttr(searchText) +
+      '"' +
+      ' data-genre="' +
+      escAttr((group.genres || "").toLowerCase()) +
+      '">'
     html += '<div class="lr-card-poster">' + posterHtml(group, "fa-film") + "</div>"
     html += '<div class="lr-card-body">'
     html += "<div>"
     html += '<div class="lr-card-title" title="' + escAttr(group.title) + '">' + escHtml(group.title) + "</div>"
-    // Unmatched items are read-only — show the file's full path under the title
-    // so the user can locate it on disk and fix/rename it themselves.
+    // Unmatched items show the file's full path under the title so the user can
+    // locate it on disk. Re-matching is done from the Library Paths page, not here.
     if (group.type === "unmatched" && group.filePath) {
-      html += '<div class="lr-card-path text-dim" title="' + escAttr(group.filePath) + '">' +
-        escHtml(group.filePath) + "</div>"
+      html +=
+        '<div class="lr-card-path text-dim" title="' +
+        escAttr(group.filePath) +
+        '">' +
+        escHtml(group.filePath) +
+        "</div>"
     }
     html += '<div class="lr-card-meta">' + metaHtml(group) + "</div>"
     html += "</div>"
@@ -251,16 +339,80 @@
     if (trans.length > 0) {
       html += '<div class="lr-card-actions-col">'
       if (whisper && PERMS.canCreateSubtitlesWithWhisper) {
-        html += '<button type="button" class="btn btn-secondary lr-create-subtitle-btn"' +
-          ' data-item-id="' + escAttr(whisper.itemId) + '">' + escHtml(I18N.createSubtitle) + "</button>"
+        html +=
+          '<button type="button" class="btn btn-secondary lr-create-subtitle-btn"' +
+          ' data-item-id="' +
+          escAttr(whisper.itemId) +
+          '"' +
+          pickerAttr +
+          ">" +
+          escHtml(I18N.createSubtitle) +
+          "</button>"
       }
       if (srt.length > 0) {
-        var dataItems = srt.map(function (i) { return { id: i.itemId, name: i.fileName, isVideo: i.isVideo } })
-        html += '<button type="button" class="btn btn-primary lr-translate-group-btn"' +
-          ' data-items="' + escAttr(JSON.stringify(dataItems)) + '">' + escHtml(I18N.translate) + "</button>"
+        var dataItems = srt.map(function (i) {
+          return { id: i.itemId, name: i.fileName, isVideo: i.isVideo }
+        })
+        html +=
+          '<button type="button" class="btn btn-primary lr-translate-group-btn"' +
+          ' data-items="' +
+          escAttr(JSON.stringify(dataItems)) +
+          '">' +
+          escHtml(I18N.translate) +
+          "</button>"
       }
       html += "</div>"
     }
+
+    // Extras (Featurettes/*.mkv attached to the movie) render as sub-rows. An
+    // extra's Translate button only appears when it has an embedded subtitle
+    // track; Create-subtitle opens the extras picker (choose movie or extra).
+    if (hasExtras) {
+      html += '<div class="lr-extras">'
+      html += '<div class="lr-extras-label">' + escHtml(I18N.extras || "Extras") + "</div>"
+      extras.forEach(function (e) {
+        html +=
+          '<div class="lr-card-item lr-extra-row"' +
+          ' data-item-id="' +
+          escAttr(String(e.itemId)) +
+          '"' +
+          ' data-filename="' +
+          escAttr(e.fileName) +
+          '">'
+        html +=
+          '<span class="lr-extra-title">' +
+          escHtml((I18N.extraLabel || "Extra") + " · " + (e.title || e.fileName)) +
+          "</span>"
+        html += '<span class="lr-whisper-row lr-card-actions">'
+        if (e.hasEmbedded) {
+          html +=
+            '<button type="button" class="btn btn-primary lr-translate-btn"' +
+            ' data-item-id="' +
+            escAttr(String(e.itemId)) +
+            '"' +
+            ' data-filename="' +
+            escAttr(e.fileName) +
+            '">' +
+            escHtml(I18N.translate) +
+            "</button>"
+        }
+        if (PERMS.canCreateSubtitlesWithWhisper) {
+          html +=
+            '<button type="button" class="btn btn-secondary lr-create-subtitle-btn"' +
+            ' data-item-id="' +
+            escAttr(String(e.itemId)) +
+            '"' +
+            pickerAttr +
+            ">" +
+            escHtml(I18N.createSubtitle) +
+            "</button>"
+        }
+        html += "</span>"
+        html += "</div>"
+      })
+      html += "</div>"
+    }
+
     html += "</div></div>"
     return html
   }
@@ -273,10 +425,17 @@
     var seasons = seasonMap(items)
     var skeys = seasonKeys(seasons)
 
-    var html = '<div class="lr-card"' +
-      ' data-group-key="' + escAttr(group.key) + '"' +
-      ' data-search="' + escAttr(searchText) + '"' +
-      ' data-genre="' + escAttr((group.genres || "").toLowerCase()) + '">'
+    var html =
+      '<div class="lr-card"' +
+      ' data-group-key="' +
+      escAttr(group.key) +
+      '"' +
+      ' data-search="' +
+      escAttr(searchText) +
+      '"' +
+      ' data-genre="' +
+      escAttr((group.genres || "").toLowerCase()) +
+      '">'
     html += '<div class="lr-card-poster">' + posterHtml(group, "fa-tv") + "</div>"
     html += '<div class="lr-card-body">'
     html += '<div class="lr-card-title" title="' + escAttr(group.title) + '">' + escHtml(group.title) + "</div>"
@@ -290,11 +449,24 @@
       html += '<div class="lr-season-row" data-season-key="' + escAttr(sk) + '">'
       html += '<span class="lr-season-arrow">&#9658;</span>'
       html += '<span class="lr-season-label">' + escHtml(label) + "</span>"
-      html += '<span class="badge badge-neutral lrx-badge-sm">' + eps.length + " " + escHtml(I18N.episodeCount) + (eps.length !== 1 ? "s" : "") + "</span>"
-      html += '<button type="button" class="btn btn-primary lr-translate-season-btn lrx-season-translate-btn"' +
-        ' data-library-path-id="' + escAttr((items[0] && items[0].libraryPathId) || 0) + '"' +
-        ' data-season="' + escAttr(sk) + '"' +
-        ' onclick="event.stopPropagation(); lrTranslateSeason(this)">' + escHtml(I18N.translateSeason) + "</button>"
+      html +=
+        '<span class="badge badge-neutral lrx-badge-sm">' +
+        eps.length +
+        " " +
+        escHtml(I18N.episodeCount) +
+        (eps.length !== 1 ? "s" : "") +
+        "</span>"
+      html +=
+        '<button type="button" class="btn btn-primary lr-translate-season-btn lrx-season-translate-btn"' +
+        ' data-library-path-id="' +
+        escAttr((items[0] && items[0].libraryPathId) || 0) +
+        '"' +
+        ' data-season="' +
+        escAttr(sk) +
+        '"' +
+        ' onclick="event.stopPropagation(); lrTranslateSeason(this)">' +
+        escHtml(I18N.translateSeason) +
+        "</button>"
       html += "</div>"
     }
     html += "</div>" // overview
@@ -308,7 +480,7 @@
     var sm = {}
     for (var i = 0; i < items.length; i++) {
       var it = items[i]
-      var sk = (it.season !== null && it.season !== undefined) ? String(it.season) : "__"
+      var sk = it.season !== null && it.season !== undefined ? String(it.season) : "__"
       if (!sm[sk]) sm[sk] = []
       sm[sk].push(it)
     }
@@ -323,35 +495,66 @@
   }
 
   function episodeRowHtml(it) {
-    var html = '<div class="lr-card-item lr-episode-row"' +
-      ' data-item-id="' + escAttr(it.itemId) + '"' +
-      ' data-is-video="' + (it.isVideo ? "1" : "0") + '"' +
-      ' data-filename="' + escAttr(it.fileName) + '">'
+    var html =
+      '<div class="lr-card-item lr-episode-row"' +
+      ' data-item-id="' +
+      escAttr(it.itemId) +
+      '"' +
+      ' data-is-video="' +
+      (it.isVideo ? "1" : "0") +
+      '"' +
+      ' data-filename="' +
+      escAttr(it.fileName) +
+      '" style="gap:0;">'
     if (it.season !== null && it.episode !== null) {
-      html += '<span class="badge badge-neutral lr-episode-badge">S' +
-        String(it.season).padStart(2, "0") + "E" + String(it.episode).padStart(2, "0") + "</span>"
+      html +=
+        '<span class="badge badge-neutral lr-episode-badge">S' +
+        String(it.season).padStart(2, "0") +
+        "E" +
+        String(it.episode).padStart(2, "0") +
+        "</span>"
     } else {
       html += '<span class="badge badge-neutral lr-episode-badge">' + escHtml(it.fileName) + "</span>"
     }
+    if (it.subtitleDeleted) {
+      html +=
+        '<span class="badge badge-warning lr-deleted-badge">' +
+        escHtml(I18N.deletedReadd || "Deleted — re-add") +
+        "</span>"
+    }
+    // Translate + Create subtitle stay visible (and enabled) for a series episode
+    // even after one subtitle track has been added, so a second track (e.g. a
+    // Signs/Songs track alongside Dialogue) can be added without deleting the
+    // first. lrLoadEpisodeSources later drops the Translate button when there
+    // are no more source tracks available to pick from for this item.
     if (it.subtitleId && it.missingTargetLangIds.length > 0) {
       html += missingLangsHtml(it)
-    } else if (!it.subtitleId) {
-      html += '<span class="lr-episode-sources"></span>'
-      html += '<span class="lr-whisper-row lr-card-actions">'
-      if (it.whisperStatus) {
-        html += whisperBadgeHtml(it)
-      } else {
-        if (it.hasSrt) {
-          html += '<button type="button" class="btn btn-primary lr-translate-btn"' +
-            ' data-item-id="' + escAttr(it.itemId) + '">' + escHtml(I18N.translate) + "</button>"
-        }
-        if (it.isVideo && PERMS.canCreateSubtitlesWithWhisper) {
-          html += '<button type="button" class="btn btn-secondary lr-create-subtitle-btn"' +
-            ' data-item-id="' + escAttr(it.itemId) + '">' + escHtml(I18N.createSubtitle) + "</button>"
-        }
-      }
-      html += "</span>"
     }
+    html += '<span class="lr-episode-sources"></span>'
+    html += '<span class="lr-whisper-row lr-card-actions">'
+    if (it.whisperStatus) {
+      html += whisperBadgeHtml(it)
+    } else {
+      if (it.hasSrt) {
+        html +=
+          '<button type="button" class="btn btn-primary lr-translate-btn"' +
+          ' data-item-id="' +
+          escAttr(it.itemId) +
+          '">' +
+          escHtml(I18N.translate) +
+          "</button>"
+      }
+      if (it.isVideo && PERMS.canCreateSubtitlesWithWhisper) {
+        html +=
+          '<button type="button" class="btn btn-secondary lr-create-subtitle-btn"' +
+          ' data-item-id="' +
+          escAttr(it.itemId) +
+          '">' +
+          escHtml(I18N.createSubtitle) +
+          "</button>"
+      }
+    }
+    html += "</span>"
     html += "</div>"
     return html
   }
@@ -368,7 +571,9 @@
     if (!group) return
 
     list.querySelector(".lr-seasons-overview").style.display = "none"
-    list.querySelectorAll(".lr-season-panel").forEach(function (p) { p.style.display = "none" })
+    list.querySelectorAll(".lr-season-panel").forEach(function (p) {
+      p.style.display = "none"
+    })
 
     var existing = list.querySelector('.lr-season-panel[data-season-key="' + sk + '"]')
     if (!existing) {
@@ -382,7 +587,13 @@
       var html = '<div class="lr-season-back" data-season-key="' + escAttr(sk) + '">'
       html += '<span class="lr-season-arrow lrx-arrow-accent">&#9660;</span>'
       html += '<span class="lr-season-label">' + escHtml(label) + "</span>"
-      html += '<span class="badge badge-neutral lrx-badge-sm">' + eps.length + " " + escHtml(I18N.episodeCount) + (eps.length !== 1 ? "s" : "") + "</span>"
+      html +=
+        '<span class="badge badge-neutral lrx-badge-sm">' +
+        eps.length +
+        " " +
+        escHtml(I18N.episodeCount) +
+        (eps.length !== 1 ? "s" : "") +
+        "</span>"
       html += "</div>"
       html += '<div class="lr-season-items">'
       for (var i = 0; i < eps.length; i++) html += episodeRowHtml(eps[i])
@@ -396,7 +607,9 @@
   }
 
   function closeSeason(list) {
-    list.querySelectorAll(".lr-season-panel").forEach(function (p) { p.style.display = "none" })
+    list.querySelectorAll(".lr-season-panel").forEach(function (p) {
+      p.style.display = "none"
+    })
     var ov = list.querySelector(".lr-seasons-overview")
     if (ov) ov.style.display = ""
   }
@@ -415,21 +628,31 @@
     var imgs = root.querySelectorAll("img.lr-lazy")
     if (!imgs.length) return
     if (!("IntersectionObserver" in window)) {
-      imgs.forEach(function (img) { if (img.dataset.src) img.src = img.dataset.src })
+      imgs.forEach(function (img) {
+        if (img.dataset.src) img.src = img.dataset.src
+      })
       return
     }
     if (!lazyObserver) {
-      lazyObserver = new IntersectionObserver(function (entries) {
-        entries.forEach(function (entry) {
-          if (entry.isIntersecting) {
-            var img = entry.target
-            if (img.dataset.src) { img.src = img.dataset.src; img.removeAttribute("data-src") }
-            lazyObserver.unobserve(img)
-          }
-        })
-      }, { rootMargin: "200px" })
+      lazyObserver = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              var img = entry.target
+              if (img.dataset.src) {
+                img.src = img.dataset.src
+                img.removeAttribute("data-src")
+              }
+              lazyObserver.unobserve(img)
+            }
+          })
+        },
+        { rootMargin: "200px" },
+      )
     }
-    imgs.forEach(function (img) { lazyObserver.observe(img) })
+    imgs.forEach(function (img) {
+      lazyObserver.observe(img)
+    })
   }
   window.lrInitLazyLoad = initLazyImages
 
@@ -445,7 +668,7 @@
       var elGenre = el.getAttribute("data-genre") || ""
       var matchQ = !q || text.indexOf(q) !== -1
       var matchGenre = !genre || elGenre.indexOf(genre) !== -1
-      el.style.display = (matchQ && matchGenre) ? "" : "none"
+      el.style.display = matchQ && matchGenre ? "" : "none"
     })
   }
 
@@ -453,11 +676,16 @@
   function showToast(message, type) {
     var t = document.createElement("div")
     t.className = "toast toast-" + (type || "success")
-    t.innerHTML = '<span class="toast-msg"></span><button type="button" class="toast-close" aria-label="Close">✕</button>'
+    t.innerHTML =
+      '<span class="toast-msg"></span><button type="button" class="toast-close" aria-label="Close">✕</button>'
     t.querySelector(".toast-msg").textContent = message
     document.body.appendChild(t)
-    t.querySelector(".toast-close").addEventListener("click", function () { t.remove() })
-    setTimeout(function () { if (t.parentNode) t.remove() }, 4000)
+    t.querySelector(".toast-close").addEventListener("click", function () {
+      t.remove()
+    })
+    setTimeout(function () {
+      if (t.parentNode) t.remove()
+    }, 4000)
   }
 
   // ── Translate / create actions ───────────────────────────────────────────
@@ -465,16 +693,35 @@
     var url = "/library-paths/item/" + itemId + "/translate"
     var body = ""
     if (sourceChoice) {
-      body = "sourceType=" + encodeURIComponent(sourceChoice.type || "") +
-        "&sourcePath=" + encodeURIComponent(sourceChoice.path || "") +
-        "&sourceLanguage=" + encodeURIComponent(sourceChoice.language || "") +
-        "&sourceCodec=" + encodeURIComponent(sourceChoice.codec || "")
+      body =
+        "sourceType=" +
+        encodeURIComponent(sourceChoice.type || "") +
+        "&sourcePath=" +
+        encodeURIComponent(sourceChoice.path || "") +
+        "&sourceLanguage=" +
+        encodeURIComponent(sourceChoice.language || "") +
+        "&sourceCodec=" +
+        encodeURIComponent(sourceChoice.codec || "") +
+        "&sourceTrackId=" +
+        encodeURIComponent(sourceChoice.trackId != null ? sourceChoice.trackId : "")
+      if (sourceChoice.imageBased) {
+        body += "&imageBased=1"
+      }
+      if (sourceChoice.ocrLang) {
+        body += "&ocrLang=" + encodeURIComponent(sourceChoice.ocrLang)
+      }
+      if (sourceChoice.fps) {
+        body += "&fps=" + encodeURIComponent(sourceChoice.fps)
+      }
     }
     return fetch(url + "?json=1", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: body,
-    }).then(function (r) { if (redirectIfUnauthorized(r)) return null; return r.json() })
+    }).then(function (r) {
+      if (redirectIfUnauthorized(r)) return null
+      return r.json()
+    })
   }
 
   function lrGuessLangFromName(name) {
@@ -486,31 +733,155 @@
 
   function fetchSources(itemId) {
     return fetch("/library-requests/item/" + itemId + "/subtitle-sources")
-      .then(function (r) { return r.json() })
-      .then(function (data) { return (data && data.success && data.sources) ? data.sources : [] })
-      .catch(function () { return [] })
+      .then(function (r) {
+        return r.json()
+      })
+      .then(function (data) {
+        return data && data.success && data.sources ? data.sources : []
+      })
+      .catch(function () {
+        return []
+      })
   }
+
+  // Create a Whisper subtitle for an item with no button context (used by the
+  // extras picker, which has no originating button to disable/update).
+  function postCreateWhisper(itemId) {
+    fetch("/library-requests/item/" + itemId + "/create-whisper-subtitle", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    })
+      .then(function (r) {
+        if (redirectIfUnauthorized(r)) return null
+        return r.json()
+      })
+      .then(function (data) {
+        if (!data) return
+        showToast(data.msg || (data.success ? "Created" : "Failed"), data.success ? "success" : "error")
+        if (data.success) refreshActiveTab()
+      })
+      .catch(function () {
+        showToast("Request failed", "error")
+      })
+  }
+
+  // Extras picker — list "The movie" + each named extra as Create-subtitle
+  // targets. Selecting one posts the Whisper create for that item.
+  function openExtrasPicker(targets) {
+    var list = document.getElementById("lr-extras-picker-list")
+    if (!list) return
+    list.innerHTML = ""
+    targets.forEach(function (t) {
+      var row = document.createElement("button")
+      row.type = "button"
+      row.className = "btn btn-secondary lr-source-pick lr-extras-target"
+      row.dataset.itemId = String(t.id)
+      row.innerHTML = "<strong>" + escHtml(t.label) + "</strong>"
+      list.appendChild(row)
+    })
+    openModal("lr-extras-picker")
+  }
+
+  // Debounced TMDB search for the Change-match modal.
+  var _lrMatchTimer = null
+  document.addEventListener("input", function (e) {
+    var input = e.target
+    if (input.id !== "lr-match-search") return
+    var itemId = input.dataset.itemId
+    var q = input.value.trim()
+    clearTimeout(_lrMatchTimer)
+    var resultsEl = document.getElementById("lr-match-results")
+    if (!q) {
+      if (resultsEl) resultsEl.innerHTML = ""
+      return
+    }
+    _lrMatchTimer = setTimeout(function () {
+      if (resultsEl)
+        resultsEl.innerHTML =
+          '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">' + escHtml(I18N.loadingMatches) + "</div>"
+      fetch("/library-requests/item/" + itemId + "/search-tmdb?q=" + encodeURIComponent(q))
+        .then(function (r) {
+          return r.json()
+        })
+        .then(function (data) {
+          if (!resultsEl) return
+          if (!data || !data.items || data.items.length === 0) {
+            resultsEl.innerHTML =
+              '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">' +
+              escHtml(I18N.noMatchesFound) +
+              "</div>"
+            return
+          }
+          resultsEl.innerHTML = ""
+          var grid = document.createElement("div")
+          grid.className = "lp-candidate-grid"
+          data.items.slice(0, 8).forEach(function (ti) {
+            var year = ti.releaseDate && ti.releaseDate.length >= 4 ? ti.releaseDate.substring(0, 4) : "year unknown"
+            var btn = document.createElement("button")
+            btn.type = "button"
+            btn.className = "btn btn-secondary lr-select-tmdb-btn"
+            btn.dataset.itemId = itemId
+            btn.dataset.tmdbItem = JSON.stringify(ti)
+            btn.style.cssText =
+              "display:flex;flex-direction:row;align-items:center;gap:.75rem;padding:.6rem .75rem;height:auto;width:100%;text-align:left"
+            var ph =
+              SHOW_POSTERS && ti.posterUrl
+                ? '<img src="' +
+                  escHtml(ti.posterUrl) +
+                  '" alt="Poster" style="width:54px;height:81px;object-fit:cover;border-radius:4px;flex-shrink:0" onerror="this.style.display=\'none\'">'
+                : '<div style="width:54px;height:81px;background:var(--surface-2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fa-solid fa-film" style="font-size:1.4rem;color:var(--text-dim)"></i></div>'
+            btn.innerHTML =
+              ph +
+              '<span style="font-size:.88rem;line-height:1.35;word-break:break-word;min-width:0"><strong>' +
+              escHtml(ti.name || "Unknown") +
+              '</strong><br><span class="text-dim" style="font-size:.8rem">(' +
+              escHtml(year) +
+              ")</span>" +
+              (ti.genres
+                ? '<br><span class="text-dim" style="font-size:.75rem">' + escHtml(ti.genres) + "</span>"
+                : "") +
+              "</span>"
+            grid.appendChild(btn)
+          })
+          resultsEl.appendChild(grid)
+        })
+        .catch(function () {
+          if (resultsEl)
+            resultsEl.innerHTML = '<div class="text-dim" style="font-size:.8rem;padding:.25rem 0">Search failed.</div>'
+        })
+    }, 300)
+  })
 
   // Per-episode subtitle tracks for a season panel (lazy, once per panel).
   function lrLoadEpisodeSources(panel) {
     var rows = Array.prototype.slice.call(panel.querySelectorAll(".lr-episode-row"))
-    return Promise.all(rows.map(function (row) {
-      if (row._lrSourcesLoaded) return Promise.resolve()
-      var translateBtn = row.querySelector(".lr-translate-btn")
-      if (!translateBtn) { row._lrSourcesLoaded = true; return Promise.resolve() }
-      var itemId = row.dataset.itemId
-      return fetchSources(itemId).then(function (sources) {
-        sources.forEach(function (s) { s.language = s.language || lrGuessLangFromName(s.filename || s.label || row.dataset.filename || "") })
-        row._lrSources = sources
-        row._lrSourcesLoaded = true
-        if (sources.length === 0) { var b = row.querySelector(".lr-translate-btn"); if (b) b.remove() }
-      })
-    }))
+    return Promise.all(
+      rows.map(function (row) {
+        if (row._lrSourcesLoaded) return Promise.resolve()
+        var translateBtn = row.querySelector(".lr-translate-btn")
+        if (!translateBtn) {
+          row._lrSourcesLoaded = true
+          return Promise.resolve()
+        }
+        var itemId = row.dataset.itemId
+        return fetchSources(itemId).then(function (sources) {
+          sources.forEach(function (s) {
+            s.language = s.language || lrGuessLangFromName(s.filename || s.label || row.dataset.filename || "")
+          })
+          row._lrSources = sources
+          row._lrSourcesLoaded = true
+          if (sources.length === 0) {
+            var b = row.querySelector(".lr-translate-btn")
+            if (b) b.remove()
+          }
+        })
+      }),
+    )
   }
 
   function lrEpBadge(row) {
     var b = row.querySelector(".lr-episode-badge")
-    return b ? (b.textContent || "").trim() : (row.dataset.filename || "")
+    return b ? (b.textContent || "").trim() : row.dataset.filename || ""
   }
 
   // Translate a whole season via a per-episode track picker dialog.
@@ -526,26 +897,38 @@
       panel = list && list.querySelector('.lr-season-panel[data-season-key="' + sk + '"]')
     }
     if (!panel) return
-    var rows = Array.prototype.slice.call(panel.querySelectorAll(".lr-episode-row"))
-      .filter(function (r) { return !r.querySelector(".lr-add-missing-lang-btn") && (r.querySelector(".lr-translate-btn") || r.querySelector(".lr-create-subtitle-btn")) })
-    document.getElementById("season-translate-list").innerHTML = '<p class="text-dim">' + escHtml(I18N.loading || "Loading…") + "</p>"
+    var rows = Array.prototype.slice.call(panel.querySelectorAll(".lr-episode-row")).filter(function (r) {
+      return (
+        !r.querySelector(".lr-add-missing-lang-btn") &&
+        (r.querySelector(".lr-translate-btn") || r.querySelector(".lr-create-subtitle-btn"))
+      )
+    })
+    document.getElementById("season-translate-list").innerHTML =
+      '<p class="text-dim">' + escHtml(I18N.loading || "Loading…") + "</p>"
     openModal("season-translate-modal")
-    Promise.all(rows.map(function (row) {
-      var itemId = row.dataset.itemId
-      var build = function (srcs) {
-        srcs.forEach(function (s) { s.language = s.language || lrGuessLangFromName(s.filename || s.label || row.dataset.filename || "") })
-        return { itemId: itemId, fileName: row.dataset.filename || "", badge: lrEpBadge(row), sources: srcs }
-      }
-      if (row._lrSourcesLoaded) return Promise.resolve(build(row._lrSources || []))
-      return fetchSources(itemId).then(build)
-    })).then(renderSeasonTranslateList)
+    Promise.all(
+      rows.map(function (row) {
+        var itemId = row.dataset.itemId
+        var build = function (srcs) {
+          srcs.forEach(function (s) {
+            s.language = s.language || lrGuessLangFromName(s.filename || s.label || row.dataset.filename || "")
+          })
+          return { itemId: itemId, fileName: row.dataset.filename || "", badge: lrEpBadge(row), sources: srcs }
+        }
+        if (row._lrSourcesLoaded) return Promise.resolve(build(row._lrSources || []))
+        return fetchSources(itemId).then(build)
+      }),
+    ).then(renderSeasonTranslateList)
   }
 
   function renderSeasonTranslateList(eps) {
     seasonEps = eps
     var container = document.getElementById("season-translate-list")
     container.innerHTML = ""
-    if (eps.length === 0) { container.innerHTML = '<p class="text-dim">No episodes to translate.</p>'; return }
+    if (eps.length === 0) {
+      container.innerHTML = '<p class="text-dim">No episodes to translate.</p>'
+      return
+    }
     eps.forEach(function (ep) {
       var rowEl = document.createElement("div")
       rowEl.className = "season-tr-row"
@@ -565,7 +948,18 @@
         ep.sources.forEach(function (s, i) {
           var opt = document.createElement("option")
           opt.value = String(i)
-          opt.textContent = (s.type === "embedded" ? "Embedded" : "External") + " · " + ((s.language || "").toUpperCase() || "unknown") + (s.codec ? (" · " + s.codec) : "")
+          // Lead with the track title ("Dialogue" / "Signs / Songs") when present
+          // so each episode's dropdown distinguishes same-language tracks; the
+          // codec (HDMV PGS) adds no value and is omitted in favour of the title.
+          var titlePart = s.title ? " · " + s.title : s.codec ? " · " + s.codec : ""
+          var label =
+            (s.type === "embedded" ? "Embedded" : "External") +
+            " · " +
+            ((s.language || "").toUpperCase() || "unknown") +
+            titlePart
+          if (s.unsupported) label += " · " + I18N.imageBasedBadge + " (" + I18N.unsupportedShort + ")"
+          else if (s.requiresOcr) label += " · " + I18N.imageBasedBadge + " (OCR)"
+          opt.textContent = label
           sel.appendChild(opt)
         })
         rowEl.appendChild(sel)
@@ -579,24 +973,46 @@
     var confirmBtn = document.getElementById("season-translate-confirm")
     if (!confirmBtn) return
     confirmBtn.addEventListener("click", function () {
-      var jobs = seasonEps.filter(function (ep) { return ep.sources.length > 0 && ep._sel })
-      if (jobs.length === 0) { showToast("No subtitle tracks to translate", "error"); return }
+      var jobs = seasonEps.filter(function (ep) {
+        return ep.sources.length > 0 && ep._sel
+      })
+      if (jobs.length === 0) {
+        showToast("No subtitle tracks to translate", "error")
+        return
+      }
       confirmBtn.disabled = true
-      var queued = 0, failed = 0
+      var queued = 0,
+        failed = 0
       var chain = Promise.resolve()
       jobs.forEach(function (ep) {
         chain = chain.then(function () {
           var s = ep.sources[parseInt(ep._sel.value, 10)] || ep.sources[0]
-          var choice = { type: s.type, path: s.path, language: s.language || "", codec: s.codec }
+          var choice = {
+            type: s.type,
+            path: s.path,
+            language: s.language || "",
+            codec: s.codec,
+            trackId: s.trackId != null ? s.trackId : null,
+            imageBased: !!s.imageBased,
+          }
+          if (s.requiresOcr && s.ocrLang) choice.ocrLang = s.ocrLang
           return translateItem(ep.itemId, choice)
-            .then(function (resp) { if (resp && resp.success) queued++; else failed++ })
-            .catch(function () { failed++ })
+            .then(function (resp) {
+              if (resp && resp.success) queued++
+              else failed++
+            })
+            .catch(function () {
+              failed++
+            })
         })
       })
       chain.then(function () {
         confirmBtn.disabled = false
         closeModal("season-translate-modal")
-        showToast("Queued " + queued + " episode(s)" + (failed ? ", " + failed + " failed" : ""), (failed && !queued) ? "error" : "success")
+        showToast(
+          "Queued " + queued + " episode(s)" + (failed ? ", " + failed + " failed" : ""),
+          failed && !queued ? "error" : "success",
+        )
         if (queued) refreshActiveTab()
       })
     })
@@ -609,75 +1025,346 @@
     var epRow = btn.closest(".lr-episode-row")
     if (epRow && epRow._lrSourcesLoaded) {
       var loaded = epRow._lrSources || []
-      if (loaded.length === 0) { translateItem(itemId, defaultChoice).then(function (r) { onTranslateResponse(btn, r) }); return }
-      if (loaded.length === 1) {
-        var one = loaded[0]; if (!one.language && guessedLang) one.language = guessedLang
-        translateItem(itemId, one).then(function (r) { onTranslateResponse(btn, r) }); return
+      if (loaded.length === 0) {
+        translateItem(itemId, defaultChoice).then(function (r) {
+          onTranslateResponse(btn, r)
+        })
+        return
       }
-      openSourceDialog(itemId, loaded, btn, guessedLang); return
+      if (loaded.length === 1) {
+        var one = loaded[0]
+        if (!one.language && guessedLang) one.language = guessedLang
+        translateItem(itemId, one).then(function (r) {
+          onTranslateResponse(btn, r)
+        })
+        return
+      }
+      openSourceDialog(itemId, loaded, btn, guessedLang)
+      return
     }
     fetchSources(itemId).then(function (sources) {
-      if (sources.length === 0) { translateItem(itemId, defaultChoice).then(function (r) { onTranslateResponse(btn, r) }); return }
+      if (sources.length === 0) {
+        translateItem(itemId, defaultChoice).then(function (r) {
+          onTranslateResponse(btn, r)
+        })
+        return
+      }
       if (sources.length === 1) {
         var only = sources[0]
         if (!only.language && guessedLang) only.language = guessedLang
-        translateItem(itemId, only).then(function (r) { onTranslateResponse(btn, r) }); return
+        translateItem(itemId, only).then(function (r) {
+          onTranslateResponse(btn, r)
+        })
+        return
       }
       openSourceDialog(itemId, sources, btn, guessedLang)
     })
   }
 
-  function openSourceDialog(itemId, sources, btn, guessedLang) {
+  // Turn a source-picker Translate button into a spinner while its (possibly
+  // long, OCR-heavy) translate request is in flight, and disable the other
+  // source buttons so a second source can't be fired in parallel. Keeps the
+  // modal open until the response arrives so the UI never looks idle/stuck.
+  function setSourceUseButtonLoading(btn) {
+    if (!btn || btn._lrLoading) return
+    btn._lrLoading = true
+    btn._lrOriginalHtml = btn.innerHTML
+    btn.disabled = true
+    btn.innerHTML =
+      '<span class="lr-btn-spinner" aria-hidden="true"></span> ' + escHtml(I18N.translating || "Translating…")
+    var list = document.getElementById("subtitle-source-list")
+    if (list) {
+      Array.prototype.forEach.call(list.querySelectorAll(".lr-source-use, .lr-source-pick"), function (b) {
+        if (b !== btn) b.disabled = true
+      })
+    }
+  }
+
+  function restoreSourceUseButton(btn) {
+    if (!btn) return
+    if (btn._lrOriginalHtml != null) btn.innerHTML = btn._lrOriginalHtml
+    btn._lrLoading = false
+    delete btn._lrOriginalHtml
+    btn.disabled = false
+    var list = document.getElementById("subtitle-source-list")
+    if (list) {
+      Array.prototype.forEach.call(list.querySelectorAll(".lr-source-use, .lr-source-pick"), function (b) {
+        b.disabled = false
+      })
+    }
+  }
+
+  // Highlight class for a source row based on the track title, so the dialogue
+  // track is visually distinct from a sparse "Signs / Songs" track.
+  function lrSourceRowHighlight(s) {
+    var t = ((s && s.title) || "").toLowerCase()
+    if (/dialogue|dialog/.test(t)) return "lr-source-dialogue"
+    if (/sign|song/.test(t)) return "lr-source-signs"
+    return ""
+  }
+
+  // Build the TranslateSourceOverride for a row from its stored entry + the
+  // optional MicroDVD FPS input. Returns null when there is nothing to queue.
+  function lrChoiceFromRow(row) {
+    var entry = row._lrEntry
+    var srcLang = row._lrSrcLang
+    var s = entry.source
+    var choice
+    if (s) {
+      choice = {
+        type: s.type,
+        path: s.path,
+        language: srcLang,
+        codec: s.codec,
+        trackId: s.trackId != null ? s.trackId : null,
+        // OCR language is always the server-derived value (from the file/track
+        // language); no manual override is offered.
+        ocrLang: s.requiresOcr ? s.ocrLang || "eng" : null,
+        // Image-based sources route to the background OCR queue instead of
+        // blocking the modal on the ~1 min Tesseract pass.
+        imageBased: !!s.imageBased,
+      }
+    } else {
+      choice = srcLang ? { language: srcLang } : null
+    }
+    var fpsInput = row.querySelector(".lr-fps-input")
+    if (fpsInput && fpsInput.value) {
+      choice = choice || {}
+      choice.fps = parseFloat(fpsInput.value)
+    }
+    return choice
+  }
+
+  // POST several (item, chosen source) pairs to the translate-prep worker in
+  // one batch so the user can queue multiple tracks at once.
+  function lrQueueBatch(items) {
+    return fetch("/library-requests/items/translate-batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: items }),
+    }).then(function (r) {
+      return r.json()
+    })
+  }
+
+  // Unified renderer for the source picker, used by both the per-episode dialog
+  // and the movie popup. entries: [{itemId, source, fileName?, lang?}].
+  // Each row gets a checkbox (so multiple tracks can be queued together) plus a
+  // single-track Translate button; the modal footer's "Queue selected" button
+  // sends every checked row as one batch.
+  function lrRenderSourcePicker(entries, btn, guessedLang) {
     var list = document.getElementById("subtitle-source-list")
     list.innerHTML = ""
-    sources.forEach(function (s) {
-      var srcLang = s.language || lrGuessLangFromName(s.filename || s.label) || guessedLang || ""
-      var row = document.createElement("button")
-      row.type = "button"
-      row.className = "btn btn-secondary lr-source-pick"
-      var typeLabel = s.type === "embedded" ? "Embedded" : "External"
+    var queueBtn = document.getElementById("lr-queue-selected")
+
+    function refreshQueueBtn() {
+      if (!queueBtn) return
+      var n = list.querySelectorAll(".lr-source-check:checked").length
+      if (n === 0) {
+        queueBtn.style.display = "none"
+      } else {
+        queueBtn.style.display = ""
+        queueBtn.textContent = (I18N.queueSelected || "Queue selected") + " (" + n + ")"
+      }
+    }
+
+    entries.forEach(function (entry) {
+      var s = entry.source
+      var srcLang = entry.lang || (s && (s.language || lrGuessLangFromName(s.filename || s.label))) || guessedLang || ""
+      var row = document.createElement("div")
+      row.className = "lr-source-pick"
+      var hl = lrSourceRowHighlight(s)
+      if (hl) row.classList.add(hl)
+      row._lrEntry = entry
+      row._lrSrcLang = srcLang
+
+      var typeLabel = s ? (s.type === "embedded" ? "Embedded" : "External") : "Subtitle file"
       var langLabel = srcLang ? srcLang.toUpperCase() : "unknown"
-      var codecLine = s.codec ? " · " + s.codec : ""
-      var detail = s.filename || (s.label && s.label !== s.filename ? s.label : "")
-      row.innerHTML = "<strong>" + escHtml(typeLabel + " · " + langLabel + codecLine) + "</strong>" +
-        (detail ? '<span class="text-dim lr-source-detail">' + escHtml(detail) + "</span>" : "")
-      row.addEventListener("click", function () {
-        closeModal("subtitle-source-modal")
-        var choice = { type: s.type, path: s.path, language: srcLang, codec: s.codec }
-        translateItem(itemId, choice).then(function (resp) { onTranslateResponse(btn, resp) })
+      // Bold header leads with the track title ("Dialogue" / "Signs / Songs")
+      // when present so same-language tracks are distinguishable; the codec
+      // (e.g. HDMV PGS) adds no value and is demoted to the dim detail line.
+      var titlePart = s && s.title ? " · " + escHtml(s.title) : s && s.codec ? " · " + escHtml(s.codec) : ""
+      var header = "<strong>" + escHtml(typeLabel + " · " + langLabel) + titlePart + "</strong>"
+      if (s && s.imageBased) {
+        header +=
+          ' <span style="margin-right: 0.5rem; margin-left: 0.5rem;" class="badge badge-warning">' +
+          escHtml(I18N.imageBasedBadge) +
+          "</span>"
+      }
+      if (s && s.imageBased && s.pictureCount != null) {
+        header +=
+          ' <span class="badge badge-neutral lr-picture-count">' +
+          escHtml((I18N.picturesCount || "{{count}} pictures").replace("{{count}}", String(s.pictureCount))) +
+          "</span>"
+      }
+
+      // Detail line: prefer the file name when several files are listed, else
+      // the demoted codec (when a title took the bold line), else the filename/
+      // label fallback.
+      var detail = ""
+      if (entry.fileName) detail = entry.fileName
+      else if (s && s.title && s.codec) detail = s.codec
+      else if (s && s.filename) detail = s.filename
+      else if (s && s.label) detail = s.label
+
+      var html = '<div class="lr-source-row-top">'
+      // Checkbox so this row can be included in "Queue selected". Shown whenever
+      // there's a source or at least a language to queue.
+      if (s || srcLang) html += '<input type="checkbox" class="lr-source-check">'
+      html += header + "</div>"
+      if (detail) html += '<span class="text-dim lr-source-detail">' + escHtml(detail) + "</span>"
+
+      // Unsupported image format (none currently — VobSub and PGS both OCR — but
+      // kept for future formats the picker should disable). Show a note, no button.
+      if (s && s.unsupported) {
+        html += '<span class="text-dim lr-source-note">' + escHtml(I18N.unsupportedSubtitle) + "</span>"
+        row.innerHTML = html
+        row.classList.add("lr-source-disabled")
+        list.appendChild(row)
+        return
+      }
+
+      // Text MicroDVD .sub needs FPS for frame->time conversion. Offer an
+      // optional field (left blank = auto-detect from media / default 23.976).
+      if (s && s.subKind === "text" && s.codec === ".sub") {
+        html +=
+          '<label class="lr-source-control"><span>' +
+          escHtml(I18N.microdvdFps) +
+          '</span><input type="number" step="0.001" min="1" max="120" class="lr-fps-input" placeholder="auto"></label>'
+      }
+
+      html += '<button type="button" class="btn btn-primary lr-source-use">' + escHtml(I18N.translate) + "</button>"
+      row.innerHTML = html
+
+      // Single-track Translate: image-based sources return immediately (enqueued
+      // to the background OCR queue) so the modal closes right away; text
+      // sources resolve synchronously here too. Either way, close + toast.
+      var useBtn = row.querySelector(".lr-source-use")
+      useBtn.addEventListener("click", function () {
+        var choice = lrChoiceFromRow(row)
+        setSourceUseButtonLoading(useBtn)
+        translateItem(entry.itemId, choice)
+          .then(function (resp) {
+            closeModal("subtitle-source-modal")
+            onTranslateResponse(btn, resp)
+          })
+          .catch(function () {
+            restoreSourceUseButton(useBtn)
+            showToast("Request failed", "error")
+          })
       })
+
+      var check = row.querySelector(".lr-source-check")
+      if (check) check.addEventListener("change", refreshQueueBtn)
+
       list.appendChild(row)
     })
+
+    // Footer "Queue selected" — send every checked row as one batch to the
+    // translate-prep worker. Spins while the (possibly OCR-heavy) batch runs,
+    // then closes the modal + toast + refresh.
+    if (queueBtn) {
+      queueBtn.onclick = function () {
+        var checked = Array.prototype.slice
+          .call(list.querySelectorAll(".lr-source-check:checked"))
+          .map(function (c) {
+            return c.closest(".lr-source-pick")
+          })
+          .filter(Boolean)
+        if (checked.length === 0) {
+          showToast(I18N.queueSelectedNone || "Select at least one source", "error")
+          return
+        }
+        var items = checked.map(function (r) {
+          return { itemId: r._lrEntry.itemId, sourceOverride: lrChoiceFromRow(r) }
+        })
+        var orig = queueBtn.textContent
+        queueBtn.disabled = true
+        queueBtn.innerHTML =
+          '<span class="lr-btn-spinner" aria-hidden="true"></span> ' + escHtml(I18N.translating || "Translating…")
+        lrQueueBatch(items)
+          .then(function (resp) {
+            closeModal("subtitle-source-modal")
+            showToast(resp.msg || (resp.success ? "Queued" : "Failed"), resp.success ? "success" : "error")
+            if (resp.queued > 0) refreshActiveTab()
+          })
+          .catch(function () {
+            showToast("Request failed", "error")
+          })
+          .then(function () {
+            queueBtn.disabled = false
+            queueBtn.textContent = orig
+          })
+      }
+    }
+    refreshQueueBtn()
     openModal("subtitle-source-modal")
+  }
+
+  function openSourceDialog(itemId, sources, btn, guessedLang) {
+    var entries = sources.map(function (s) {
+      return { itemId: itemId, source: s }
+    })
+    lrRenderSourcePicker(entries, btn, guessedLang)
   }
 
   // Movie "Translate": aggregate sources across the movie's files/tracks.
   function lrTranslateMovie(btn) {
     var items
-    try { items = JSON.parse(btn.dataset.items || "[]") } catch (e) { items = [] }
+    try {
+      items = JSON.parse(btn.dataset.items || "[]")
+    } catch (e) {
+      items = []
+    }
     if (items.length === 0) return
     btn.disabled = true
-    Promise.all(items.map(function (it) {
-      return fetchSources(it.id).then(function (srcs) {
-        if (srcs.length === 0) return [{ itemId: it.id, fileName: it.name, source: null, lang: lrGuessLangFromName(it.name) }]
-        return srcs.map(function (s) {
-          return { itemId: it.id, fileName: it.name, source: s, lang: s.language || lrGuessLangFromName(s.filename || s.label || it.name) }
+    Promise.all(
+      items.map(function (it) {
+        return fetchSources(it.id).then(function (srcs) {
+          if (srcs.length === 0)
+            return [{ itemId: it.id, fileName: it.name, source: null, lang: lrGuessLangFromName(it.name) }]
+          return srcs.map(function (s) {
+            return {
+              itemId: it.id,
+              fileName: it.name,
+              source: s,
+              lang: s.language || lrGuessLangFromName(s.filename || s.label || it.name),
+            }
+          })
         })
+      }),
+    )
+      .then(function (lists) {
+        btn.disabled = false
+        var opts = Array.prototype.concat.apply([], lists)
+        if (opts.length === 0) return
+        if (opts.length === 1) {
+          lrDoMovieTranslate(opts[0], btn)
+          return
+        }
+        lrShowMovieSourcePopup(opts, btn, items.length > 1)
       })
-    })).then(function (lists) {
-      btn.disabled = false
-      var opts = Array.prototype.concat.apply([], lists)
-      if (opts.length === 0) return
-      if (opts.length === 1) { lrDoMovieTranslate(opts[0], btn); return }
-      lrShowMovieSourcePopup(opts, btn, items.length > 1)
-    }).catch(function () { btn.disabled = false; showToast("Request failed", "error") })
+      .catch(function () {
+        btn.disabled = false
+        showToast("Request failed", "error")
+      })
   }
 
   function lrDoMovieTranslate(opt, btn) {
     var choice = opt.source
-      ? { type: opt.source.type, path: opt.source.path, language: opt.source.language || opt.lang || "", codec: opt.source.codec }
-      : (opt.lang ? { language: opt.lang } : null)
-    translateItem(opt.itemId, choice).then(function (resp) {
+      ? {
+          type: opt.source.type,
+          path: opt.source.path,
+          language: opt.source.language || opt.lang || "",
+          codec: opt.source.codec,
+          trackId: opt.source.trackId != null ? opt.source.trackId : null,
+          ocrLang: opt.source.requiresOcr ? opt.source.ocrLang || "eng" : null,
+          imageBased: !!opt.source.imageBased,
+        }
+      : opt.lang
+        ? { language: opt.lang }
+        : null
+    return translateItem(opt.itemId, choice).then(function (resp) {
       if (!resp) return
       showToast(resp.msg || (resp.success ? "Queued" : "Failed"), resp.success ? "success" : "error")
       if (resp.success) refreshActiveTab()
@@ -685,26 +1372,19 @@
   }
 
   function lrShowMovieSourcePopup(opts, btn, showFile) {
-    var list = document.getElementById("subtitle-source-list")
-    list.innerHTML = ""
-    opts.forEach(function (opt) {
-      var s = opt.source
-      var row = document.createElement("button")
-      row.type = "button"
-      row.className = "btn btn-secondary lr-source-pick"
-      var typeLabel = s ? (s.type === "embedded" ? "Embedded" : "External") : "Subtitle file"
-      var langLabel = (opt.lang || "").toUpperCase() || "unknown"
-      var codecLine = s && s.codec ? " · " + s.codec : ""
-      var detail = showFile ? opt.fileName : ((s && s.filename) || "")
-      row.innerHTML = "<strong>" + escHtml(typeLabel + " · " + langLabel + codecLine) + "</strong>" +
-        (detail ? '<span class="text-dim lr-source-detail">' + escHtml(detail) + "</span>" : "")
-      row.addEventListener("click", function () {
-        closeModal("subtitle-source-modal")
-        lrDoMovieTranslate(opt, btn)
-      })
-      list.appendChild(row)
+    // Reuse the unified picker renderer so movies get the same track-name
+    // highlight + multi-select "Queue selected" as episodes. Pass the file name
+    // through only when several files are listed (so the user can tell them
+    // apart); for a single movie file the track title/codec is the useful detail.
+    var entries = opts.map(function (opt) {
+      return {
+        itemId: opt.itemId,
+        source: opt.source,
+        fileName: showFile ? opt.fileName : null,
+        lang: opt.lang,
+      }
     })
-    openModal("subtitle-source-modal")
+    lrRenderSourcePicker(entries, btn, null)
   }
 
   function onTranslateResponse(btn, data) {
@@ -721,18 +1401,101 @@
   document.addEventListener("click", function (e) {
     // Season open / close
     var row = e.target.closest(".lr-season-row")
-    if (row) { openSeason(row); return }
+    if (row) {
+      openSeason(row)
+      return
+    }
     var back = e.target.closest(".lr-season-back")
-    if (back) { var list = back.closest(".lr-season-list"); if (list) closeSeason(list); return }
+    if (back) {
+      var list = back.closest(".lr-season-list")
+      if (list) closeSeason(list)
+      return
+    }
 
     var groupBtn = e.target.closest(".lr-translate-group-btn")
-    if (groupBtn) { lrTranslateMovie(groupBtn); return }
+    if (groupBtn) {
+      lrTranslateMovie(groupBtn)
+      return
+    }
 
     var tBtn = e.target.closest(".lr-translate-btn")
-    if (tBtn) { handleTranslateClick(tBtn); return }
+    if (tBtn) {
+      handleTranslateClick(tBtn)
+      return
+    }
+
+    // Extras picker target (a movie/extra chosen from the "Create subtitles for"
+    // dialog). POSTs the Whisper create for that item, then refreshes the tab.
+    var pickTarget = e.target.closest(".lr-extras-target")
+    if (pickTarget) {
+      var ptItemId = pickTarget.dataset.itemId
+      closeModal("lr-extras-picker")
+      postCreateWhisper(ptItemId)
+      return
+    }
+
+    // Change-match on an unmatched item — open the search modal.
+    var matchBtn = e.target.closest(".lr-change-match-btn")
+    if (matchBtn) {
+      var mItemId = matchBtn.dataset.itemId
+      document.getElementById("lr-match-name").textContent = matchBtn.dataset.itemName || ""
+      var mSearch = document.getElementById("lr-match-search")
+      mSearch.dataset.itemId = mItemId
+      mSearch.value = ""
+      document.getElementById("lr-match-results").innerHTML = ""
+      openModal("lr-match-modal")
+      setTimeout(function () {
+        mSearch.focus()
+      }, 50)
+      return
+    }
+
+    // Select a TMDB result from the change-match modal — link it to the item.
+    var tmdbBtn = e.target.closest(".lr-select-tmdb-btn")
+    if (tmdbBtn) {
+      var ti = JSON.parse(tmdbBtn.dataset.tmdbItem || "{}")
+      var tItemId = tmdbBtn.dataset.itemId
+      var tyear = ti.releaseDate ? ti.releaseDate.substring(0, 4) : ""
+      var tBody = [
+        "title=" + encodeURIComponent(ti.name || ""),
+        "originalTitle=" + encodeURIComponent(ti.originalTitle || ""),
+        "year=" + encodeURIComponent(tyear),
+        "isAnime=" + encodeURIComponent(ti.isAnime ? "1" : "0"),
+        "genres=" + encodeURIComponent(ti.genres || ""),
+        "theMovieDbId=" + encodeURIComponent(String(ti.id || "")),
+        "posterUrl=" + encodeURIComponent(ti.posterUrl || ""),
+      ].join("&")
+      fetch("/library-requests/item/" + tItemId + "/match", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: tBody,
+      })
+        .then(function (r) {
+          if (redirectIfUnauthorized(r)) return null
+          return r.json()
+        })
+        .then(function (data) {
+          if (!data) return
+          showToast(data.msg || (data.success ? "Matched" : "Failed"), data.success ? "success" : "error")
+          if (data.success) {
+            closeModal("lr-match-modal")
+            refreshActiveTab()
+          }
+        })
+        .catch(function () {
+          showToast("Request failed", "error")
+        })
+      return
+    }
 
     var createBtn = e.target.closest(".lr-create-subtitle-btn")
     if (createBtn) {
+      // A movie with extras opens the picker (choose the movie or a named extra)
+      // instead of creating subtitles for the clicked item directly.
+      if (createBtn.dataset.extrasPick) {
+        openExtrasPicker(JSON.parse(createBtn.dataset.extrasPick))
+        return
+      }
       var itemId = createBtn.dataset.itemId
       createBtn.disabled = true
       createBtn.textContent = I18N.creatingSubtitle
@@ -740,13 +1503,18 @@
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
       })
-        .then(function (r) { if (redirectIfUnauthorized(r)) return null; return r.json() })
+        .then(function (r) {
+          if (redirectIfUnauthorized(r)) return null
+          return r.json()
+        })
         .then(function (data) {
           if (!data) return
           showToast(data.msg || (data.success ? "Created" : "Failed"), data.success ? "success" : "error")
           if (data.success) {
             var wr = createBtn.closest(".lr-whisper-row")
-            if (wr) wr.innerHTML = '<span class="badge badge-processing">' + escHtml(whisperLabel("queued_for_transcription")) + "</span>"
+            if (wr)
+              wr.innerHTML =
+                '<span class="badge badge-processing">' + escHtml(whisperLabel("queued_for_transcription")) + "</span>"
             refreshActiveTab()
           } else {
             createBtn.disabled = false
@@ -770,13 +1538,21 @@
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: "targetLangIds=" + encodeURIComponent(langId),
       })
-        .then(function (r) { if (redirectIfUnauthorized(r)) return null; return r.json() })
+        .then(function (r) {
+          if (redirectIfUnauthorized(r)) return null
+          return r.json()
+        })
         .then(function (data) {
           if (!data) return
-          if (data.success) { missingBtn.style.display = "none"; showToast(data.msg || "Added", "success"); refreshActiveTab() }
-          else showToast(data.msg || "Failed", "error")
+          if (data.success) {
+            missingBtn.style.display = "none"
+            showToast(data.msg || "Added", "success")
+            refreshActiveTab()
+          } else showToast(data.msg || "Failed", "error")
         })
-        .catch(function () { showToast("Request failed", "error") })
+        .catch(function () {
+          showToast("Request failed", "error")
+        })
       return
     }
 

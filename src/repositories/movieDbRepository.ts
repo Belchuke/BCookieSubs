@@ -65,11 +65,40 @@ export const isAdmin = (original_language: string, genreIds: number[]) => {
   return genreIds.some((id) => [16].includes(id)) && ["ja", "zh", "ko"].includes(original_language)
 }
 
+// TMDB rate-limit backoff. When any request returns 429 we wait 1 minute (or
+// the server's Retry-After, clamped to 5 min) and retry the same request once.
+// The gate also makes concurrent requests wait out the window before firing, so
+// a burst of scan-time lookups doesn't hammer the API while it's limiting us.
+let tmdbRateLimitedUntil = 0
+
+const sleepMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+async function fetchTheMovieDb(db: Database.Database | null, url: string): Promise<Response> {
+  const now = Date.now()
+  if (tmdbRateLimitedUntil > now) await sleepMs(tmdbRateLimitedUntil - now)
+  let response = await fetch(url)
+  if (response.status === 429) {
+    const retryAfterRaw = response.headers.get("retry-after")
+    const retryAfter = retryAfterRaw ? parseInt(retryAfterRaw, 10) : NaN
+    const waitSeconds = Number.isFinite(retryAfter) && retryAfter > 0 && retryAfter <= 300 ? retryAfter : 60
+    tmdbRateLimitedUntil = Date.now() + waitSeconds * 1000
+    if (db) {
+      createLog(db, "warning", "tmdbRateLimit", "tmdb", null, `TMDB returned 429; waiting ${waitSeconds}s before retrying`, {
+        url: url.slice(0, 200),
+      })
+    }
+    await sleepMs(waitSeconds * 1000)
+    response = await fetch(url) // one retry
+  }
+  return response
+}
+
 export const requestSearchTheMovieDb = async (
   query: string,
   type: "movie" | "series",
   year: number | null,
   apiKey: string,
+  db: Database.Database | null = null,
 ): Promise<{ items: TheMovieDBRequestResult[]; success: boolean; msg: string | null }> => {
   try {
     let url = `https://api.themoviedb.org/3/search/${type === "movie" ? "movie" : "tv"}?api_key=${apiKey}&query=${encodeURIComponent(query)}`
@@ -77,7 +106,7 @@ export const requestSearchTheMovieDb = async (
       url += `&year=${year}`
     }
 
-    const response = await fetch(url)
+    const response = await fetchTheMovieDb(db, url)
     if (!response.ok) {
       throw new Error(`The Movie DB API error: ${response.status} ${response.statusText}`)
     }
@@ -132,7 +161,7 @@ export const searchMediaItemInTheMovieDb = async (
   try {
     const decryptedKey = decryptKey(secret.encryptedValue, secret.iv, secret.authTag)
 
-    return await requestSearchTheMovieDb(name, type, year, decryptedKey)
+    return await requestSearchTheMovieDb(name, type, year, decryptedKey, db)
   } catch (error) {
     if (error instanceof Error) {
       return { items: [], success: false, msg: error.message }
@@ -164,7 +193,7 @@ export const fetchTheMovieDbDetailsById = async (
     const endpoint = type === "movie" ? "movie" : "tv"
     const url = `https://api.themoviedb.org/3/${endpoint}/${tmdbId}?api_key=${apiKey}`
 
-    const response = await fetch(url)
+    const response = await fetchTheMovieDb(db, url)
     if (!response.ok) return null
 
     const item = (await response.json()) as any

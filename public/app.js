@@ -201,6 +201,7 @@ function closeModalOnOverlay(event) {
   var queueList = document.getElementById("queue-list")
   if (!queueList) return
   var whisperQueueList = document.getElementById("whisper-queue-list")
+  var ocrQueueList = document.getElementById("ocr-queue-list")
   var whisperSeparate = false
 
   var POLL_INTERVAL = 15000
@@ -653,6 +654,57 @@ function closeModalOnOverlay(event) {
       whisperQueueList.parentElement.style.display = whisperSeparate ? "" : "none"
       renderQueueList(whisperQueueList, whisperSubs, langMap, "whisper", whisperOpenSubs, whisperOpenSeries)
     }
+
+    if (ocrQueueList) {
+      renderOcrQueue(data.ocrJobs || [])
+    }
+  }
+
+  // OCR queue: a flat list of pending/processing/failed image-based OCR jobs.
+  // Simpler than the subtitle queue — no jobs/chunks, just status + controls.
+  function renderOcrQueue(jobs) {
+    if (!ocrQueueList) return
+    if (!jobs.length) {
+      ocrQueueList.innerHTML = '<p class="empty-state">No OCR jobs queued.</p>'
+      return
+    }
+    var html = ""
+    jobs.forEach(function (j) {
+      var statusLabel =
+        j.status === "processing" ? ((typeof APP_STRINGS !== "undefined" && APP_STRINGS.ocrStatus_processing) || "Processing")
+        : j.status === "failed" ? ((typeof APP_STRINGS !== "undefined" && APP_STRINGS.ocrStatus_failed) || "Failed")
+        : ((typeof APP_STRINGS !== "undefined" && APP_STRINGS.ocrStatus_queued) || "Queued")
+      var statusClass =
+        j.status === "processing" ? "badge badge-success"
+        : j.status === "failed" ? "badge badge-danger"
+        : "badge badge-neutral"
+      var title = j.name || j.mediaItemTitle || "OCR job #" + j.id
+      if (j.season != null && j.episode != null) title += " S" + pad2(j.season) + "E" + pad2(j.episode)
+      var progress = j.status === "processing" && j.progress > 0 ? " · " + j.progress + "%" : ""
+      var err = j.status === "failed" && j.errorMessage ? '<div class="text-dim" style="font-size:.8rem">⚠ ' + esc(j.errorMessage) + "</div>" : ""
+
+      var controls = ""
+      if (j.status === "queued") {
+        controls =
+          '<form method="post" action="/dashboard/ocr/move-up/' + j.id + '" style="display:inline"><button class="btn btn-icon" title="Up">↑</button></form>' +
+          '<form method="post" action="/dashboard/ocr/move-down/' + j.id + '" style="display:inline"><button class="btn btn-icon" title="Down">↓</button></form>'
+      }
+      if (j.status === "failed") {
+        controls += '<form method="post" action="/dashboard/ocr/retry/' + j.id + '" style="display:inline"><button class="btn btn-secondary" title="Retry">↻</button></form>'
+      }
+      controls += '<form method="post" action="/dashboard/ocr/delete/' + j.id + '" style="display:inline"><button class="btn btn-icon" title="Remove" onclick="return confirm(\'Remove this OCR job?\')">✕</button></form>'
+
+      html +=
+        '<div class="ocr-queue-row">' +
+          '<div class="ocr-queue-row-main">' +
+            '<strong>' + esc(title) + '</strong> ' +
+            '<span class="' + statusClass + '">' + esc(statusLabel) + progress + '</span>' +
+            err +
+          '</div>' +
+          '<div class="ocr-queue-row-controls">' + controls + '</div>' +
+        '</div>'
+    })
+    ocrQueueList.innerHTML = html
   }
 
   
@@ -817,6 +869,32 @@ function whisperWorkerControl(action) {
   }
 
   fetch("/dashboard/whisper-worker/" + action, { method: "POST" })
+    .then(function (r) {
+      return r.json()
+    })
+    .then(function (data) {
+      if (stopBtn) stopBtn.disabled = false
+      if (startBtn) startBtn.disabled = false
+      if (typeof data.workerPaused !== "undefined") {
+        stopBtn && (stopBtn.style.display = data.workerPaused ? "none" : "inline-flex")
+        startBtn && (startBtn.style.display = data.workerPaused ? "inline-flex" : "none")
+      }
+    })
+    .catch(function () {
+      if (stopBtn) stopBtn.disabled = false
+      if (startBtn) startBtn.disabled = false
+    })
+}
+
+function ocrWorkerControl(action) {
+  var stopBtn = document.getElementById("ocr-worker-stop-btn")
+  var startBtn = document.getElementById("ocr-worker-start-btn")
+  var btn = action === "pause" ? stopBtn : startBtn
+  if (btn) {
+    btn.disabled = true
+  }
+
+  fetch("/dashboard/ocr-worker/" + action, { method: "POST" })
     .then(function (r) {
       return r.json()
     })

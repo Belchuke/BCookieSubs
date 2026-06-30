@@ -10,6 +10,76 @@ import {
 import { DefaultResponse } from "../types/modelTypes"
 import { userHasPermission } from "./userRepository"
 import { createLog } from "./logRepository"
+import { evaluateRecurrence, parseUtcDate, RecurrenceFields } from "./scheduleRepository"
+import { getLibraryWorkerBridge } from "../tasks/libraryWorkerBridge"
+
+// Per-path scan-frequency settings (Task 7). "hourly" = due every 60 min;
+// "custom" = due inside a schedule-engine recurrence window; "never" = only via
+// manual rescan. The custom-mode fields mirror the global schedule table's
+// recurrence inputs so evaluateRecurrence can drive both.
+export interface LibraryPathScanSchedule {
+  scanMode: "hourly" | "custom" | "never"
+  scanRepeatInterval: number
+  scanRepeatUnit: "day" | "week" | "month"
+  scanDayOfWeek: number
+  scanStartTimeHour: number
+  scanStartTimeMinute: number
+  scanDurationMinutes: number
+  scanFirstStartAt: string | null
+}
+
+const DEFAULT_SCAN_SCHEDULE: LibraryPathScanSchedule = {
+  scanMode: "hourly",
+  scanRepeatInterval: 1,
+  scanRepeatUnit: "day",
+  scanDayOfWeek: 0,
+  scanStartTimeHour: 0,
+  scanStartTimeMinute: 0,
+  scanDurationMinutes: 60,
+  scanFirstStartAt: null,
+}
+
+// Coerce + validate a partial schedule (from the add/edit form) into a full
+// one. Returns { schedule } on success or { msg } on validation failure.
+const normalizeScanSchedule = (
+  input: Partial<LibraryPathScanSchedule> | undefined,
+): { schedule: LibraryPathScanSchedule } | { msg: string } => {
+  const schedule: LibraryPathScanSchedule = { ...DEFAULT_SCAN_SCHEDULE, ...(input ?? {}) }
+
+  if (!["hourly", "custom", "never"].includes(schedule.scanMode)) {
+    return { msg: "Invalid scan mode" }
+  }
+  if (schedule.scanMode === "custom") {
+    if (!Number.isInteger(schedule.scanRepeatInterval) || schedule.scanRepeatInterval < 1) {
+      return { msg: "Repeat interval must be a whole number of at least 1" }
+    }
+    if (!["day", "week", "month"].includes(schedule.scanRepeatUnit)) {
+      return { msg: "Invalid repeat unit" }
+    }
+    if (!Number.isInteger(schedule.scanDayOfWeek) || schedule.scanDayOfWeek < 0 || schedule.scanDayOfWeek > 6) {
+      return { msg: "Day of week is required for weekly/monthly scans" }
+    }
+    if (
+      !Number.isInteger(schedule.scanStartTimeHour) ||
+      schedule.scanStartTimeHour < 0 ||
+      schedule.scanStartTimeHour > 23
+    ) {
+      return { msg: "Start hour must be 0-23" }
+    }
+    if (
+      !Number.isInteger(schedule.scanStartTimeMinute) ||
+      schedule.scanStartTimeMinute < 0 ||
+      schedule.scanStartTimeMinute > 59
+    ) {
+      return { msg: "Start minute must be 0-59" }
+    }
+    if (!Number.isInteger(schedule.scanDurationMinutes) || schedule.scanDurationMinutes < 1) {
+      return { msg: "Duration must be at least 1 minute" }
+    }
+  }
+
+  return { schedule }
+}
 
 export const getLibraryPaths = (db: Database.Database): DBLibraryPath[] => {
   return db.prepare(`SELECT * FROM libraryPath ORDER BY name ASC`).all() as DBLibraryPath[]
@@ -26,15 +96,68 @@ export const getEnabledLibraryPaths = (db: Database.Database): DBLibraryPath[] =
 // Enabled paths that are due for a routine scan: never scanned, last scanned
 // longer ago than intervalMinutes, or manually queued (lastRunAt cleared). Paths
 // already scanning are excluded so an in-progress scan isn't double-started.
-export const getLibraryPathsDueForScan = (db: Database.Database, intervalMinutes: number): DBLibraryPath[] => {
-  return db
-    .prepare(
-      `SELECT * FROM libraryPath
-       WHERE enabled = 1 AND state != 'scanning'
-         AND (lastRunAt IS NULL OR lastRunAt < datetime('now', ?))
-       ORDER BY id ASC`,
-    )
-    .all(`-${intervalMinutes} minutes`) as DBLibraryPath[]
+const HOURLY_INTERVAL_MINUTES = 60
+
+// Library paths due for a scan, honoring each path's per-path scan mode:
+//  - "hourly": due when never scanned or last scanned > 60 min ago.
+//  - "custom": due when inside the configured recurrence window AND not already
+//    scanned this occurrence (lastRunAt before the window's start). A path with
+//    no lastRunAt yet (initial scan or a manual rescan, which clears lastRunAt)
+//    is due immediately regardless of mode so first-time/manual scans aren't
+//    held back by the window.
+//  - "never": never due automatically — only a manual rescan (which nulls
+//    lastRunAt) surfaces it, via the same lastRunAt-IS-NULL clause.
+// The recurrence math is shared with the global schedule engine via
+// evaluateRecurrence so the windowing stays single-sourced.
+export const getLibraryPathsDueForScanByMode = (db: Database.Database): DBLibraryPath[] => {
+  const rows = db
+    .prepare(`SELECT * FROM libraryPath WHERE enabled = 1 AND state != 'scanning' ORDER BY id ASC`)
+    .all() as DBLibraryPath[]
+
+  const now = new Date()
+  const nowMs = now.getTime()
+  const due: DBLibraryPath[] = []
+  for (const lp of rows) {
+    const lastRunAtMs = parseUtcMs(lp.lastRunAt)
+
+    if (lp.lastRunAt === null) {
+      // Never scanned, or a manual rescan cleared it — due immediately in any
+      // mode (covers the initial scan and manual rescans for "never" paths).
+      due.push(lp)
+      continue
+    }
+
+    if (lp.scanMode === "hourly") {
+      if (lastRunAtMs !== null && nowMs - lastRunAtMs >= HOURLY_INTERVAL_MINUTES * 60_000) due.push(lp)
+      continue
+    }
+
+    if (lp.scanMode === "custom") {
+      const fields: RecurrenceFields = {
+        repeatInterval: lp.scanRepeatInterval,
+        repeatUnit: lp.scanRepeatUnit,
+        dayOfTheWeek: lp.scanDayOfWeek,
+        startTimeHour: lp.scanStartTimeHour,
+        startTimeMinute: lp.scanStartTimeMinute,
+        durationMinutes: lp.scanDurationMinutes,
+        firstStartAt: lp.scanFirstStartAt,
+        lastRunAt: lp.lastRunAt,
+      }
+      const { active, occurrenceStartMs } = evaluateRecurrence(fields, now)
+      if (active && occurrenceStartMs !== null && (lastRunAtMs === null || lastRunAtMs < occurrenceStartMs)) {
+        due.push(lp)
+      }
+      continue
+    }
+
+    // "never" (or any unknown mode): not automatically due.
+  }
+  return due
+}
+
+const parseUtcMs = (value: string | null): number | null => {
+  const d = parseUtcDate(value)
+  return d ? d.getTime() : null
 }
 
 // All library paths that have a non-null filesystem path (used to validate that
@@ -96,12 +219,17 @@ export const createLibraryPath = (
   enabled: boolean,
   autoTranslate: boolean,
   autoExtract: boolean,
+  scanSchedule: Partial<LibraryPathScanSchedule> | undefined = undefined,
 ): { libraryPath: DBLibraryPath | null } & DefaultResponse => {
   const { hasPermission } = userHasPermission(db, user.id, "canAddPathForLibraryPaths")
   if (!hasPermission) return { libraryPath: null, success: false, msg: "Permission denied" }
 
   if (!name.trim()) return { libraryPath: null, success: false, msg: "Name is required" }
   if (!path.trim()) return { libraryPath: null, success: false, msg: "Path is required" }
+
+  const normalized = normalizeScanSchedule(scanSchedule)
+  if ("msg" in normalized) return { libraryPath: null, success: false, msg: normalized.msg }
+  const sched = normalized.schedule
 
   const langExists = db.prepare(`SELECT id FROM language WHERE id = ?`).get(sourceLangId)
   if (!langExists) return { libraryPath: null, success: false, msg: "Source language not found" }
@@ -112,12 +240,37 @@ export const createLibraryPath = (
   try {
     const result = db
       .prepare(
-        `INSERT INTO libraryPath (name, path, sourceLangId, type, enabled, autoTranslate, autoExtract) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO libraryPath
+           (name, path, sourceLangId, type, enabled, autoTranslate, autoExtract,
+            scanMode, scanRepeatInterval, scanRepeatUnit, scanDayOfWeek,
+            scanStartTimeHour, scanStartTimeMinute, scanDurationMinutes, scanFirstStartAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(name.trim(), path.trim(), sourceLangId, type, enabled ? 1 : 0, autoTranslate ? 1 : 0, autoExtract ? 1 : 0)
+      .run(
+        name.trim(),
+        path.trim(),
+        sourceLangId,
+        type,
+        enabled ? 1 : 0,
+        autoTranslate ? 1 : 0,
+        autoExtract ? 1 : 0,
+        sched.scanMode,
+        sched.scanRepeatInterval,
+        sched.scanRepeatUnit,
+        sched.scanDayOfWeek,
+        sched.scanStartTimeHour,
+        sched.scanStartTimeMinute,
+        sched.scanDurationMinutes,
+        sched.scanFirstStartAt,
+      )
 
     const lp = getLibraryPathById(db, result.lastInsertRowid as number)
-    createLog(db, "info", "libraryPathCreate", "libraryPath", lp?.id ?? null, "Created library path", { name, path, type })
+    createLog(db, "info", "libraryPathCreate", "libraryPath", lp?.id ?? null, "Created library path", {
+      name,
+      path,
+      type,
+      scanMode: sched.scanMode,
+    })
     return { success: true, msg: null, libraryPath: lp }
   } catch (e: any) {
     if (String(e).includes("UNIQUE")) return { libraryPath: null, success: false, msg: "Path already exists" }
@@ -136,12 +289,17 @@ export const updateLibraryPath = (
   enabled: boolean,
   autoTranslate: boolean,
   autoExtract: boolean,
+  scanSchedule: Partial<LibraryPathScanSchedule> | undefined = undefined,
 ): DefaultResponse => {
   const { hasPermission } = userHasPermission(db, user.id, "canEditLibraryPath")
   if (!hasPermission) return { success: false, msg: "Permission denied" }
 
   if (!name.trim()) return { success: false, msg: "Name is required" }
   if (!path.trim()) return { success: false, msg: "Path is required" }
+
+  const normalized = normalizeScanSchedule(scanSchedule)
+  if ("msg" in normalized) return { success: false, msg: normalized.msg }
+  const sched = normalized.schedule
 
   const langExists = db.prepare(`SELECT id FROM language WHERE id = ?`).get(sourceLangId)
   if (!langExists) return { success: false, msg: "Source language not found" }
@@ -151,10 +309,36 @@ export const updateLibraryPath = (
 
   try {
     db.prepare(
-      `UPDATE libraryPath SET name = ?, path = ?, sourceLangId = ?, type = ?, enabled = ?, autoTranslate = ?, autoExtract = ?, updatedAt = datetime('now') WHERE id = ?`,
-    ).run(name.trim(), path.trim(), sourceLangId, type, enabled ? 1 : 0, autoTranslate ? 1 : 0, autoExtract ? 1 : 0, id)
+      `UPDATE libraryPath
+       SET name = ?, path = ?, sourceLangId = ?, type = ?, enabled = ?, autoTranslate = ?, autoExtract = ?,
+           scanMode = ?, scanRepeatInterval = ?, scanRepeatUnit = ?, scanDayOfWeek = ?,
+           scanStartTimeHour = ?, scanStartTimeMinute = ?, scanDurationMinutes = ?, scanFirstStartAt = ?,
+           updatedAt = datetime('now')
+       WHERE id = ?`,
+    ).run(
+      name.trim(),
+      path.trim(),
+      sourceLangId,
+      type,
+      enabled ? 1 : 0,
+      autoTranslate ? 1 : 0,
+      autoExtract ? 1 : 0,
+      sched.scanMode,
+      sched.scanRepeatInterval,
+      sched.scanRepeatUnit,
+      sched.scanDayOfWeek,
+      sched.scanStartTimeHour,
+      sched.scanStartTimeMinute,
+      sched.scanDurationMinutes,
+      sched.scanFirstStartAt,
+      id,
+    )
 
-    createLog(db, "info", "libraryPathUpdate", "libraryPath", id, "Updated library path", { name, path })
+    createLog(db, "info", "libraryPathUpdate", "libraryPath", id, "Updated library path", {
+      name,
+      path,
+      scanMode: sched.scanMode,
+    })
     return { success: true, msg: null }
   } catch (e: any) {
     if (String(e).includes("UNIQUE")) return { success: false, msg: "Path already exists" }
@@ -185,16 +369,19 @@ export const rescanLibraryPath = (db: Database.Database, user: DBUser, id: numbe
   if (!lp) return { success: false, msg: "Library path not found" }
 
   const previousState = lp.state
-  // Reset to idle and clear lastRunAt so the worker treats it as due on its next
-  // tick (rather than waiting out the routine scan interval).
+  // Reset to idle and clear lastRunAt so the worker treats it as due even if the
+  // wake message below is lost (it would still run on the next tick).
   db.prepare(`UPDATE libraryPath SET state = 'idle', lastRunAt = NULL, updatedAt = datetime('now') WHERE id = ?`).run(id)
+  // Nudge the worker to start now (wakes the interruptible tick) and, if this
+  // path is the one currently scanning, abort it and restart from the beginning.
+  getLibraryWorkerBridge().requestRescan(id)
   createLog(db, "info", "libraryPathRescan", "libraryPath", id, `Rescan requested for library path "${lp.name}"`, {
     name: lp.name,
     previousState,
     requestedByUserId: user.id,
     requestedByUsername: user.username,
   })
-  return { success: true, msg: "Rescan scheduled — the scanner will pick it up shortly" }
+  return { success: true, msg: "Rescan started" }
 }
 
 export const deleteLibraryPath = (db: Database.Database, user: DBUser, id: number): DefaultResponse => {
@@ -267,13 +454,14 @@ export const createLibraryPathItem = (
   status: DBLibraryPathItem["status"],
   season: number | null,
   episode: number | null,
+  isExtra = false,
 ): DBLibraryPathItem | null => {
   try {
     const result = db
       .prepare(
-        `INSERT INTO libraryPathItem (libraryPathId, path, extractFileName, mediaItemId, status, season, episode) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO libraryPathItem (libraryPathId, path, extractFileName, mediaItemId, status, season, episode, isExtra) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(libraryPathId, path, extractFileName, mediaItemId, status, season, episode)
+      .run(libraryPathId, path, extractFileName, mediaItemId, status, season, episode, isExtra ? 1 : 0)
     return getLibraryPathItemById(db, result.lastInsertRowid as number)
   } catch (e: any) {
     if (String(e).includes("UNIQUE")) return null
@@ -390,6 +578,33 @@ export const getLibraryPathsStuckInScanning = (db: Database.Database): DBLibrary
 
 export const setInitialScanCompleted = (db: Database.Database, id: number): void => {
   db.prepare(`UPDATE libraryPath SET initialScanCompleted = 1, updatedAt = datetime('now') WHERE id = ?`).run(id)
+}
+
+// Record how long a scan took, for the per-path "Initial / Avg" display on the
+// Library Paths page. The initial scan (the first one, before
+// initialScanCompleted was set) is stored separately from subsequent scans so
+// the initial pass — which typically indexes everything — doesn't skew the
+// steady-state average. `lastScanDurationMs` always reflects the most recent
+// scan regardless of which bucket it fell into.
+export const recordScanDuration = (db: Database.Database, id: number, durationMs: number, wasInitial: boolean): void => {
+  if (wasInitial) {
+    db.prepare(
+      `UPDATE libraryPath
+       SET initialScanDurationMs = ?,
+           lastScanDurationMs = ?,
+           updatedAt = datetime('now')
+       WHERE id = ?`,
+    ).run(durationMs, durationMs, id)
+  } else {
+    db.prepare(
+      `UPDATE libraryPath
+       SET postInitialScanCount = postInitialScanCount + 1,
+           postInitialScanTotalMs = postInitialScanTotalMs + ?,
+           lastScanDurationMs = ?,
+           updatedAt = datetime('now')
+       WHERE id = ?`,
+    ).run(durationMs, durationMs, id)
+  }
 }
 
 export type LibraryItemSubtitleInfo = {
@@ -642,12 +857,19 @@ const groupItems = (items: EnrichedLibraryPathItem[]): LibraryPathViewGroup[] =>
     }
   })
   groups.sort((a, b) => {
-    // Unmatched group (no mediaItem) floats to the top so it's easy to spot and
-    // act on; matched groups follow, sorted alphabetically by title.
-    if (!a.mediaItem && b.mediaItem) return -1
-    if (a.mediaItem && !b.mediaItem) return 1
-    if (a.mediaItem && b.mediaItem) return a.mediaItem.title.localeCompare(b.mediaItem.title)
-    return 0
+    // "Unmatched" mirrors the frontend definition: a group with no mediaItem, or
+    // whose mediaItem has no theMovieDbId (a half-resolved item that never matched
+    // a real TMDB entry). Unmatched groups float to the top so they're easy to
+    // spot and act on (this is what makes the Series tab match the Movie tab);
+    // matched groups follow, sorted alphabetically by title.
+    const aUnmatched = !a.mediaItem || !a.mediaItem.theMovieDbId
+    const bUnmatched = !b.mediaItem || !b.mediaItem.theMovieDbId
+    if (aUnmatched !== bUnmatched) return aUnmatched ? -1 : 1
+    // Within the same bucket, sort alphabetically by title (a null mediaItem
+    // sorts first via the empty string) so the order is stable and predictable.
+    const aTitle = a.mediaItem?.title ?? ""
+    const bTitle = b.mediaItem?.title ?? ""
+    return aTitle.localeCompare(bTitle)
   })
   return groups
 }

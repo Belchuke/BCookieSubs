@@ -22,6 +22,138 @@ export const getSchedules = (
   }
 }
 
+// Recurrence fields shared by the global `schedule` table rows and the
+// per-library-path scan-frequency settings. Extracted so the windowing math is
+// single-sourced: the schedule engine and the per-path library scanner answer
+// the same question ("is `now` inside this recurrence's active window?") with
+// the same code.
+export interface RecurrenceFields {
+  repeatInterval: number
+  repeatUnit: "day" | "week" | "month"
+  dayOfTheWeek: number
+  startTimeHour: number
+  startTimeMinute: number
+  durationMinutes: number
+  firstStartAt: string | null
+  lastRunAt: string | null
+}
+
+// Parse a stored timestamp as a Date. SQLite's datetime('now')/CURRENT_TIMESTAMP
+// produce "YYYY-MM-DD HH:MM:SS" in UTC, but new Date() parses that naive
+// space-separated form as LOCAL time — shifting the instant by the tz offset
+// and breaking "how long ago / same UTC day" math. Coerce that form to ISO-UTC
+// explicitly. Date-only ("YYYY-MM-DD") and datetime-local ("YYYY-MM-DDTHH:MM")
+// forms keep their existing new Date() semantics (UTC midnight / local).
+export const parseUtcDate = (value: string | null): Date | null => {
+  if (!value) return null
+  const sqliteUtc = /^\d{4}-\d{2}-\d{2}[ ]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
+  const iso = sqliteUtc ? `${value.replace(" ", "T")}Z` : value
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+const utcMidnightMs = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+
+const isSameUtcDay = (a: Date, b: Date) =>
+  a.getUTCFullYear() === b.getUTCFullYear() &&
+  a.getUTCMonth() === b.getUTCMonth() &&
+  a.getUTCDate() === b.getUTCDate()
+
+// Pure, DB-free evaluation of a single recurrence against `now`. Returns:
+//  - `active`: whether `now` is inside an active occurrence window — the day of
+//    week matches, the current UTC time is within [start, start+duration), and
+//    the repeat interval (from the firstStartAt anchor) lands on this
+//    occurrence. This is exactly what the schedule engine needs to decide
+//    "should the worker be running right now".
+//  - `occurrenceStartMs`: the UTC ms of the current occurrence's start (the
+//    window's left edge), or null when no occurrence is scheduled for today/
+//    yesterday. Callers that want "due once per window" (the library scanner)
+//    combine `active` with a `lastRunAt < occurrenceStartMs` check.
+export function evaluateRecurrence(
+  fields: RecurrenceFields,
+  now: Date,
+): { active: boolean; occurrenceStartMs: number | null } {
+  const currentTotalMinutes = now.getUTCHours() * 60 + now.getUTCMinutes()
+
+  const today = (now.getUTCDay() + 6) % 7
+  const yesterday = today === 0 ? 6 : today - 1
+
+  // A non-"day" recurrence whose weekday is "yesterday" is mid-overflow: its
+  // window started yesterday and spills into today's early hours.
+  const treatAsYesterday = fields.repeatUnit !== "day" && fields.dayOfTheWeek === yesterday
+
+  // Day-of-week gate (the "day" unit runs every day).
+  if (fields.repeatUnit !== "day") {
+    if (fields.dayOfTheWeek !== today && fields.dayOfTheWeek !== yesterday) {
+      return { active: false, occurrenceStartMs: null }
+    }
+  }
+
+  const startMinutes = fields.startTimeHour * 60 + fields.startTimeMinute
+  const endMinutes = startMinutes + fields.durationMinutes
+
+  // Occurrence start as a UTC ms timestamp. For treat-as-yesterday overflow the
+  // occurrence began yesterday at startTime; otherwise today at startTime.
+  const target = new Date(now)
+  if (treatAsYesterday) target.setUTCDate(target.getUTCDate() - 1)
+  const occurrenceStartMs = Date.UTC(
+    target.getUTCFullYear(),
+    target.getUTCMonth(),
+    target.getUTCDate(),
+    fields.startTimeHour,
+    fields.startTimeMinute,
+  )
+  const occurrenceEndMs = occurrenceStartMs + fields.durationMinutes * 60_000
+
+  // In-window check via the same UTC-minute arithmetic the schedule engine has
+  // always used (so behavior is byte-for-byte identical). occurrenceStartMs is
+  // returned separately so callers that need "due once per window" can compare
+  // lastRunAt against the window's left edge.
+  let inWindow: boolean
+  if (endMinutes <= 1440) {
+    if (treatAsYesterday) inWindow = false
+    else inWindow = currentTotalMinutes >= startMinutes && currentTotalMinutes < endMinutes
+  } else {
+    const overflowEnd = endMinutes - 1440
+    if (treatAsYesterday) inWindow = currentTotalMinutes < overflowEnd
+    else inWindow = currentTotalMinutes >= startMinutes
+  }
+  void occurrenceEndMs
+
+  if (!inWindow) return { active: false, occurrenceStartMs }
+
+  // Repeat interval from the firstStartAt anchor. If the task already ran this
+  // occurrence's UTC day, the interval is considered satisfied (so the window
+  // stays "active" for its whole duration even after the first run).
+  const anchor = parseUtcDate(fields.firstStartAt)
+  if (!anchor) return { active: false, occurrenceStartMs }
+
+  const lastRunAt = parseUtcDate(fields.lastRunAt)
+  let intervalOk: boolean
+  if (lastRunAt && isSameUtcDay(lastRunAt, target)) {
+    intervalOk = true
+  } else if (fields.repeatUnit === "day") {
+    const diffDays = Math.floor((utcMidnightMs(target) - utcMidnightMs(anchor)) / (24 * 60 * 60 * 1000))
+    intervalOk = diffDays >= 0 && diffDays % fields.repeatInterval === 0
+  } else if (fields.repeatUnit === "week") {
+    const diffDays = Math.floor((utcMidnightMs(target) - utcMidnightMs(anchor)) / (24 * 60 * 60 * 1000))
+    const diffWeeks = Math.floor(diffDays / 7)
+    intervalOk = diffWeeks >= 0 && diffWeeks % fields.repeatInterval === 0
+  } else {
+    // month
+    const diffMonths =
+      (target.getUTCFullYear() - anchor.getUTCFullYear()) * 12 + (target.getUTCMonth() - anchor.getUTCMonth())
+    intervalOk = diffMonths >= 0 && diffMonths % fields.repeatInterval === 0
+  }
+
+  return { active: intervalOk, occurrenceStartMs }
+}
+
+// Convenience wrapper returning just the boolean "is the recurrence active
+// now", for callers that don't need the occurrence start edge.
+export const shouldRunNowByRecurrence = (fields: RecurrenceFields, now: Date): boolean =>
+  evaluateRecurrence(fields, now).active
+
 export const getShouldRunNowBySchedule = (
   db: Database.Database,
   currentScheduleId: number | null = null,
@@ -33,10 +165,6 @@ export const getShouldRunNowBySchedule = (
   }
 
   const now = new Date()
-  const currentHour = now.getUTCHours()
-  const currentMinute = now.getUTCMinutes()
-  const currentTotalMinutes = currentHour * 60 + currentMinute
-
   const today = (now.getUTCDay() + 6) % 7
   const yesterday = today === 0 ? 6 : today - 1
 
@@ -46,82 +174,16 @@ export const getShouldRunNowBySchedule = (
     return { shouldRun: true, scheduleActive: false, scheduleId: null }
   }
 
-  const parseDate = (value: string | null) => {
-    if (!value) return null
-    const d = new Date(value)
-    return Number.isNaN(d.getTime()) ? null : d
-  }
-
-  const getUtcMidnightMs = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
-
-  const isSameUtcDay = (a: Date, b: Date) =>
-    a.getUTCFullYear() === b.getUTCFullYear() &&
-    a.getUTCMonth() === b.getUTCMonth() &&
-    a.getUTCDate() === b.getUTCDate()
-
-  const getStartMinutes = (schedule: DBSchedule) => schedule.startTimeHour * 60 + schedule.startTimeMinute
-
-  const getTargetDate = (treatAsYesterday: boolean) => {
-    const d = new Date(now)
-    if (treatAsYesterday) d.setUTCDate(d.getUTCDate() - 1)
-    return d
-  }
-
-  const isWithinWindow = (schedule: DBSchedule, treatAsYesterday: boolean) => {
-    const startMinutes = getStartMinutes(schedule)
-    const endMinutes = startMinutes + schedule.durationMinutes
-
-    if (endMinutes <= 1440) {
-      if (treatAsYesterday) return false
-      return currentTotalMinutes >= startMinutes && currentTotalMinutes < endMinutes
-    }
-
-    const overflowEnd = endMinutes - 1440
-    if (treatAsYesterday) return currentTotalMinutes < overflowEnd
-    return currentTotalMinutes >= startMinutes
-  }
-
-  const passesRepeatInterval = (schedule: DBSchedule, treatAsYesterday: boolean) => {
-    const anchor = parseDate(schedule.firstStartAt)
-    if (!anchor) return false
-
-    const targetDate = getTargetDate(treatAsYesterday)
-    const lastRunAt = parseDate(schedule.lastRunAt)
-
-    if (lastRunAt && isSameUtcDay(lastRunAt, targetDate)) return true
-
-    if (schedule.repeatUnit === "day") {
-      const diffDays = Math.floor((getUtcMidnightMs(targetDate) - getUtcMidnightMs(anchor)) / (24 * 60 * 60 * 1000))
-      return diffDays >= 0 && diffDays % schedule.repeatInterval === 0
-    }
-
-    if (schedule.repeatUnit === "week") {
-      const diffDays = Math.floor((getUtcMidnightMs(targetDate) - getUtcMidnightMs(anchor)) / (24 * 60 * 60 * 1000))
-      const diffWeeks = Math.floor(diffDays / 7)
-      return diffWeeks >= 0 && diffWeeks % schedule.repeatInterval === 0
-    }
-
-    if (schedule.repeatUnit === "month") {
-      const diffMonths =
-        (targetDate.getUTCFullYear() - anchor.getUTCFullYear()) * 12 + (targetDate.getUTCMonth() - anchor.getUTCMonth())
-      return diffMonths >= 0 && diffMonths % schedule.repeatInterval === 0
-    }
-
-    return false
-  }
-
-  const scheduleMatchesNow = (schedule: DBSchedule) => {
-    const treatAsYesterday = schedule.repeatUnit !== "day" && schedule.dayOfTheWeek === yesterday
-
-    if (schedule.repeatUnit !== "day") {
-      if (schedule.dayOfTheWeek !== today && schedule.dayOfTheWeek !== yesterday) return false
-    }
-
-    if (!isWithinWindow(schedule, treatAsYesterday)) return false
-    if (!passesRepeatInterval(schedule, treatAsYesterday)) return false
-
-    return true
-  }
+  const recurrenceOf = (s: DBSchedule): RecurrenceFields => ({
+    repeatInterval: s.repeatInterval,
+    repeatUnit: s.repeatUnit,
+    dayOfTheWeek: s.dayOfTheWeek,
+    startTimeHour: s.startTimeHour,
+    startTimeMinute: s.startTimeMinute,
+    durationMinutes: s.durationMinutes,
+    firstStartAt: s.firstStartAt,
+    lastRunAt: s.lastRunAt,
+  })
 
   const touchLastRunAt = (scheduleId: number) => {
     db.prepare(`UPDATE schedule SET lastRunAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`).run(
@@ -131,7 +193,7 @@ export const getShouldRunNowBySchedule = (
 
   if (currentScheduleId !== null) {
     const existing = schedules.find((s) => s.id === currentScheduleId)
-    if (existing && scheduleMatchesNow(existing)) {
+    if (existing && evaluateRecurrence(recurrenceOf(existing), now).active) {
       touchLastRunAt(existing.id)
       return { shouldRun: true, scheduleActive: true, scheduleId: existing.id }
     }
@@ -143,19 +205,19 @@ export const getShouldRunNowBySchedule = (
   })
 
   for (const schedule of possibleSchedules.filter((s) => s.repeatUnit === "day")) {
-    if (!scheduleMatchesNow(schedule)) continue
+    if (!evaluateRecurrence(recurrenceOf(schedule), now).active) continue
     touchLastRunAt(schedule.id)
     return { shouldRun: true, scheduleActive: true, scheduleId: schedule.id }
   }
 
   for (const schedule of possibleSchedules.filter((s) => s.repeatUnit !== "day" && s.dayOfTheWeek === yesterday)) {
-    if (!scheduleMatchesNow(schedule)) continue
+    if (!evaluateRecurrence(recurrenceOf(schedule), now).active) continue
     touchLastRunAt(schedule.id)
     return { shouldRun: true, scheduleActive: true, scheduleId: schedule.id }
   }
 
   for (const schedule of possibleSchedules.filter((s) => s.repeatUnit !== "day" && s.dayOfTheWeek === today)) {
-    if (!scheduleMatchesNow(schedule)) continue
+    if (!evaluateRecurrence(recurrenceOf(schedule), now).active) continue
     touchLastRunAt(schedule.id)
     return { shouldRun: true, scheduleActive: true, scheduleId: schedule.id }
   }

@@ -92,6 +92,20 @@
     return I18N[key] != null ? I18N[key] : key
   }
 
+  // Format a millisecond duration as a compact "Xs" / "Xm Ys" / "Xh Ym" string.
+  // Returns null for missing/invalid input so callers can omit the segment.
+  function fmtMs(ms) {
+    if (ms == null || typeof ms !== "number" || !isFinite(ms) || ms < 0) return null
+    var totalSec = Math.round(ms / 1000)
+    if (totalSec < 60) return totalSec + "s"
+    var m = Math.floor(totalSec / 60)
+    var rs = totalSec % 60
+    if (m < 60) return rs ? m + "m " + rs + "s" : m + "m"
+    var h = Math.floor(m / 60)
+    var rm = m % 60
+    return rm ? h + "h " + rm + "m" : h + "h"
+  }
+
   function getAccordionState() {
     try {
       return JSON.parse(localStorage.getItem("lp-accordion-v1") || "{}")
@@ -134,9 +148,13 @@
       se = '<span class="lpx-se-label">S' + pad2(item.season) + "E" + pad2(item.episode) + "</span>"
     }
 
-    // Unmatched items are read-only (no in-app match/blacklist), so they don't
-    // get a per-item bulk-select checkbox — it only existed to drive bulk-match.
-    var isUnmatchedItem = !item.mediaItemId
+    // "Unmatched" uses the same definition as the Library Requests page: an item
+    // is unmatched when it has no mediaItem, or its mediaItem has no theMovieDbId
+    // (a half-resolved item that never matched a real TMDB entry). These can be
+    // re-matched in-app via the "Change match" button, but they are not
+    // blacklisted and get no per-item bulk-select checkbox — it only existed to
+    // drive bulk-match.
+    var isUnmatchedItem = !item.mediaItemId || !(item.mediaItem && item.mediaItem.theMovieDbId)
     var itemCb = ""
 
     var badges =
@@ -169,10 +187,10 @@
           "</button></form>"
       }
     } else {
-      // Unmatched items get no "Change match" / "Blacklist" — they're read-only
-      // (show the file path so the user can fix it on disk and rescan). Matched
-      // items keep the full action set.
-      if (!isUnmatchedItem && PERMS.canChangeMatchForLibraryPaths) {
+      // Every item gets a "Change match" button (matched and unmatched alike) —
+      // unmatched rows can be re-matched in-app from here. Blacklist stays
+      // matched-items-only; the file path is still shown under unmatched rows.
+      if (PERMS.canChangeMatchForLibraryPaths) {
         actions +=
           '<button type="button" class="btn btn-sm btn-secondary lp-item-match-btn" data-item-id="' +
           item.id +
@@ -190,28 +208,6 @@
           item.id +
           '/readd" class="lpx-inline"><button type="submit" class="btn btn-sm btn-secondary">' +
           escHtml(t("readd")) +
-          "</button></form>"
-      } else if (item.status === "no_srts_found") {
-        if (PERMS.canCreateSubtitlesWithWhisper) {
-          actions +=
-            '<button type="button" class="btn btn-sm btn-primary lp-create-subtitle-btn" data-item-id="' +
-            item.id +
-            '">' +
-            escHtml(t("createSubtitle")) +
-            "</button>"
-        }
-      } else if (
-        PERMS.canAddSubtitleToTranslateFromLibrary &&
-        !translationDeleted &&
-        item.status !== "queued" &&
-        item.status !== "completed" &&
-        (item.candidates.length === 0 || item.mediaItemId)
-      ) {
-        actions +=
-          '<form method="POST" action="/library-paths/item/' +
-          item.id +
-          '/translate" class="lpx-inline"><button type="submit" class="btn btn-sm btn-primary">' +
-          escHtml(t("translate")) +
           "</button></form>"
       }
       if (!isUnmatchedItem && PERMS.canBlackListALibraryPathItem) {
@@ -240,7 +236,7 @@
     return (
       '<div data-item-row="' +
       item.id +
-      '" class="lpx-item-row"><div class="lpx-min0"><div class="lpx-row-center">' +
+      '" class="lpx-item-row"><div class="lpx-item-main"><div class="lpx-row-center">' +
       itemCb +
       se +
       '<span class="lpx-filename" title="' +
@@ -334,8 +330,14 @@
         ' lpx-text-dim"></i></div>'
     }
 
+    // "Unmatched" mirrors the Library Requests page: no mediaItem, or a
+    // mediaItem without a theMovieDbId (half-resolved). Computed early so the
+    // title block and the action buttons share one definition.
+    var isUnmatchedGroup =
+      group.mediaItemId == null || !(group.mediaItem && group.mediaItem.theMovieDbId)
+
     var titleBlock
-    if (group.mediaItem) {
+    if (!isUnmatchedGroup) {
       var year = group.mediaItem.year
         ? ' <span class="text-dim lpx-year">(' + escHtml(group.mediaItem.year) + ")</span>"
         : ""
@@ -365,7 +367,6 @@
     // blocked junk matches like TMDB 1054041), so the intent is for the user to
     // fix the file on disk and rescan, not to re-match/blacklist in-app. The
     // file's full path is shown under each filename to help locate it.
-    var isUnmatchedGroup = group.mediaItemId == null
     if (!isUnmatchedGroup && PERMS.canChangeMatchForLibraryPaths) {
       // Manual matching is done from a single modal (no inline list under the
       // group). The button carries the group's full context — item ids, type,
@@ -521,6 +522,19 @@
       " &nbsp;·&nbsp; AutoExtract: " +
       (lp.autoExtract ? "Yes" : "No")
     if (lp.lastRunAt) sourceMeta += " &nbsp;·&nbsp; Last scan: " + escHtml(lp.lastRunAt)
+
+    // Scan frequency + per-path scan durations (initial / average / last).
+    var scanModeLabel =
+      lp.scanMode === "custom" ? t("scanCustom") : lp.scanMode === "never" ? t("scanNever") : t("scanHourly")
+    sourceMeta += " &nbsp;·&nbsp; " + escHtml(t("scanFrequency")) + ": " + escHtml(scanModeLabel)
+    var scanDurParts = []
+    var initDur = fmtMs(lp.initialScanDurationMs)
+    var avgDur = lp.postInitialScanCount > 0 ? fmtMs(lp.postInitialScanTotalMs / lp.postInitialScanCount) : null
+    var lastDur = fmtMs(lp.lastScanDurationMs)
+    if (initDur) scanDurParts.push(escHtml(t("scanInitial")) + ": " + initDur)
+    if (avgDur) scanDurParts.push(escHtml(t("scanAverage")) + ": " + avgDur)
+    if (lastDur) scanDurParts.push(escHtml(t("scanLast")) + ": " + lastDur)
+    if (scanDurParts.length) sourceMeta += " &nbsp;·&nbsp; " + scanDurParts.join(" &nbsp;·&nbsp; ")
 
     var cardOpen = getAccordionState()["lp-" + lp.id] === true ? " open" : ""
 
@@ -730,7 +744,6 @@
   }
 
   function renderPaths(type, paths) {
-    _activeTab = type
     var st = S(type)
     st.paths = paths
     var root = tabRoot(type)
@@ -964,6 +977,97 @@
   }
 
   // ── edit modal ─────────────────────────────────────────────────────────
+  // ── scan-frequency (Task 7) ───────────────────────────────────────────
+  // Day-of-week values 0..6 = Mon..Sun, matching the recurrence engine's
+  // (getUTCDay()+6)%7 mapping so a weekly custom scan fires on the right day.
+  var LP_SCAN_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+  function buildScanCustomFields(v) {
+    v = v || {}
+    var html = ""
+    html += '<div class="field-row"><div class="field"><label>' + escHtml(t("schedEvery")) + "</label>"
+    html +=
+      '<input type="number" name="scanRepeatInterval" value="' +
+      (v.scanRepeatInterval || 1) +
+      '" min="1" required></div>'
+    html += '<div class="field"><label>' + escHtml(t("schedUnit")) + '</label><select name="scanRepeatUnit">'
+    html +=
+      '<option value="day"' +
+      (v.scanRepeatUnit === "day" ? " selected" : "") +
+      ">" +
+      escHtml(t("schedUnitDay")) +
+      "</option>"
+    html +=
+      '<option value="week"' +
+      (v.scanRepeatUnit === "week" ? " selected" : "") +
+      ">" +
+      escHtml(t("schedUnitWeek")) +
+      "</option>"
+    html +=
+      '<option value="month"' +
+      (v.scanRepeatUnit === "month" ? " selected" : "") +
+      ">" +
+      escHtml(t("schedUnitMonth")) +
+      "</option>"
+    html += "</select></div></div>"
+    html += '<div class="field-row"><div class="field"><label>' + escHtml(t("schedDayOfWeek")) + '</label><select name="scanDayOfWeek">'
+    LP_SCAN_DAYS.forEach(function (d, i) {
+      html +=
+        '<option value="' + i + '"' + (String(v.scanDayOfWeek) === String(i) ? " selected" : "") + ">" + d + "</option>"
+    })
+    html += '</select></div>'
+    html +=
+      '<div class="field"><label>' +
+      escHtml(t("schedHour")) +
+      '</label><input type="number" name="scanStartTimeHour" value="' +
+      (v.scanStartTimeHour || 0) +
+      '" min="0" max="23" required></div>'
+    html +=
+      '<div class="field"><label>' +
+      escHtml(t("schedMinute")) +
+      '</label><input type="number" name="scanStartTimeMinute" value="' +
+      (v.scanStartTimeMinute || 0) +
+      '" min="0" max="59" required></div></div>'
+    html +=
+      '<div class="field"><label>' +
+      escHtml(t("schedDuration")) +
+      '</label><input type="number" name="scanDurationMinutes" value="' +
+      (v.scanDurationMinutes || 60) +
+      '" min="1" required></div>'
+    html +=
+      '<div class="field"><label>' +
+      escHtml(t("schedFirstStartDate")) +
+      '</label><input type="date" name="scanFirstStartAt" value="' +
+      (v.scanFirstStartAt ? String(v.scanFirstStartAt).slice(0, 10) : "") +
+      '"></div>'
+    return html
+  }
+
+  // Show/hide the custom-schedule block and the "never" hint based on the
+  // selected scanMode radio within the add ("add") or edit ("edit") modal.
+  function lpApplyScanMode(prefix) {
+    var mode = "hourly"
+    document
+      .querySelectorAll('input[name="scanMode"][data-scan-mode="' + prefix + '"]')
+      .forEach(function (r) {
+        if (r.checked) mode = r.value
+      })
+    var custom = document.getElementById(prefix + "-scan-custom")
+    if (custom) custom.style.display = mode === "custom" ? "" : "none"
+    var modal = document.getElementById(prefix + "-modal")
+    var hint = modal ? modal.querySelector(".lpx-scan-never-hint") : null
+    if (hint) hint.style.display = mode === "never" ? "" : "none"
+  }
+
+  // Toggle the custom block whenever a scan-mode radio changes (covers both
+  // the static add-modal radios and the edit-modal radios).
+  document.addEventListener("change", function (e) {
+    var target = e.target
+    if (target && target.name === "scanMode" && target.dataset && target.dataset.scanMode) {
+      lpApplyScanMode(target.dataset.scanMode)
+    }
+  })
+
   function openEditModal(lp) {
     var form = document.getElementById("edit-form")
     form.action = "/library-paths/update/" + lp.id
@@ -977,6 +1081,17 @@
     // has it on would silently preserve it. Saving always sends autoTranslate=0.
     document.getElementById("edit-autoTranslate").checked = false
     document.getElementById("edit-autoExtract").checked = !!lp.autoExtract
+
+    // Scan frequency: populate the custom block from the path's saved schedule,
+    // select the matching mode radio, then show/hide the custom block.
+    document.getElementById("edit-scan-custom").innerHTML = buildScanCustomFields(lp)
+    var mode = lp.scanMode || "hourly"
+    var radio = document.querySelector(
+      'input[name="scanMode"][data-scan-mode="edit"][value="' + mode + '"]',
+    )
+    if (radio) radio.checked = true
+    lpApplyScanMode("edit")
+
     closeDirBrowser()
     openModal("edit-modal")
   }
@@ -1211,47 +1326,6 @@
       setTimeout(function () {
         searchEl.focus()
       }, 50)
-      return
-    }
-
-    // per-item "Create subtitle" (Whisper)
-    var createSubBtn = e.target.closest(".lp-create-subtitle-btn")
-    if (createSubBtn) {
-      var csItemId = createSubBtn.dataset.itemId
-      createSubBtn.disabled = true
-      var prevText = createSubBtn.textContent
-      createSubBtn.textContent = "…"
-      fetch("/library-requests/item/" + csItemId + "/create-whisper-subtitle", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      })
-        .then(function (r) {
-          if (redirectIfUnauthorized(r)) return null
-          return r.json()
-        })
-        .then(function (data) {
-          if (!data) return
-          showLpToast(data.success ? "success" : "error", data.msg || (data.success ? "Queued" : "Failed"))
-          if (data.success) {
-            var badge = createSubBtn.closest("[data-item-row]")
-            if (badge) {
-              var st = badge.querySelector("[data-item-status]")
-              if (st) {
-                st.className = "badge badge-warning"
-                st.textContent = "queued"
-              }
-            }
-            createSubBtn.remove()
-          } else {
-            createSubBtn.disabled = false
-            createSubBtn.textContent = prevText
-          }
-        })
-        .catch(function () {
-          createSubBtn.disabled = false
-          createSubBtn.textContent = prevText
-          showLpToast("error", "Request failed")
-        })
       return
     }
 
@@ -1814,7 +1888,12 @@
     // reflect initial tab in the shell before load
     window.lpSwitchTab(initialTab)
   } else {
-    loadTab("movie")
+    loadTab("movie").then(function () {
+      // Preload the Series tab in the background once Movies are rendered, so
+      // switching to Series is instant. loadTab's _loadedTabs guard means a
+      // user click on Series before this fires won't trigger a second fetch.
+      loadTab("series")
+    })
   }
 
   // Self-scheduling poll: wait LP_POLL_INTERVAL, run a poll, then once that

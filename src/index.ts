@@ -8,8 +8,11 @@ import { getDb } from "./setup"
 import { syncSecretsFromEnv } from "./repositories/movieDbRepository"
 import { cleanupExtractTempDir } from "./services/libraryPathService"
 import { cleanupWhisperTempDir } from "./services/whisperService"
+import { getLibraryWorkerBridge } from "./tasks/libraryWorkerBridge"
 import { getTranslateWorkerBridge } from "./tasks/translateWorkerBridge"
 import { getWhisperWorkerBridge } from "./tasks/whisperWorkerBridge"
+import { getTranslatePrepWorkerBridge } from "./tasks/translatePrepWorkerBridge"
+import { getOcrWorkerBridge } from "./tasks/ocrWorkerBridge"
 import { loadSession } from "./middleware/auth"
 import { requireInternalToken } from "./middleware/internalAuth"
 import { authRouter } from "./routes/auth"
@@ -119,6 +122,8 @@ export function stopOllamaServe() {
 let translateWorker: Worker | null = null
 let libraryWorker: Worker | null = null
 let whisperWorker: Worker | null = null
+let translatePrepWorker: Worker | null = null
+let ocrWorker: Worker | null = null
 let shuttingDown = false
 
 // Bounded respawn for the translate worker: max 3 restarts within 10 min so a
@@ -131,6 +136,9 @@ const translateRespawns: number[] = []
 const WHISPER_RESPAWN_MAX = 3
 const WHISPER_RESPAWN_WINDOW_MS = 10 * 60 * 1000
 const whisperRespawns: number[] = []
+const OCR_RESPAWN_MAX = 3
+const OCR_RESPAWN_WINDOW_MS = 10 * 60 * 1000
+const ocrRespawns: number[] = []
 
 function workerScriptPath(name: string): string {
   // __dirname is dist/ after tsc, so this resolves to dist/tasks/<name>.js
@@ -167,6 +175,7 @@ function spawnTranslateWorker(): Worker {
 function spawnLibraryWorker(): Worker {
   const w = new Worker(workerScriptPath("libraryScannerWorker"))
   libraryWorker = w
+  getLibraryWorkerBridge().setWorker(w)
   w.on("error", (err) => console.error("[library-scanner-worker] error:", err))
   w.on("exit", (code) => {
     console.log(`[library-scanner-worker] exited (code=${code})`)
@@ -206,6 +215,58 @@ function spawnWhisperWorker(): Worker {
   return w
 }
 
+// Dedicated worker for the per-item Translate / re-add / season-batch flows.
+// It runs PGS/VobSub OCR + embedded-track extraction off the Express event
+// loop so a long OCR no longer freezes every browser's polling. Idempotent and
+// request/reply, so it respawns freely like the scanner worker.
+function spawnTranslatePrepWorker(): Worker {
+  const w = new Worker(workerScriptPath("translatePrepWorker"))
+  translatePrepWorker = w
+  getTranslatePrepWorkerBridge().setWorker(w)
+  w.on("error", (err) => console.error("[translate-prep-worker] error:", err))
+  w.on("exit", (code) => {
+    console.log(`[translate-prep-worker] exited (code=${code})`)
+    translatePrepWorker = null
+    if (shuttingDown) return
+    console.log(`[translate-prep-worker] restarting in 5s…`)
+    setTimeout(() => {
+      if (!shuttingDown) spawnTranslatePrepWorker()
+    }, 5000)
+  })
+  return w
+}
+
+// Dedicated worker for the background OCR queue. Picks the next image-based
+// subtitle source from libraryPathOcrJob and runs extract+OCR+createSubtitleTask
+// off the Express event loop, so the Library Requests page no longer blocks on a
+// modal while Tesseract runs. Idempotent and queue-driven, so it respawns freely
+// like the scanner worker (with a bounded backoff to match whisper).
+function spawnOcrWorker(): Worker {
+  const w = new Worker(workerScriptPath("ocrWorker"))
+  ocrWorker = w
+  getOcrWorkerBridge().setWorker(w)
+  w.on("error", (err) => console.error("[ocr-worker] error:", err))
+  w.on("exit", (code) => {
+    console.log(`[ocr-worker] exited (code=${code})`)
+    ocrWorker = null
+    if (shuttingDown) return
+    const now = Date.now()
+    while (ocrRespawns.length && now - ocrRespawns[0] > OCR_RESPAWN_WINDOW_MS) {
+      ocrRespawns.shift()
+    }
+    if (ocrRespawns.length >= OCR_RESPAWN_MAX) {
+      console.error("[ocr-worker] max restarts reached in 10 min — giving up; restart the process to resume")
+      return
+    }
+    ocrRespawns.push(now)
+    console.log(`[ocr-worker] restarting in 5s…`)
+    setTimeout(() => {
+      if (!shuttingDown) spawnOcrWorker()
+    }, 5000)
+  })
+  return w
+}
+
 async function shutdown(): Promise<void> {
   if (shuttingDown) return
   shuttingDown = true
@@ -224,11 +285,15 @@ async function shutdown(): Promise<void> {
   if (translateWorker) translateWorker.postMessage({ type: "shutdown" })
   if (libraryWorker) libraryWorker.postMessage({ type: "shutdown" })
   if (whisperWorker) whisperWorker.postMessage({ type: "shutdown" })
+  if (translatePrepWorker) translatePrepWorker.postMessage({ type: "shutdown" })
+  if (ocrWorker) ocrWorker.postMessage({ type: "shutdown" })
   await Promise.race([
     Promise.all([
       translateWorker ? translateWorker.terminate() : Promise.resolve(),
       libraryWorker ? libraryWorker.terminate() : Promise.resolve(),
       whisperWorker ? whisperWorker.terminate() : Promise.resolve(),
+      translatePrepWorker ? translatePrepWorker.terminate() : Promise.resolve(),
+      ocrWorker ? ocrWorker.terminate() : Promise.resolve(),
     ]),
     new Promise((r) => setTimeout(r, 5000)),
   ])
@@ -316,4 +381,6 @@ setTimeout(() => {
   spawnTranslateWorker()
   spawnLibraryWorker()
   spawnWhisperWorker()
+  spawnTranslatePrepWorker()
+  spawnOcrWorker()
 }, STARTUP_DELAY_MS)

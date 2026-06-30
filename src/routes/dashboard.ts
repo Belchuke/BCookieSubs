@@ -13,6 +13,14 @@ import { requirePermission } from "../services/permissionService"
 import { NameFormatterResult } from "../types/modelTypes"
 import { getTranslateWorkerBridge } from "../tasks/translateWorkerBridge"
 import { getWhisperWorkerBridge } from "../tasks/whisperWorkerBridge"
+import { getOcrWorkerBridge } from "../tasks/ocrWorkerBridge"
+import {
+  deleteOcrJob,
+  getOcrJobsForDashboard,
+  moveOcrJob,
+  reorderOcrJobs,
+  retryOcrJob,
+} from "../repositories/ocrJobRepository"
 import { addCreditToSubtitle } from "../services/subtitleExportService"
 
 const upload = multer({ storage: multer.memoryStorage() })
@@ -39,6 +47,7 @@ export function dashboardRouter(db: Database.Database) {
       workerPaused: getTranslateWorkerBridge().isWorkerPaused(),
       whisperSeparate: config.whisperRunAsSeparateTask === 1,
       whisperWorkerPaused: getWhisperWorkerBridge().isWorkerPaused(),
+      ocrWorkerPaused: getOcrWorkerBridge().isWorkerPaused(),
       showPosters: config.showPosters && user.showPosters !== 0,
       toast: req.query.toast ?? null,
       msg: req.query.msg ?? null,
@@ -59,6 +68,8 @@ export function dashboardRouter(db: Database.Database) {
         workerPaused: getTranslateWorkerBridge().isWorkerPaused(),
         whisperSeparate: config.whisperRunAsSeparateTask === 1,
         whisperWorkerPaused: getWhisperWorkerBridge().isWorkerPaused(),
+        ocrJobs: getOcrJobsForDashboard(db),
+        ocrWorkerPaused: getOcrWorkerBridge().isWorkerPaused(),
       })
     } catch (e) {
       res.status(500).json({ error: String(e) })
@@ -101,6 +112,54 @@ export function dashboardRouter(db: Database.Database) {
     } catch (e) {
       res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) })
     }
+  })
+
+  // OCR worker pause/resume — independent of the translation + whisper workers.
+  router.post("/ocr-worker/pause", requireAuth, requirePermission("canManageWorker"), async (_req, res) => {
+    try {
+      await getOcrWorkerBridge().pauseWorker(res.locals.user!.username)
+      res.json({ success: true, workerPaused: getOcrWorkerBridge().isWorkerPaused() })
+    } catch (e) {
+      res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) })
+    }
+  })
+
+  router.post("/ocr-worker/resume", requireAuth, requirePermission("canManageWorker"), async (_req, res) => {
+    try {
+      await getOcrWorkerBridge().resumeWorker(res.locals.user!.username)
+      res.json({ success: true, workerPaused: getOcrWorkerBridge().isWorkerPaused() })
+    } catch (e) {
+      res.status(500).json({ success: false, error: e instanceof Error ? e.message : String(e) })
+    }
+  })
+
+  // OCR-queue reordering + delete/retry. Mirrors the whisper-queue controls.
+  router.post("/ocr/move-up/:id", requireAuth, requirePermission("canChangeSubtitlePriority"), (req, res) => {
+    moveOcrJob(db, parseInt(String(req.params.id)), "up")
+    res.redirect("/dashboard")
+  })
+
+  router.post("/ocr/move-down/:id", requireAuth, requirePermission("canChangeSubtitlePriority"), (req, res) => {
+    moveOcrJob(db, parseInt(String(req.params.id)), "down")
+    res.redirect("/dashboard")
+  })
+
+  router.post("/ocr/reorder", requireAuth, requirePermission("canChangeSubtitlePriority"), (req, res) => {
+    const { orderedIds } = req.body as { orderedIds: unknown }
+    if (!Array.isArray(orderedIds)) return res.status(400).json({ success: false, msg: "Invalid payload" })
+    const ids = (orderedIds as unknown[]).map(Number).filter((n) => !isNaN(n))
+    reorderOcrJobs(db, ids)
+    res.json({ success: true })
+  })
+
+  router.post("/ocr/delete/:id", requireAuth, requirePermission("canChangeSubtitlePriority"), (req, res) => {
+    deleteOcrJob(db, parseInt(String(req.params.id)))
+    res.redirect("/dashboard?toast=success&msg=" + encodeURIComponent("OCR job removed"))
+  })
+
+  router.post("/ocr/retry/:id", requireAuth, requirePermission("canChangeSubtitlePriority"), (req, res) => {
+    retryOcrJob(db, parseInt(String(req.params.id)))
+    res.redirect("/dashboard?toast=success&msg=" + encodeURIComponent("OCR job re-queued"))
   })
 
         

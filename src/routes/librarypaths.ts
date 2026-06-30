@@ -7,11 +7,7 @@ import { requireAuth } from "../middleware/auth"
 import { requireAnyPermission, requirePermission } from "../services/permissionService"
 import { getConfig } from "../repositories/configRepository"
 import {
-  getConfigTranslationLanguages,
-  getLanguageById,
-  getLanguageByIso,
   getLanguages,
-  getUserConfigTranslationLanguages,
 } from "../repositories/languageRepository"
 import {
   blacklistLibraryPathItem,
@@ -20,7 +16,6 @@ import {
   getBlacklistedItems,
   getLibraryPathById,
   getLibraryPathItemById,
-  isLibraryPathItemBlacklisted,
   rescanLibraryPath,
   toggleLibraryPath,
   unblacklistLibraryPathItem,
@@ -31,15 +26,40 @@ import {
   getActiveLibraryPathItemStatusesByType,
   getLibraryPathItemsByIds,
   getLibraryPathsByType,
+  LibraryPathScanSchedule,
 } from "../repositories/libraryPathRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
-import { autoTranslateItem, findCompanionSrt } from "../services/libraryPathService"
-import { isSubtitleExtension } from "../services/subtitleFormatDetector"
 import { searchMediaItemInTheMovieDb } from "../repositories/movieDbRepository"
-import { createMediaItem, getMediaItemPhotoPath, updateMediaItemPhotoPath } from "../repositories/mediaRepository"
-import { getHighestRoleUser } from "../repositories/userRepository"
+import { createMediaItem, getMediaItemById, getMediaItemPhotoPath, updateMediaItemPhotoPath } from "../repositories/mediaRepository"
+import { enqueueOcrJob } from "../repositories/ocrJobRepository"
+import { getTranslatePrepWorkerBridge } from "../tasks/translatePrepWorkerBridge"
 
 const upload = multer()
+
+// Parse the per-path scan-frequency fields from the add/edit form body. Only
+// the custom-mode numeric/window fields are validated here; the repo applies
+// defaults for anything omitted (so the "hourly"/"never" radios submit nothing
+// for the custom block and still produce a valid schedule).
+function parseScanScheduleFromBody(body: Record<string, string>): Partial<LibraryPathScanSchedule> {
+  const scanMode = body.scanMode as "hourly" | "custom" | "never" | undefined
+  const schedule: Partial<LibraryPathScanSchedule> = {}
+  if (scanMode) schedule.scanMode = scanMode
+  if (scanMode === "custom") {
+    const ri = parseInt(body.scanRepeatInterval)
+    if (Number.isFinite(ri)) schedule.scanRepeatInterval = ri
+    if (body.scanRepeatUnit) schedule.scanRepeatUnit = body.scanRepeatUnit as "day" | "week" | "month"
+    const dow = parseInt(body.scanDayOfWeek)
+    if (Number.isFinite(dow)) schedule.scanDayOfWeek = dow
+    const sh = parseInt(body.scanStartTimeHour)
+    if (Number.isFinite(sh)) schedule.scanStartTimeHour = sh
+    const sm = parseInt(body.scanStartTimeMinute)
+    if (Number.isFinite(sm)) schedule.scanStartTimeMinute = sm
+    const dur = parseInt(body.scanDurationMinutes)
+    if (Number.isFinite(dur)) schedule.scanDurationMinutes = dur
+    schedule.scanFirstStartAt = body.scanFirstStartAt ? body.scanFirstStartAt : null
+  }
+  return schedule
+}
 
 function isPathInsideRoot(candidatePath: string, rootPath: string): boolean {
   const resolved = path.resolve(candidatePath)
@@ -126,6 +146,23 @@ export function libraryPathsRouter(db: Database.Database) {
       when: __("common.when"),
       blacklistReason: __("librarypaths.blacklistReason"),
       actions: __("common.actions"),
+      scanFrequency: __("librarypaths.scanFrequency"),
+      scanHourly: __("librarypaths.scanHourly"),
+      scanCustom: __("librarypaths.scanCustom"),
+      scanNever: __("librarypaths.scanNever"),
+      scanInitial: __("librarypaths.scanInitial"),
+      scanAverage: __("librarypaths.scanAverage"),
+      scanLast: __("librarypaths.scanLast"),
+      schedEvery: __("schedules.repeatEvery"),
+      schedUnit: __("schedules.unit"),
+      schedUnitDay: __("schedules.unitDay"),
+      schedUnitWeek: __("schedules.unitWeek"),
+      schedUnitMonth: __("schedules.unitMonth"),
+      schedDayOfWeek: __("schedules.dayOfWeek"),
+      schedHour: __("schedules.hour"),
+      schedMinute: __("schedules.minute"),
+      schedDuration: __("schedules.duration"),
+      schedFirstStartDate: __("schedules.firstStartDate"),
     }
     const perms = {
       canEditLibraryPath: can("canEditLibraryPath"),
@@ -202,6 +239,7 @@ export function libraryPathsRouter(db: Database.Database) {
       enabled === "1",
       autoTranslate === "1",
       autoExtract === "1",
+      parseScanScheduleFromBody(req.body as Record<string, string>),
     )
 
     if (!result.success) {
@@ -245,6 +283,7 @@ export function libraryPathsRouter(db: Database.Database) {
       enabled === "1",
       autoTranslate === "1",
       autoExtract === "1",
+      parseScanScheduleFromBody(req.body as Record<string, string>),
     )
 
     if (!result.success) {
@@ -451,98 +490,23 @@ export function libraryPathsRouter(db: Database.Database) {
     res.redirect("/library-paths?toast=success&msg=" + encodeURIComponent("Match selected"))
   })
 
-  async function queueTranslationForItem(
-    itemId: number,
-    resetStatus: boolean,
-    user: any,
-    sourceOverride?: { type: string; path: string; language: string; codec: string } | null,
-    sourceLanguageHint?: string | null,
-  ): Promise<{ success: boolean; msg: string }> {
-    const item = getLibraryPathItemById(db, itemId)
-    if (!item) return { success: false, msg: "Item not found" }
-
-    if (isLibraryPathItemBlacklisted(db, itemId)) {
-      return { success: false, msg: "Item is blacklisted — remove it from the blacklist first" }
-    }
-
-    const libraryPath = getLibraryPathById(db, item.libraryPathId)
-    if (!libraryPath) return { success: false, msg: "Library path not found" }
-
-    if (resetStatus) updateLibraryPathItemStatus(db, itemId, "not_started")
-
-    let srtSource: { path: string; isTemp: boolean } | null = null
-    if (isSubtitleExtension(item.path)) {
-      srtSource = { path: item.path, isTemp: false }
-    } else if (sourceOverride && sourceOverride.path) {
-      // Use the user-selected source (embedded or external)
-      if (sourceOverride.type === "external" && fs.existsSync(sourceOverride.path)) {
-        srtSource = { path: sourceOverride.path, isTemp: false }
-      } else if (sourceOverride.type === "embedded") {
-        // Re-extract from the media file (since embedded temp files are per-scan)
-        const sourceLang = getLanguageById(db, libraryPath.sourceLangId)
-        srtSource = sourceLang
-          ? findCompanionSrt(item.path, sourceLang.iso639, sourceLang.iso6392b ?? null, sourceLang.name ?? "")
-          : null
-        // If language-specific track was chosen, try to find the specific track
-        if (srtSource && sourceOverride.language) {
-          // Use a more specific extraction if a particular language was chosen
-          // (findCompanionSrt already prefers matching tracks)
-        }
-      } else {
-        const sourceLang = getLanguageById(db, libraryPath.sourceLangId)
-        srtSource = sourceLang
-          ? findCompanionSrt(item.path, sourceLang.iso639, sourceLang.iso6392b ?? null, sourceLang.name ?? "")
-          : null
-      }
-    } else {
-      const sourceLang = getLanguageById(db, libraryPath.sourceLangId)
-      srtSource = sourceLang
-        ? findCompanionSrt(item.path, sourceLang.iso639, sourceLang.iso6392b ?? null, sourceLang.name ?? "")
-        : null
-    }
-
-    if (!srtSource) return { success: false, msg: "No SRT file found next to video file" }
-
-    const adminUser = getHighestRoleUser(db)
-    if (!adminUser) return { success: false, msg: "No admin user found" }
-
-    const config = getConfig(db)
-
-    const userTargetLangs = getUserConfigTranslationLanguages(db, user.id)
-    const targetLangIds =
-      userTargetLangs.length > 0
-        ? userTargetLangs.map((tl) => tl.languageId)
-        : getConfigTranslationLanguages(db).map((cl) => cl.languageId)
-
-    // If the user picked a specific subtitle track (or we guessed a language from
-    // the subtitle filename), use that as the translation source language instead
-    // of the library path default.
-    const sourceLangCode = (sourceOverride && sourceOverride.language) || sourceLanguageHint || ""
-    const sourceLangIdOverride: number | null = sourceLangCode
-      ? getLanguageByIso(db, sourceLangCode)?.id ?? null
-      : null
-
-    try {
-      return await autoTranslateItem(
-        db,
-        adminUser,
-        libraryPath,
-        itemId,
-        srtSource,
-        item.mediaItemId,
-        item.season,
-        item.episode,
-        config.defaultChunkSize,
-        targetLangIds,
-        sourceLangIdOverride,
-      )
-    } catch {
-      return { success: false, msg: "Failed to queue translation" }
-    }
-  }
-
+  // Per-item Translate + re-add both run via the translate-prep worker so the
+  // PGS/VobSub OCR + embedded-track extraction happen off the Express event
+  // loop (previously this blocked Node and froze every browser's polling while
+  // a PGS subtitle was being OCR'd). The bridge awaits the worker's reply; the
+  // main thread stays free in the meantime.
   router.post("/item/:itemId/translate", upload.none(), async (req, res) => {
-    const body = req.body as { sourceType?: string; sourcePath?: string; sourceLanguage?: string; sourceCodec?: string }
+    const body = req.body as {
+      sourceType?: string
+      sourcePath?: string
+      sourceLanguage?: string
+      sourceCodec?: string
+      sourceTrackId?: string
+      ocrLang?: string
+      fps?: string
+      imageBased?: string
+    }
+    const itemId = parseInt(String(req.params.itemId))
     const sourceOverride =
       body && body.sourcePath
         ? {
@@ -550,12 +514,41 @@ export function libraryPathsRouter(db: Database.Database) {
             path: body.sourcePath || "",
             language: body.sourceLanguage || "",
             codec: body.sourceCodec || "",
+            trackId: body.sourceTrackId ? parseInt(body.sourceTrackId) : null,
+            ocrLang: body.ocrLang || null,
+            fps: body.fps ? parseFloat(body.fps) : null,
+            imageBased: body.imageBased === "1" || body.imageBased === "true",
           }
         : null
-    const result = await queueTranslationForItem(
-      parseInt(String(req.params.itemId)),
+
+    // Image-based sources (PGS/VobSub) go to the background OCR queue so the
+    // source picker modal doesn't block on the ~1 min Tesseract pass — the
+    // request returns immediately and the OCR worker processes it. Text sources
+    // stay synchronous (sub-second).
+    if (sourceOverride?.imageBased) {
+      const item = getLibraryPathItemById(db, itemId)
+      const name = item
+        ? (item.mediaItemId != null
+            ? getMediaItemById(db, item.mediaItemId)?.title ?? path.basename(item.path)
+            : path.basename(item.path))
+        : `item ${itemId}`
+      enqueueOcrJob(db, {
+        libraryPathItemId: itemId,
+        userId: res.locals.user!.id,
+        name,
+        sourceOverride,
+        sourceLanguageHint: body.sourceLanguage || null,
+        resetStatus: false,
+      })
+      const result = { success: true, msg: "Added to OCR queue", ocrQueued: true }
+      if (req.query.json === "1") return res.json(result)
+      return res.redirect("/library-paths?toast=success&msg=" + encodeURIComponent(result.msg))
+    }
+
+    const result = await getTranslatePrepWorkerBridge().translateItem(
+      itemId,
       false,
-      res.locals.user!,
+      res.locals.user!.id,
       sourceOverride,
       body.sourceLanguage || null,
     )
@@ -565,7 +558,11 @@ export function libraryPathsRouter(db: Database.Database) {
   })
 
   router.post("/item/:itemId/readd", upload.none(), async (req, res) => {
-    const result = await queueTranslationForItem(parseInt(String(req.params.itemId)), true, res.locals.user!)
+    const result = await getTranslatePrepWorkerBridge().translateItem(
+      parseInt(String(req.params.itemId)),
+      true,
+      res.locals.user!.id,
+    )
     if (req.query.json === "1") return res.json(result)
     if (!result.success) return res.redirect("/library-paths?toast=error&msg=" + encodeURIComponent(result.msg))
     res.redirect("/library-paths?toast=success&msg=" + encodeURIComponent(result.msg))

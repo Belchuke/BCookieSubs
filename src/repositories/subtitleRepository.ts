@@ -671,6 +671,10 @@ export const createSubtitleTask = (
   sourcePath: string | null = null,
   mediaPath: string | null = null,
   libraryPathItemId: number | null = null,
+  // Provenance for .sub-derived subtitles: textOrigin = "ocr" | "parsed",
+  // originalSourceFormat = "sub". null for normal srt/ass/ssa/whisper sources.
+  textOrigin: string | null = null,
+  originalSourceFormat: string | null = null,
 ): DefaultResponse => {
   const permission = userHasPermission(db, user.id, "canAddSubtitleToTranslateDashboard")
   if (!permission.hasPermission) return { success: false, msg: "Permission denied" }
@@ -764,7 +768,7 @@ export const createSubtitleTask = (
   const transaction = db.transaction(() => {
     const subtitleResult = db
       .prepare(
-        `INSERT INTO subtitle (userId, sourceLangId, mediaItemId, libraryPathItem, name, originalFileHash, originalTextSRTName, originalText, sourceFormat, orderNumber, source, sourcePath, mediaPath) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO subtitle (userId, sourceLangId, mediaItemId, libraryPathItem, name, originalFileHash, originalTextSRTName, originalText, sourceFormat, orderNumber, source, sourcePath, mediaPath, textOrigin, originalSourceFormat) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         user.id,
@@ -780,6 +784,8 @@ export const createSubtitleTask = (
         source,
         sourcePath,
         mediaPath,
+        textOrigin,
+        originalSourceFormat,
       )
 
     const subtitleId = subtitleResult.lastInsertRowid as number

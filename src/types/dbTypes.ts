@@ -279,6 +279,10 @@ export type DBSubtitle = {
   originalTextSRTName: string
   originalText: string
   sourceFormat: SubtitleFormat
+  // Provenance for .sub/.sup-derived subtitles: textOrigin = "ocr"|"parsed",
+  // originalSourceFormat = "sub"|"sup". null for normal srt/ass/ssa/whisper sources.
+  textOrigin: "ocr" | "parsed" | null
+  originalSourceFormat: "sub" | "sup" | null
   orderNumber: number
   whisperOrderNumber: number | null
   hide: boolean
@@ -404,6 +408,18 @@ export type DBLibraryPath = {
   state: "idle" | "scanning" | "error"
   type: "movie" | "series"
   initialScanCompleted: boolean
+  scanMode: "hourly" | "custom" | "never"
+  scanRepeatInterval: number
+  scanRepeatUnit: "day" | "week" | "month"
+  scanDayOfWeek: number
+  scanStartTimeHour: number
+  scanStartTimeMinute: number
+  scanDurationMinutes: number
+  scanFirstStartAt: string | null
+  initialScanDurationMs: number | null
+  postInitialScanCount: number
+  postInitialScanTotalMs: number
+  lastScanDurationMs: number | null
   createdAt: string
   updatedAt: string
 }
@@ -415,6 +431,7 @@ export type DBLibraryPathItem = {
   status: "not_started" | "queued" | "no_srts_found" | "completed" | "failed" | "no_media_item"
   season: number | null
   episode: number | null
+  isExtra: boolean
   path: string
   extractFileName: string
   createdAt: string

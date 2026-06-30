@@ -84,6 +84,7 @@
     </div>
     <div class="modal-footer">
       <button type="button" class="btn btn-secondary" onclick="closeModal('subtitle-source-modal')"><%= __('common.cancel') %></button>
+      <button type="button" id="lr-queue-selected" class="btn btn-primary" style="display:none"></button>
     </div>
   </div>
 </div>
@@ -102,6 +103,41 @@
     <div class="modal-footer">
       <button type="button" class="btn btn-secondary" onclick="closeModal('season-translate-modal')"><%= __('common.cancel') %></button>
       <button type="button" class="btn btn-primary" id="season-translate-confirm"><%= __('libraryrequests.translate') %></button>
+    </div>
+  </div>
+</div>
+
+<%# ── Change-match modal (unmatched items) ──────────────────────────────── %>
+<div class="modal-overlay" id="lr-match-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h2><%= __('libraryrequests.changeMatch') %> — <span id="lr-match-name"></span></h2>
+      <button class="btn btn-icon" onclick="closeModal('lr-match-modal')">✕</button>
+    </div>
+    <p class="text-dim lrx-source-hint"><%= __('libraryrequests.changeMatchItemHint') %></p>
+    <div class="field">
+      <input type="search" id="lr-match-search" placeholder="<%= __('libraryrequests.searchMatchPlaceholder') %>" autocomplete="off">
+    </div>
+    <div id="lr-match-results" class="lp-tmdb-results lpx-mt-25"></div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="closeModal('lr-match-modal')"><%= __('common.cancel') %></button>
+    </div>
+  </div>
+</div>
+
+<%# ── Extras picker (create subtitles for the movie or a named extra) ────── %>
+<div class="modal-overlay" id="lr-extras-picker" onclick="closeModalOnOverlay(event)">
+  <div class="modal lrx-source-modal">
+    <div class="modal-header">
+      <h2><%= __('libraryrequests.chooseTarget') %></h2>
+      <button class="btn btn-icon" onclick="closeModal('lr-extras-picker')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="text-dim lrx-source-hint"><%= __('libraryrequests.createSubtitle') %></p>
+      <div id="lr-extras-picker-list" class="lrx-source-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="closeModal('lr-extras-picker')"><%= __('common.cancel') %></button>
     </div>
   </div>
 </div>

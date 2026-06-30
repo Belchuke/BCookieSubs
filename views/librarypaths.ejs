@@ -181,6 +181,57 @@
         <input type="checkbox" id="add-autoExtract" name="autoExtract" value="1">
         <label for="add-autoExtract"><%= __('librarypaths.autoExport') %></label>
       </div>
+      <div class="field">
+        <label><%= __('librarypaths.scanFrequency') %></label>
+        <div class="lpx-scan-radios">
+          <label class="lpx-radio"><input type="radio" name="scanMode" value="hourly" checked data-scan-mode="add"><%= __('librarypaths.scanHourly') %></label>
+          <label class="lpx-radio"><input type="radio" name="scanMode" value="custom" data-scan-mode="add"><%= __('librarypaths.scanCustom') %></label>
+          <label class="lpx-radio"><input type="radio" name="scanMode" value="never" data-scan-mode="add"><%= __('librarypaths.scanNever') %></label>
+        </div>
+        <p class="text-dim lpx-scan-never-hint" style="display:none"><%= __('librarypaths.scanNeverHint') %></p>
+      </div>
+      <div id="add-scan-custom" class="lpx-scan-custom" style="display:none">
+        <div class="field-row">
+          <div class="field">
+            <label><%= __('schedules.repeatEvery') %></label>
+            <input type="number" name="scanRepeatInterval" value="1" min="1" required>
+          </div>
+          <div class="field">
+            <label><%= __('schedules.unit') %></label>
+            <select name="scanRepeatUnit">
+              <option value="day"><%= __('schedules.unitDay') %></option>
+              <option value="week"><%= __('schedules.unitWeek') %></option>
+              <option value="month"><%= __('schedules.unitMonth') %></option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label><%= __('schedules.dayOfWeek') %></label>
+            <select name="scanDayOfWeek">
+              <% ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach(function(d,i){ %>
+                <option value="<%= i %>"><%= d %></option>
+              <% }) %>
+            </select>
+          </div>
+          <div class="field">
+            <label><%= __('schedules.hour') %></label>
+            <input type="number" name="scanStartTimeHour" value="0" min="0" max="23" required>
+          </div>
+          <div class="field">
+            <label><%= __('schedules.minute') %></label>
+            <input type="number" name="scanStartTimeMinute" value="0" min="0" max="59" required>
+          </div>
+        </div>
+        <div class="field">
+          <label><%= __('schedules.duration') %></label>
+          <input type="number" name="scanDurationMinutes" value="60" min="1" required>
+        </div>
+        <div class="field">
+          <label><%= __('schedules.firstStartDate') %></label>
+          <input type="date" name="scanFirstStartAt">
+        </div>
+      </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')"><%= __('common.cancel') %></button>
         <button type="submit" class="btn btn-primary"><%= __('librarypaths.addPathBtn') %></button>
@@ -236,6 +287,16 @@
         <input type="checkbox" id="edit-autoExtract" name="autoExtract" value="1">
         <label for="edit-autoExtract"><%= __('librarypaths.autoExport') %></label>
       </div>
+      <div class="field">
+        <label><%= __('librarypaths.scanFrequency') %></label>
+        <div class="lpx-scan-radios">
+          <label class="lpx-radio"><input type="radio" name="scanMode" value="hourly" data-scan-mode="edit"><%= __('librarypaths.scanHourly') %></label>
+          <label class="lpx-radio"><input type="radio" name="scanMode" value="custom" data-scan-mode="edit"><%= __('librarypaths.scanCustom') %></label>
+          <label class="lpx-radio"><input type="radio" name="scanMode" value="never" data-scan-mode="edit"><%= __('librarypaths.scanNever') %></label>
+        </div>
+        <p class="text-dim lpx-scan-never-hint" style="display:none"><%= __('librarypaths.scanNeverHint') %></p>
+      </div>
+      <div id="edit-scan-custom" class="lpx-scan-custom" style="display:none"></div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="closeModal('edit-modal')"><%= __('common.cancel') %></button>
         <button type="submit" class="btn btn-primary"><%= __('common.save') %></button>

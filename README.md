@@ -56,6 +56,8 @@ Optional:
 - An **Anthropic** key from <https://console.anthropic.com> if you want to use Claude.
 - An **NVIDIA GPU** with the [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) installed if you want to run local Ollama models with GPU acceleration.
 
+> **Note on `.sub` (VobSub) OCR:** image-based `.sub` + `.idx` subtitles are OCR'd to text with Tesseract before translation. Tesseract and the common language packs (`eng`, `dan`, `tha`, `jpn`, `deu`, `fra`, `spa`) are already installed inside the Docker image, so this works out of the box. To OCR other languages, add the matching `tesseract-ocr-<lang>` package in the `Dockerfile` and rebuild. If you run the app natively on macOS instead of in Docker, install Tesseract with `brew install tesseract tesseract-lang`.
+
 ---
 
 ## Setup
@@ -121,11 +123,9 @@ Planning to rewrite the entire codebase to use **Bun** instead of Node.js for fa
 
 ### Additional subtitle format support
 
-Currently only `.srt` files are supported since it was the easiest format to replicate. Planning to add:
+Currently `.srt`, `.ass` / `.ssa`, and text / image-based `.sub` (MicroDVD, SubViewer, and VobSub `.idx` — the last OCR'd via Tesseract) are supported. Planning to add:
 
-- `.ass` / `.ssa` (Advanced SubStation Alpha)
-- `.sup` (Blu-ray subtitles)
-- `.idx` (VobSub)
+- `.sup` (Blu-ray PGS subtitles — surfaced as unsupported for now; OCR pipeline not yet wired)
 - Other common subtitle formats
 
 ### Manual subtitle creation

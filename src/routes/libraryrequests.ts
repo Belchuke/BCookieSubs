@@ -1,5 +1,6 @@
 import { Router } from "express"
 import Database from "better-sqlite3"
+import * as fs from "fs"
 import * as path from "path"
 import { requireAuth } from "../middleware/auth"
 import { requirePermission } from "../services/permissionService"
@@ -14,13 +15,13 @@ import {
   updateLibraryPathItemMediaItem,
 } from "../repositories/libraryPathRepository"
 import {
-  getConfigTranslationLanguages,
   getLanguageById,
   getLanguages,
   getUserConfigTranslationLanguages,
 } from "../repositories/languageRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
 import { createMediaItem, getMediaItemById } from "../repositories/mediaRepository"
+import { searchMediaItemInTheMovieDb } from "../repositories/movieDbRepository"
 import {
   addMissingTargetLanguageJobs,
   getActiveSubtitleForLibraryPathItem,
@@ -32,14 +33,16 @@ import {
   getJobLangStatusBySubtitle,
   getJobLangStatusBySubtitles,
 } from "../repositories/subtitleRepository"
-import { getHighestRoleUser } from "../repositories/userRepository"
+import { getItemSubtitleSources } from "../repositories/subtitleSourceCacheRepository"
+import { enqueueOcrJob } from "../repositories/ocrJobRepository"
 import {
-  findCompanionSrt,
   listSubtitleSourcesForVideo,
   isVideoFile,
+  type SubtitleSourceCandidate,
+  type TranslateSourceOverride,
 } from "../services/libraryPathService"
-import { autoTranslateItem } from "../services/libraryPathService"
 import { isSubtitleExtension } from "../services/subtitleFormatDetector"
+import { getTranslatePrepWorkerBridge } from "../tasks/translatePrepWorkerBridge"
 
 type RequestGroupItem = {
   itemId: number
@@ -54,6 +57,13 @@ type RequestGroupItem = {
   whisperStatus: string | null
   isVideo: boolean
   hasSrt: boolean
+  // Extras only: a display title (filename without extension) and whether the
+  // extra has an embedded subtitle track (gates the per-extra Translate button).
+  title?: string
+  hasEmbedded?: boolean
+  // True when the item's previous subtitle was soft-deleted — the episode is
+  // re-shown so it can be re-translated. The UI badges it "Deleted — re-add".
+  subtitleDeleted?: boolean
 }
 
 type RequestGroup = {
@@ -64,9 +74,27 @@ type RequestGroup = {
   posterPath: string | null
   type: "movie" | "series" | "unmatched"
   items: RequestGroupItem[]
+  // Movie "extras" (Featurettes/*.mkv attached to the movie as isExtra) render
+  // as sub-rows under the movie card. Each carries the same shape as a regular
+  // item plus a title/hasEmbedded.
+  extras?: RequestGroupItem[]
   // Full filesystem path of the file, surfaced for unmatched items so the user
   // can locate it on disk and fix/rename it (unmatched items are read-only here).
   filePath?: string | null
+}
+
+// Display name for an OCR queue entry: mediaItem title (+ S##E## for episodes),
+// falling back to the file basename.
+function ocrJobDisplayName(
+  db: Database.Database,
+  item: { path: string; mediaItemId: number | null; season: number | null; episode: number | null },
+): string {
+  const base =
+    item.mediaItemId != null ? getMediaItemById(db, item.mediaItemId)?.title ?? path.basename(item.path) : path.basename(item.path)
+  if (item.season != null && item.episode != null) {
+    return `${base} S${String(item.season).padStart(2, "0")}E${String(item.episode).padStart(2, "0")}`
+  }
+  return base
 }
 
 export function libraryRequestsRouter(db: Database.Database) {
@@ -98,38 +126,100 @@ export function libraryRequestsRouter(db: Database.Database) {
     const enriched = enrichItems(db, getLibraryPathItemsForPaths(db, pathIds))
     const { jobStatusBySub, whisperByItem } = loadBatchedMaps(enriched)
 
+    // Source language per library path — needed to probe embedded subtitle tracks
+    // for movie extras (hasEmbedded gates the per-extra Translate button).
+    const langByPathId = new Map<number, { iso639: string; iso6392b: string | null; name: string }>()
+    for (const lp of libraryPaths) {
+      const lang = getLanguageById(db, lp.sourceLangId)
+      if (lang) langByPathId.set(lp.id, { iso639: lang.iso639, iso6392b: lang.iso6392b ?? null, name: lang.name })
+    }
+
+    // Groups are keyed by mediaItem id. A movie group is created on the first
+    // regular item OR the first extra that still needs work — so a movie whose
+    // own file is fully translated but has extras needing work still shows up
+    // (with just the Extras sub-rows).
     const groupsMap = new Map<string, RequestGroup>()
+    const ensureGroup = (item: any): RequestGroup => {
+      const key = String(item.mediaItem.id)
+      let g = groupsMap.get(key)
+      if (!g) {
+        g = {
+          key,
+          title: item.mediaItem.title ?? item.path.split("/").pop() ?? "Untitled",
+          year: item.mediaItem.year ?? null,
+          genres: item.mediaItem.genres ?? null,
+          posterPath: item.mediaItem.mediaItemPhotoPath ?? null,
+          type,
+          items: [],
+        }
+        groupsMap.set(key, g)
+      }
+      return g
+    }
+
     for (const item of enriched) {
       if (!isMatched(item)) continue // unmatched — handled by buildUnmatchedGroups
-      const gi = itemToGroupItem(item, jobStatusBySub, whisperByItem, userTargetLangIds)
+      const gi = itemToGroupItem(item, jobStatusBySub, whisperByItem, userTargetLangIds, type)
+      // Movie "extras" (Featurettes/*.mkv attached with isExtra=1) render as
+      // sub-rows under the movie card instead of as regular translatable items.
+      const isExtraItem = !!item.isExtra && type === "movie"
       if (!gi) continue
-      const key = String(item.mediaItem.id)
-      const existing = groupsMap.get(key)
-      if (existing) {
-        existing.items.push(gi)
-        existing.items.sort((a, b) => {
+      if (isExtraItem) {
+        const g = ensureGroup(item)
+        g.extras = g.extras ?? []
+        g.extras.push({
+          ...gi,
+          title: path.basename(item.path, path.extname(item.path)),
+          hasEmbedded: extraHasEmbedded(item, langByPathId),
+        })
+      } else {
+        const g = ensureGroup(item)
+        g.items.push(gi)
+        g.items.sort((a, b) => {
           if (a.season != null && b.season != null) {
             if (a.season !== b.season) return a.season - b.season
             return (a.episode ?? 0) - (b.episode ?? 0)
           }
           return a.fileName.localeCompare(b.fileName)
         })
-        continue
       }
-      groupsMap.set(key, {
-        key,
-        title: item.mediaItem.title ?? item.path.split("/").pop() ?? "Untitled",
-        year: item.mediaItem.year ?? null,
-        genres: item.mediaItem.genres ?? null,
-        posterPath: item.mediaItem.mediaItemPhotoPath ?? null,
-        type,
-        items: [gi],
-      })
     }
 
-    const allGroups = Array.from(groupsMap.values())
+    // Drop groups with nothing left to show (a fully-translated movie with no
+    // extras needing work). Everything else keeps current sort behaviour.
+    const allGroups: RequestGroup[] = []
+    for (const g of groupsMap.values()) {
+      if (g.items.length === 0 && (!g.extras || g.extras.length === 0)) continue
+      allGroups.push(g)
+    }
     allGroups.sort((a, b) => a.title.localeCompare(b.title))
     return allGroups
+  }
+
+  // Gate the per-extra Translate button on whether the extra's video has an
+  // embedded subtitle track (extras are embedded-only — they rarely carry a
+  // sidecar .srt). Reads the scan-time source cache first so the request page
+  // doesn't re-probe every extra on every load; falls back to a cheap, count-less
+  // live probe only when there's no cache. Best-effort: a probe failure hides the
+  // button.
+  function extraHasEmbedded(
+    item: any,
+    langByPathId: Map<number, { iso639: string; iso6392b: string | null; name: string }>,
+  ): boolean {
+    const cached = getItemSubtitleSources(db, item.id)
+    if (cached) {
+      return cached.sources.some((s: any) => s.type === "embedded")
+    }
+    const lang = langByPathId.get(item.libraryPathId)
+    if (!lang) return false
+    try {
+      const sources = listSubtitleSourcesForVideo(item.path, lang.iso639, lang.iso6392b, lang.name, {
+        withPictureCounts: false,
+      })
+      return sources.some((s: any) => s.type === "embedded")
+    } catch {
+      return false
+    }
   }
 
   // Unmatched items (no linked media item) across every enabled library path,
@@ -188,6 +278,7 @@ export function libraryRequestsRouter(db: Database.Database) {
     jobStatusBySub: Map<number, { targetLangId: number; status: string }[]>,
     whisperByItem: Map<number, any>,
     userTargetLangIds: number[],
+    type?: "movie" | "series",
   ): RequestGroupItem | null {
     if (item.blacklist) return null
     const whisperStatus = whisperByItem.get(item.id)?.whisperTranscriptionStatus ?? null
@@ -208,8 +299,14 @@ export function libraryRequestsRouter(db: Database.Database) {
           : userTargetLangIds.filter((id) => !finishedLangIds.has(id))
       const allCompleted =
         userTargetLangIds.length > 0 && userTargetLangIds.every((id) => finishedLangIds.has(id))
-      if (allCompleted) return null
-      if (missingTargetLangIds.length === 0 && !hasActiveJobs) return null
+      // For series episodes, keep the row listed even when this subtitle's
+      // translations are all complete (or nothing is pending) so the user can
+      // add a SECOND subtitle track (e.g. a Signs/Songs track alongside the
+      // Dialogue track) without first deleting the existing one. Movies and
+      // unmatched items keep the original hide-when-done behaviour.
+      const keepForSeries = type === "series"
+      if (allCompleted && !keepForSeries) return null
+      if (missingTargetLangIds.length === 0 && !hasActiveJobs && !keepForSeries) return null
       return makeGroupItem(
         item,
         item.subtitleInfo.subtitleId,
@@ -217,6 +314,17 @@ export function libraryRequestsRouter(db: Database.Database) {
         hasActiveJobs,
         whisperStatus,
       )
+    }
+
+    // A soft-deleted subtitle means the item's previous translation was removed
+    // but the file is still on disk — surface it again under its season so the
+    // user can re-translate (which creates a fresh subtitle; nothing blocks
+    // re-creation since getSubtitleByFileHash / getActiveSubtitleForLibraryPathItem
+    // ignore deletedAt rows). Flag it so the UI can badge it as "Deleted — re-add".
+    if (item.subtitleInfo && item.subtitleInfo.deleted) {
+      const groupItem = makeGroupItem(item, null, userTargetLangIds, false, whisperStatus)
+      groupItem.subtitleDeleted = true
+      return groupItem
     }
     return null
   }
@@ -280,6 +388,27 @@ export function libraryRequestsRouter(db: Database.Database) {
       cancel: __("common.cancel"),
       loading: __("common.loading") ?? "Loading…",
       noEpisodes: __("libraryrequests.noTracksWhisper"),
+      // Change-match (unmatched items) + extras picker
+      changeMatch: __("libraryrequests.changeMatch"),
+      changeMatchItemHint: __("libraryrequests.changeMatchItemHint"),
+      searchMatchPlaceholder: __("libraryrequests.searchMatchPlaceholder"),
+      noMatchesFound: __("libraryrequests.noMatchesFound"),
+      loadingMatches: __("libraryrequests.loadingMatches"),
+      extras: __("libraryrequests.extras"),
+      extraLabel: __("libraryrequests.extraLabel"),
+      chooseTarget: __("libraryrequests.chooseTarget"),
+      theMovie: __("libraryrequests.theMovie"),
+      // .sub / VobSub OCR source-picker text
+      imageBasedBadge: __("libraryrequests.imageBasedBadge"),
+      picturesCount: __("libraryrequests.picturesCount"),
+      translating: __("libraryrequests.translating"),
+      deletedReadd: __("libraryrequests.deletedReadd"),
+      queueSelected: __("libraryrequests.queueSelected"),
+      selectedCount: __("libraryrequests.selectedCount"),
+      queueSelectedNone: __("libraryrequests.queueSelectedNone"),
+      unsupportedSubtitle: __("libraryrequests.unsupportedSubtitle"),
+      unsupportedShort: __("libraryrequests.unsupportedShort"),
+      microdvdFps: __("libraryrequests.microdvdFps"),
       whisperStatus: {
         queued_for_transcription: __("libraryrequests.whisperStatus.queued_for_transcription"),
         transcribing: __("libraryrequests.whisperStatus.transcribing"),
@@ -292,6 +421,7 @@ export function libraryRequestsRouter(db: Database.Database) {
     const perms = {
       canAddSubtitleToTranslateFromLibrary: can("canAddSubtitleToTranslateFromLibrary"),
       canCreateSubtitlesWithWhisper: can("canCreateSubtitlesWithWhisper"),
+      canChangeMatchForLibraryPaths: can("canChangeMatchForLibraryPaths"),
     }
 
     res.render("libraryrequests", {
@@ -348,7 +478,7 @@ export function libraryRequestsRouter(db: Database.Database) {
   })
 
   // Returns available subtitle sources for a library path item
-  router.get("/item/:itemId/subtitle-sources", (req, res) => {
+  router.get("/item/:itemId/subtitle-sources", async (req, res) => {
     const itemId = parseInt(String(req.params.itemId))
     const item = getLibraryPathItemById(db, itemId)
     if (!item) return res.json({ success: false, msg: "Item not found", sources: [] })
@@ -364,12 +494,43 @@ export function libraryRequestsRouter(db: Database.Database) {
       return res.json({ success: true, sources: [], message: "Standalone subtitle — no source selection needed" })
     }
 
-    const sources = listSubtitleSourcesForVideo(
-      item.path,
-      sourceLang.iso639,
-      sourceLang.iso6392b ?? null,
-      sourceLang.name,
-    )
+    // Read from the scan-time source cache first — the library scanner pre-computes
+    // each item's subtitle sources (with picture counts) so the picker opens
+    // instantly without re-probing/extracting the media file. The cache is keyed
+    // by file mtime+size; if the media changed (or there's no cache yet) fall back
+    // to the translate-prep worker, which recomputes and rewrites the cache.
+    let sources: SubtitleSourceCandidate[]
+    const cached = getItemSubtitleSources(db, itemId)
+    const fresh =
+      cached &&
+      fs.existsSync(item.path) &&
+      (() => {
+        try {
+          const st = fs.statSync(item.path)
+          return cached.fileMtimeMs === Math.floor(st.mtimeMs) && cached.fileSize === st.size
+        } catch {
+          return false
+        }
+      })()
+    if (fresh && cached) {
+      sources = cached.sources as SubtitleSourceCandidate[]
+    } else {
+      // Computing real picture counts for embedded image tracks runs a mkvextract
+      // pass + parse — offloaded to the translate-prep worker so it doesn't block
+      // the event loop. The worker also upserts the cache. Falls back to a sync,
+      // count-less list if the worker is unavailable.
+      sources =
+        (await getTranslatePrepWorkerBridge().listSubtitleSources(
+          itemId,
+          item.path,
+          sourceLang.iso639,
+          sourceLang.iso6392b ?? null,
+          sourceLang.name,
+        )) ??
+        listSubtitleSourcesForVideo(item.path, sourceLang.iso639, sourceLang.iso6392b ?? null, sourceLang.name, {
+          withPictureCounts: false,
+        })
+    }
     res.json({ success: true, sources })
   })
 
@@ -504,6 +665,74 @@ export function libraryRequestsRouter(db: Database.Database) {
     },
   )
 
+  // Search TheMovieDB for a single library path item (used by the Change-match
+  // modal on unmatched items). The media type comes from the item's library
+  // path, so a movie/series unmatched file searches the right TMDB endpoint.
+  router.get("/item/:itemId/search-tmdb", async (req, res) => {
+    const q = String(req.query.q || "").trim()
+    const itemId = parseInt(String(req.params.itemId))
+    if (!q) return res.json({ items: [], success: true })
+
+    const item = getLibraryPathItemById(db, itemId)
+    if (!item) return res.json({ items: [], success: false, msg: "Item not found" })
+
+    const libraryPath = getLibraryPathById(db, item.libraryPathId)
+    const type: "movie" | "series" = libraryPath?.type === "movie" ? "movie" : "series"
+
+    try {
+      const result = await searchMediaItemInTheMovieDb(db, q, type, null)
+      const items = result.items.map((i) => ({ ...i, posterBase64: null }))
+      return res.json({ ...result, items })
+    } catch {
+      return res.json({ items: [], success: false, msg: "Search failed" })
+    }
+  })
+
+  // Apply a TMDB selection to a single library path item (Change-match on an
+  // unmatched item). Creates/links a real mediaItem with a theMovieDbId so the
+  // item graduates from the Unmatched tab to the Movies/Series tab.
+  router.post(
+    "/item/:itemId/match",
+    requirePermission("canChangeMatchForLibraryPaths"),
+    async (req, res) => {
+      const user = res.locals.user!
+      const itemId = parseInt(String(req.params.itemId))
+      const { title, originalTitle, year, isAnime, genres, theMovieDbId, posterUrl, type } = req.body as Record<
+        string,
+        string
+      >
+
+      if (!title) return res.json({ success: false, msg: "Title is required" })
+
+      const item = getLibraryPathItemById(db, itemId)
+      if (!item) return res.json({ success: false, msg: "Item not found" })
+
+      const libraryPath = getLibraryPathById(db, item.libraryPathId)
+      const mediaType = (type || (libraryPath?.type === "movie" ? "movie" : "series")) as "movie" | "series"
+
+      const parsedYear = parseInt(year) || null
+      const result = await createMediaItem(
+        db,
+        user,
+        title,
+        originalTitle || null,
+        mediaType,
+        parsedYear,
+        isAnime === "1",
+        genres || null,
+        theMovieDbId || null,
+        posterUrl || null,
+      )
+
+      if (!result.success || !result.mediaItem) {
+        return res.json({ success: false, msg: result.msg ?? "Failed to create media item" })
+      }
+
+      updateLibraryPathItemMediaItem(db, itemId, result.mediaItem.id)
+      return res.json({ success: true, msg: "Match selected", mediaItemId: result.mediaItem.id })
+    },
+  )
+
   // Translate season: queue translation for all eligible episodes in a season
   router.post("/season/:libraryPathId/translate", async (req, res) => {
     const libraryPathId = parseInt(String(req.params.libraryPathId))
@@ -534,16 +763,12 @@ export function libraryRequestsRouter(db: Database.Database) {
       return res.redirect("/library-requests?toast=error&msg=" + encodeURIComponent("Source language not found"))
     }
 
-    const userTargetLangs = getUserConfigTranslationLanguages(db, user.id)
-    const userTargetLangIds = userTargetLangs.map((tl) => tl.languageId)
-    const targetLangIds =
-      userTargetLangs.length > 0
-        ? userTargetLangs.map((tl) => tl.languageId)
-        : getConfigTranslationLanguages(db).map((cl) => cl.languageId)
+    const userTargetLangIds = getUserConfigTranslationLanguages(db, user.id).map((tl) => tl.languageId)
 
     let queued = 0
     let skipped = 0
     const failedMessages: string[] = []
+    const batchItems: { itemId: number }[] = []
 
     for (const item of items) {
       // If the item already has a subtitle with completed jobs for the user's languages, skip
@@ -557,52 +782,105 @@ export function libraryRequestsRouter(db: Database.Database) {
           continue
         }
       }
+      batchItems.push({ itemId: item.id })
+    }
 
-      // Resolve subtitle source: standalone subtitle files are used directly;
-      // video files need a companion or embedded track extracted.
-      let srtSource: { path: string; isTemp: boolean } | null = null
-      if (isSubtitleExtension(item.path)) {
-        srtSource = { path: item.path, isTemp: false }
-      } else {
-        srtSource = findCompanionSrt(
-          item.path,
-          sourceLang.iso639,
-          sourceLang.iso6392b ?? null,
-          sourceLang.name,
-        )
-      }
-      if (!srtSource) {
-        failedMessages.push(path.basename(item.path))
+    // Enqueue every chosen episode to the background OCR queue. The OCR worker
+    // runs each item's source resolution (findCompanionSrt / embedded-track
+    // extraction) + any PGS/VobSub OCR off-thread and creates the translation
+    // jobs on success — so a season of image subtitles no longer blocks the
+    // request (and the season modal). Text-source episodes pass through quickly
+    // (no OCR); image-source episodes do the ~1 min Tesseract pass in the queue.
+    // No sourceOverride here: each item uses its default source.
+    for (const bi of batchItems) {
+      const item = getLibraryPathItemById(db, bi.itemId)
+      if (!item) continue
+      enqueueOcrJob(db, {
+        libraryPathItemId: bi.itemId,
+        userId: user.id,
+        name: ocrJobDisplayName(db, item),
+        sourceOverride: null,
+        sourceLanguageHint: null,
+        resetStatus: false,
+      })
+      queued++
+    }
+
+    const msg = `Queued ${queued} episode(s) for OCR, skipped ${skipped} (already done)`
+    if (req.query.json === "1") return res.json({ success: true, msg, queued, skipped, ocrQueued: queued, failed: failedMessages })
+    res.redirect("/library-requests?toast=success&msg=" + encodeURIComponent(msg))
+  })
+
+  // Queue one or more (item, chosen source) pairs for translation. Used by the
+  // source picker's "Queue selected" action so a user can add several subtitle
+  // tracks for a movie/series (e.g. both the Dialogue and Signs/Songs tracks) in
+  // a single request. Each item carries an optional sourceOverride identifying
+  // the exact track/external file; the translate-prep worker resolves + OCRs
+  // each off-thread via translateBatch (which already accepts per-item
+  // sourceOverride). Mirrors the season-batch response shape.
+  router.post("/items/translate-batch", async (req, res) => {
+    const user = res.locals.user!
+    const rawItems = (req.body as { items?: any[] }).items
+    if (!Array.isArray(rawItems) || rawItems.length === 0) {
+      return res.json({ success: false, msg: "No items provided", queued: 0, failed: [] })
+    }
+
+    const batchItems: {
+      itemId: number
+      sourceOverride?: TranslateSourceOverride | null
+      sourceLanguageHint?: string | null
+    }[] = []
+    const fileNameByItemId = new Map<number, string>()
+    let ocrQueued = 0
+    for (const it of rawItems) {
+      const itemId = parseInt(String(it.itemId))
+      if (isNaN(itemId) || itemId <= 0) continue
+      const item = getLibraryPathItemById(db, itemId)
+      if (!item) continue
+      const so = it.sourceOverride
+      const override = so && typeof so === "object" ? (so as TranslateSourceOverride) : null
+      const sourceLanguageHint = so && typeof so === "object" && so.language ? String(so.language) : null
+
+      // Image-based sources (PGS/VobSub) go to the background OCR queue so the
+      // picker modal doesn't block on the ~1 min Tesseract pass. Text sources
+      // stay synchronous — they're sub-second.
+      if (override?.imageBased) {
+        enqueueOcrJob(db, {
+          libraryPathItemId: itemId,
+          userId: user.id,
+          name: ocrJobDisplayName(db, item),
+          sourceOverride: override,
+          sourceLanguageHint,
+          resetStatus: false,
+        })
+        ocrQueued++
         continue
       }
 
-      // Find admin user
-      const adminUser = getHighestRoleUser(db)
-      if (!adminUser) {
-        if (req.query.json === "1") return res.json({ success: false, msg: "No admin user found" })
-        return res.redirect("/library-requests?toast=error&msg=" + encodeURIComponent("No admin user found"))
-      }
-
-      const config = getConfig(db)
-      const result = await autoTranslateItem(
-        db,
-        adminUser,
-        lp,
-        item.id,
-        srtSource,
-        item.mediaItemId,
-        item.season,
-        item.episode,
-        config.defaultChunkSize,
-        targetLangIds,
-      )
-      if (result.success) queued++
-      else failedMessages.push(path.basename(item.path) + " (" + (result.msg || "?") + ")")
+      batchItems.push({ itemId, sourceOverride: override, sourceLanguageHint })
+      fileNameByItemId.set(itemId, path.basename(item.path))
     }
 
-    const msg = `Queued ${queued} episode(s), skipped ${skipped} (already done)${failedMessages.length > 0 ? `, failed ${failedMessages.length}` : ""}`
-    if (req.query.json === "1") return res.json({ success: true, msg, queued, skipped, failed: failedMessages })
-    res.redirect("/library-requests?toast=success&msg=" + encodeURIComponent(msg))
+    if (batchItems.length === 0 && ocrQueued === 0) {
+      return res.json({ success: false, msg: "No valid items", queued: 0, ocrQueued: 0, failed: [] })
+    }
+
+    // Text-source items resolve synchronously (fast); OCR items were enqueued
+    // above and will be processed by the OCR worker.
+    let queued = 0
+    const failed: string[] = []
+    if (batchItems.length > 0) {
+      const results = await getTranslatePrepWorkerBridge().translateBatch(batchItems, user.id)
+      for (const r of results) {
+        if (r.success) queued++
+        else failed.push(`${fileNameByItemId.get(r.itemId) ?? `item ${r.itemId}`} (${r.msg || "?"})`)
+      }
+    }
+    const msg =
+      (queued > 0 ? `Queued ${queued}` : "") +
+      (ocrQueued > 0 ? `${queued > 0 ? ", " : ""}sent ${ocrQueued} to OCR` : "") +
+      (failed.length > 0 ? `, failed ${failed.length}` : "")
+    return res.json({ success: failed.length === 0, msg, queued, ocrQueued, failed })
   })
 
   return router
