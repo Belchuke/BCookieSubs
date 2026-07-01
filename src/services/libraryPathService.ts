@@ -234,9 +234,19 @@ function parseSeasonFromFilename(filename: string): number | null {
 // as the integer part (E18), which would land them as a duplicate of the real
 // E18. They are extras, so callers route them to season 0 (specials) with no
 // episode number instead.
+//
+// The lookahead `(?![.\d])` keeps the dot+digit we match as a true fractional
+// marker: a single ".N" immediately followed by a non-digit/non-dot (a
+// separator, a word, or end-of-name). This avoids false positives where the
+// ".N" is really the start of something else glued onto the episode token:
+//   - a resolution: "S01E01.720p" / "S01E01.1080p"  (the .7/.1 is "720"/"1080")
+//   - a dotted title: "S01E01.1.23.45"               (the episode title "1:23:45")
+// Both of those would otherwise be shoved to season 0. Real ".5" extras such as
+// "S01E18.5", "S01E18.5-Recap", "S01E18.5 (Recap)" or "S01E18.5v2" still match
+// because the fractional digit is followed by a separator, a letter, or end.
 function isFractionalSpecial(filename: string): boolean {
   const base = path.basename(filename, path.extname(filename))
-  return /[Ss]\d{1,2}[Ee][Pp]?\d{1,3}\.\d/.test(base)
+  return /[Ss]\d{1,2}[Ee][Pp]?\d{1,3}\.\d(?![.\d])/.test(base)
 }
 
 // A stable identity for a season folder so the pre-pass and the main scan
@@ -2146,8 +2156,16 @@ export async function scanLibraryPath(
           seasonFolder !== null
             ? (parseSeasonFolderName(seasonFolder) ?? parseSeasonFromFilename(videoFile))
             : parseSeasonFromFilename(videoFile)
-        // Files directly in the series root with no season info default to season 1
-        if (season === null && seasonFolder === null) season = 1
+        // No season could be determined from either the folder or the filename:
+        // default to season 1. This covers files directly in the series root with
+        // no season info, AND files inside a non-season subfolder whose name we
+        // can't parse (e.g. an anime release-group folder like "[KH] Show (BD
+        // 1080p)" or "Show [1080]" with "Show - 01 - Title" filenames that carry
+        // no season number anywhere). Season 0 is only ever assigned explicitly
+        // (Specials/OVA/Extras folders, parseSeasonFolderName returns 0, or a
+        // fractional-special filename above), so a null season here is genuinely
+        // "unknown" → treat as the primary season.
+        if (season === null) season = 1
         episode = parseEpisodeFromFilename(videoFile)
         // Rebase absolute (show-wide) episode numbers to 1-based per-season
         // numbers when the whole season folder lacks SxxExx markers, e.g. a
@@ -2433,7 +2451,7 @@ export async function scanLibraryPath(
             seasonFolder !== null
               ? (parseSeasonFolderName(seasonFolder) ?? parseSeasonFromFilename(srtFile))
               : parseSeasonFromFilename(srtFile)
-          if (season === null && seasonFolder === null) season = 1
+          if (season === null) season = 1
           episode = parseEpisodeFromFilename(srtFile)
         }
       } else {

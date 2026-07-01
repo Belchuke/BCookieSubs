@@ -162,7 +162,13 @@ const LOG_LEVELS = ["debug", "info", "warning", "error"]
 // Build the WHERE clause + bind params for the log list filters. `level` is
 // whitelisted against the CHECK constraint values; `type` is a free-form string
 // but always bound as a parameter (never interpolated), so it is SQL-safe.
-function logFilterClause(level?: string | null, type?: string | null): { clause: string; params: any[] } {
+// `search` is a free-text term matched (case-insensitively via LIKE) against
+// the message, type and entityType columns.
+function logFilterClause(
+  level?: string | null,
+  type?: string | null,
+  search?: string | null,
+): { clause: string; params: any[] } {
   const conds = ["deletedAt IS NULL"]
   const params: any[] = []
   if (level && LOG_LEVELS.includes(level)) {
@@ -172,6 +178,12 @@ function logFilterClause(level?: string | null, type?: string | null): { clause:
   if (type) {
     conds.push("type = ?")
     params.push(type)
+  }
+  const term = search ? search.trim() : ""
+  if (term) {
+    const like = `%${term}%`
+    conds.push("(message LIKE ? OR type LIKE ? OR entityType LIKE ?)")
+    params.push(like, like, like)
   }
   return { clause: conds.join(" AND "), params }
 }
@@ -183,11 +195,12 @@ export const getLogsPagination = (
   limit: number,
   level?: string | null,
   type?: string | null,
+  search?: string | null,
 ): { logs: DBLog[] | null; total: number } & DefaultResponse => {
   const { hasPermission: perm } = userHasPermission(db, user.id, "canViewLogs")
   if (!perm) return { logs: null, success: false, msg: "Permission denied", total: 0 }
 
-  const { clause, params } = logFilterClause(level, type)
+  const { clause, params } = logFilterClause(level, type, search)
 
   const logs = db
     .prepare(`SELECT * FROM log WHERE ${clause} ORDER BY createdAt DESC LIMIT ? OFFSET ?`)
@@ -216,12 +229,18 @@ export const getLogTypes = (db: Database.Database, user: DBUser): { types: strin
 export const getLogsForExport = (
   db: Database.Database,
   user: DBUser,
-  opts: { level?: string | null; type?: string | null; from?: string | null; to?: string | null },
+  opts: {
+    level?: string | null
+    type?: string | null
+    from?: string | null
+    to?: string | null
+    search?: string | null
+  },
 ): { logs: DBLog[] | null } & DefaultResponse => {
   const { hasPermission: perm } = userHasPermission(db, user.id, "canViewLogs")
   if (!perm) return { logs: null, success: false, msg: "Permission denied" }
 
-  const { clause, params } = logFilterClause(opts.level, opts.type)
+  const { clause, params } = logFilterClause(opts.level, opts.type, opts.search)
   const conds = [clause]
   if (opts.from) {
     conds.push("createdAt >= ?")

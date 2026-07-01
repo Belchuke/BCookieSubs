@@ -790,6 +790,8 @@ tr:hover td { background: var(--surface-2); }
 .logs-toolbar .field-inline { display: flex; flex-direction: column; gap: .35rem; margin-bottom: 0; min-width: 160px; }
 .logs-toolbar .field-inline label { font-size: .8rem; color: var(--text-dim); }
 .logs-toolbar .field-inline select { width: 100%; }
+.logs-search-field { min-width: 220px; flex: 1 1 220px; }
+.logs-search-input { width: 100%; padding: .4rem .6rem; }
 .logs-export-dates { display: flex; gap: 1rem; flex-wrap: wrap; }
 .logs-export-dates .field { flex: 1; min-width: 140px; margin-bottom: 0; }
 .logs-export-hint { margin: 0 0 1rem; font-size: .85rem; }

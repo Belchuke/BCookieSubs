@@ -409,7 +409,9 @@
     "exportBtn": "Export",
     "exportCancel": "Cancel",
     "exportNoLogs": "No logs match the selected filters and timeframe.",
-    "exportHint": "Exports all logs matching the current level/type filters and the optional timeframe."
+    "exportHint": "Exports all logs matching the current level/type filters and the optional timeframe.",
+    "search": "Search",
+    "searchPlaceholder": "Search message, type, entity…"
   },
   "librarypaths": {
     "title": "Library Paths",

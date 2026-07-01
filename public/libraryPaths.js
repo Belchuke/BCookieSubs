@@ -152,10 +152,20 @@
     // is unmatched when it has no mediaItem, or its mediaItem has no theMovieDbId
     // (a half-resolved item that never matched a real TMDB entry). These can be
     // re-matched in-app via the "Change match" button, but they are not
-    // blacklisted and get no per-item bulk-select checkbox — it only existed to
-    // drive bulk-match.
+    // blacklisted. Unmatched items get a per-item bulk-select checkbox
+    // (lp-item-cb) so a user with many unmatched files can tick several and
+    // re-match them in one bulk action — matched items use the group checkbox
+    // (lp-group-cb) on the group header instead.
     var isUnmatchedItem = !item.mediaItemId || !(item.mediaItem && item.mediaItem.theMovieDbId)
     var itemCb = ""
+    if (isUnmatchedItem) {
+      itemCb =
+        '<input type="checkbox" class="lp-item-cb" data-item-id="' +
+        item.id +
+        '" data-lp-type="' +
+        escAttr(lp.type) +
+        '" title="Select for bulk re-match">'
+    }
 
     var badges =
       '<span class="badge ' +

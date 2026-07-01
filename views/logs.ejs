@@ -48,6 +48,13 @@
             <% }) %>
           </select>
         </div>
+        <div class="field field-inline logs-search-field">
+          <label for="log-search"><%= __('logs.search') %></label>
+          <input type="search" id="log-search" class="logs-search-input"
+                 value="<%= search || '' %>"
+                 placeholder="<%= __('logs.searchPlaceholder') %>"
+                 oninput="logsSearchInput()">
+        </div>
       </div>
       <button type="button" class="btn btn-secondary" onclick="openModal('log-export-modal')">
         <i class="fa-solid fa-download"></i> <%= __('logs.export') %>
@@ -149,6 +156,10 @@
   // reflects whatever the user has selected (filters are never reset by poll).
   function currentLevel() { return document.getElementById("log-level-filter").value || "" }
   function currentType()   { return document.getElementById("log-type-filter").value || "" }
+  function currentSearch() {
+    var el = document.getElementById("log-search")
+    return el ? (el.value || "").trim() : ""
+  }
   function currentPage() {
     var el = document.getElementById("log-page-cur")
     if (!el) return 0
@@ -191,6 +202,7 @@
     var q = "?page=" + page + "&limit=" + currentLimit()
     if (currentLevel()) q += "&level=" + encodeURIComponent(currentLevel())
     if (currentType()) q += "&type=" + encodeURIComponent(currentType())
+    if (currentSearch()) q += "&q=" + encodeURIComponent(currentSearch())
     return "/logs" + q
   }
 
@@ -275,6 +287,7 @@
     var q = "?page=" + currentPage() + "&limit=" + currentLimit()
     if (currentLevel()) q += "&level=" + encodeURIComponent(currentLevel())
     if (currentType()) q += "&type=" + encodeURIComponent(currentType())
+    if (currentSearch()) q += "&q=" + encodeURIComponent(currentSearch())
     return "/logs/poll" + q
   }
 
@@ -299,6 +312,7 @@
     var q = "?page=0&limit=" + currentLimit()
     if (currentLevel()) q += "&level=" + encodeURIComponent(currentLevel())
     if (currentType()) q += "&type=" + encodeURIComponent(currentType())
+    if (currentSearch()) q += "&q=" + encodeURIComponent(currentSearch())
     document.location.href = "/logs" + q
   }
 
@@ -309,9 +323,26 @@
     var q = "?format=" + encodeURIComponent(fmt)
     if (currentLevel()) q += "&level=" + encodeURIComponent(currentLevel())
     if (currentType()) q += "&type=" + encodeURIComponent(currentType())
+    if (currentSearch()) q += "&q=" + encodeURIComponent(currentSearch())
     if (from) q += "&from=" + encodeURIComponent(from)
     if (to) q += "&to=" + encodeURIComponent(to)
     document.location.href = "/logs/export" + q
+  }
+
+  // Debounced live search: typing in the search box re-runs the poll at
+  // page 0 without a full navigation, swapping just the rows + pagination.
+  var searchTimer = null
+  window.logsSearchInput = function () {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = setTimeout(function () {
+      searchTimer = null
+      // Reset to page 0 for the new search term, then poll immediately.
+      var curEl = document.getElementById("log-page-cur")
+      var totalEl = document.getElementById("log-page-total")
+      if (curEl) curEl.textContent = "1"
+      if (totalEl) totalEl.textContent = "1"
+      poll()
+    }, 300)
   }
 
   // Initial time conversion for the server-rendered rows.

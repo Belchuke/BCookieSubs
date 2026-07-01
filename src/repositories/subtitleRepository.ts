@@ -1573,6 +1573,26 @@ export const setSelectedCandidateForChunk = (
   ).run(candidateId, judgeModelId, judgeReason, durationMs, chunkId)
 }
 
+// Mark a chunk completed without selecting any candidate — used when an ASS
+// chunk contains no translatable text (every line is a pure vector drawing or
+// only override tags). selectedCandidateId stays NULL so assembly skips it and
+// the serializer copies those lines verbatim from the original.
+export const markChunkCompletedNoCandidate = (
+  db: Database.Database,
+  chunkId: number,
+  judgeReason: string,
+): void => {
+  db.prepare(
+    `UPDATE subtitleChunk SET
+       status = 'completed',
+       selectedCandidateId = NULL,
+       judgeReason = ?,
+       finishedAt = datetime('now'),
+       updatedAt = datetime('now')
+     WHERE id = ?`,
+  ).run(judgeReason, chunkId)
+}
+
 export const createChunkCandidate = (
   db: Database.Database,
   subtitleChunkId: number,
@@ -1675,10 +1695,48 @@ export const incrementChunkRetry = (db: Database.Database, chunkId: number, erro
 }
 
 export const resetChunk = (db: Database.Database, chunkId: number): void => {
-  db.prepare(`DELETE FROM subtitleChunkCandidate WHERE subtitleChunkId = ?`).run(chunkId)
-  db.prepare(
-    `UPDATE subtitleChunk SET status = 'queued', retryCount = 0, startedAt = NULL, finishedAt = NULL, errorMessage = NULL, selectedCandidateId = NULL, updatedAt = datetime('now') WHERE id = ?`,
-  ).run(chunkId)
+  // Reset the chunk itself, then — if the parent job/subtitle are already in a
+  // terminal state (completed/failed/cancelled) — pull them back to 'queued' so
+  // the worker actually re-picks this chunk. Without that, resetting a chunk on
+  // a finished movie/episode is a no-op: getNextQueuedChunkForWorker skips
+  // chunks whose job or subtitle is completed, so the chunk would sit forever.
+  // Re-running the chunk re-assembles the job and re-finalizes the subtitle
+  // (checkAndFinalizeJob / checkAndFinalizeSubtitle) when it completes again.
+  const run = db.transaction(() => {
+    const chunk = db
+      .prepare(`SELECT subtitleId, subtitleJobId FROM subtitleChunk WHERE id = ?`)
+      .get(chunkId) as { subtitleId: number; subtitleJobId: number } | undefined
+
+    db.prepare(`DELETE FROM subtitleChunkCandidate WHERE subtitleChunkId = ?`).run(chunkId)
+    db.prepare(
+      `UPDATE subtitleChunk SET status = 'queued', retryCount = 0, startedAt = NULL, finishedAt = NULL, errorMessage = NULL, selectedCandidateId = NULL, updatedAt = datetime('now') WHERE id = ?`,
+    ).run(chunkId)
+
+    if (!chunk) return
+
+    const job = db.prepare(`SELECT status FROM subtitleJob WHERE id = ?`).get(chunk.subtitleJobId) as
+      | { status: string }
+      | undefined
+    if (job && (job.status === "completed" || job.status === "failed" || job.status === "cancelled")) {
+      // chunkCurrent reflects the other still-completed chunks (the reset one
+      // no longer counts). Clear the assembled output so a stale translation
+      // isn't served while the chunk re-runs.
+      const completedChunks = countCompletedChunks(db, chunk.subtitleJobId)
+      db.prepare(
+        `UPDATE subtitleJob SET status = 'queued', chunkCurrent = ?, translatedText = NULL, outputFilePath = NULL, outputHash = NULL, finishedAt = NULL, cancelledAt = NULL, updatedAt = datetime('now') WHERE id = ?`,
+      ).run(completedChunks, chunk.subtitleJobId)
+    }
+
+    const sub = db.prepare(`SELECT status FROM subtitle WHERE id = ?`).get(chunk.subtitleId) as
+      | { status: string }
+      | undefined
+    if (sub && (sub.status === "completed" || sub.status === "failed" || sub.status === "cancelled")) {
+      db.prepare(
+        `UPDATE subtitle SET status = 'queued', finishedAt = NULL, cancelledAt = NULL, updatedAt = datetime('now') WHERE id = ?`,
+      ).run(chunk.subtitleId)
+    }
+  })
+  run()
 }
 
 export const retryFailedChunk = (db: Database.Database, chunkId: number): void => {

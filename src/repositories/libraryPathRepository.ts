@@ -837,7 +837,14 @@ export const enrichItems = (db: Database.Database, items: DBLibraryPathItem[]): 
 const groupItems = (items: EnrichedLibraryPathItem[]): LibraryPathViewGroup[] => {
   const buckets = new Map<number | null, EnrichedLibraryPathItem[]>()
   for (const item of items) {
-    const key = item.mediaItemId ?? null
+    // "Unmatched" mirrors the frontend definition: no mediaItem, or a
+    // mediaItem with no theMovieDbId (a half-resolved item that never matched
+    // a real TMDB entry). All unmatched items collapse into a SINGLE bucket
+    // (key null) per library path — otherwise each half-resolved file gets its
+    // own group and the tab fills with dozens of separate "Unmatched"
+    // accordions. Matched items keep per-mediaItem grouping.
+    const isUnmatched = !item.mediaItem || !item.mediaItem.theMovieDbId
+    const key = isUnmatched ? null : item.mediaItemId ?? null
     const arr = buckets.get(key)
     if (arr) arr.push(item)
     else buckets.set(key, [item])
@@ -850,9 +857,12 @@ const groupItems = (items: EnrichedLibraryPathItem[]): LibraryPathViewGroup[] =>
       }
       return a.path.localeCompare(b.path)
     })
+    const isUnmatchedBucket = mediaItemId == null
     return {
-      mediaItemId,
-      mediaItem: sorted[0]?.mediaItem ?? null,
+      mediaItemId: isUnmatchedBucket ? null : mediaItemId,
+      // Drop the half-resolved mediaItem for the merged unmatched bucket so the
+      // group renders as a clean "Unmatched" accordion (no stale title/poster).
+      mediaItem: isUnmatchedBucket ? null : sorted[0]?.mediaItem ?? null,
       items: sorted,
     }
   })

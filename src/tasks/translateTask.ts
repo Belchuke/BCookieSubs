@@ -24,6 +24,11 @@ import { getShouldRunNowBySchedule } from "../repositories/scheduleRepository"
 import { parseLLMResponse, sleep, srtFormatterForModel, validateChunkIntegrity } from "../repositories/shared"
 import { parseSubtitleRows, formatAwareChunkPreamble } from "../services/subtitleAdapter"
 import {
+  assPlaceholdersIntact,
+  extractAssTranslatable,
+  restoreAssPlaceholders,
+} from "../services/assTextExtractor"
+import {
   assembleAndFinishSubtitleJob,
   createChunkCandidate,
   getChunksByJobId,
@@ -36,6 +41,7 @@ import {
   getSubtitleJobsBySubtitleId,
   incrementChunkRetry,
   markCandidateSelected,
+  markChunkCompletedNoCandidate,
   markChunkFailed,
   markChunkStarted,
   setSelectedCandidateForChunk,
@@ -305,7 +311,46 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
     return
   }
 
-  const sourceRows = chunkLines.map((l) => ({ id: l.id, text: l.text }))
+  // For ASS/SSA, replace every override block and vector-drawing run with an
+  // opaque ⟨ASk⟩ placeholder (see assTextExtractor.ts) so the model only ever
+  // sees readable dialogue text — never the position/colour/font tags or the
+  // drawing commands that, if altered, would corrupt the .ass. Dialogue lines
+  // with no readable text (pure drawings, tag-only lines) are skipped: the
+  // serializer copies any id it doesn't receive a translated row for verbatim.
+  const isAss = subtitle.sourceFormat === "ass" || subtitle.sourceFormat === "ssa"
+  const assRunsById = new Map<string, string[]>()
+  const sourceRows: { id: string; text: string }[] = []
+  for (const l of chunkLines) {
+    if (!isAss) {
+      sourceRows.push({ id: l.id, text: l.text })
+      continue
+    }
+    const extracted = extractAssTranslatable(l.text)
+    if (!extracted.hasTranslatable) continue
+    assRunsById.set(l.id, extracted.runs)
+    sourceRows.push({ id: l.id, text: extracted.modelText })
+  }
+
+  // Nothing translatable in this chunk (e.g. every line is a vector drawing).
+  // Complete it with no candidate — the skipped lines are copied verbatim from
+  // the original at assembly time.
+  if (sourceRows.length === 0) {
+    markChunkCompletedNoCandidate(db, chunk.id, "No translatable text — drawing/tag-only lines copied verbatim")
+    createLog(
+      db,
+      "info",
+      "chunkCompleted", "chunk",
+      chunk.id,
+      `Chunk ${chunk.chunkIndex + 1} completed with no translation — no translatable text (drawing/tag-only lines)`,
+      { jobId: job.id, chunkIndex: chunk.chunkIndex },
+    )
+    console.log(`[worker] Chunk ${chunk.chunkIndex + 1} of ${subtitle.name} has no translatable text — copying original lines`)
+    updateSubtitleJobProgress(db, job.id, countCompletedChunks(db, job.id))
+    await checkAndFinalizeJob(db, job, subtitle)
+    return
+  }
+
+  const sourceRowsById = new Map(sourceRows.map((r) => [r.id, r.text]))
   const preamble = formatAwareChunkPreamble(subtitle.sourceFormat)
   const chunkXml = preamble ? `${preamble}\n${srtFormatterForModel(sourceRows)}` : srtFormatterForModel(sourceRows)
 
@@ -416,8 +461,29 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
           const durationMs = Date.now() - startMs
 
           const parsed = parseLLMResponse(content)
-          if (parsed && validateChunkIntegrity(sourceRows, parsed.rows)) {
+          // For ASS/SSA also require that every ⟨ASk⟩ placeholder survived
+          // translation intact (same tokens, same order) per row — otherwise the
+          // restored override tags would land on the wrong text and corrupt the
+          // .ass. A candidate that fails this is rejected like any other
+          // integrity failure and retried.
+          const placeholderOk =
+            !isAss ||
+            (parsed !== null &&
+              parsed.rows.every((r) => {
+                const src = sourceRowsById.get(r.id)
+                return src !== undefined && assPlaceholdersIntact(src, r.text)
+              }))
+          if (parsed && validateChunkIntegrity(sourceRows, parsed.rows) && placeholderOk) {
             const rows = parsed.rows
+            // Restore placeholders → the full Text field, so the stored candidate
+            // rows serialize directly. `rows` (placeholders intact) is what the
+            // judge compares — it never sees the position/colour tags or drawings.
+            const storedRows = isAss
+              ? rows.map((r) => ({
+                  id: r.id,
+                  text: restoreAssPlaceholders(r.text, assRunsById.get(r.id) ?? []),
+                }))
+              : rows
 
             const candidateId = createChunkCandidate(
               db,
@@ -426,7 +492,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
               promptVersion.promptId,
               promptVersion.id,
               promptText,
-              JSON.stringify(rows),
+              JSON.stringify(storedRows),
               true,
               "completed",
               durationMs,
@@ -454,7 +520,11 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
             )
             break
           } else {
-            const reason = !parsed ? "Could not parse XML response" : "Chunk integrity validation failed"
+            const reason = !parsed
+              ? "Could not parse XML response"
+              : !placeholderOk
+                ? "ASS placeholder tokens not preserved"
+                : "Chunk integrity validation failed"
             candidateAttempts++
 
             if (candidateAttempts >= config.maxRetriesPerChunk) {

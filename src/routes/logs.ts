@@ -20,23 +20,26 @@ export function logsRouter(db: Database.Database) {
   const router = Router()
 
   // Read the active level/type filters from the query string, validated.
-  function readFilters(req: Request): { level: string | null; type: string | null } {
+  function readFilters(req: Request): { level: string | null; type: string | null; search: string | null } {
     const level = typeof req.query.level === "string" ? req.query.level : null
     const type = typeof req.query.type === "string" ? req.query.type : null
     const validLevels = ["debug", "info", "warning", "error"]
+    const rawSearch = typeof req.query.q === "string" ? req.query.q : null
+    const search = rawSearch ? rawSearch.trim() : null
     return {
       level: level && validLevels.includes(level) ? level : null,
       type: type || null,
+      search: search || null,
     }
   }
 
   router.get("/", requireAuth, requirePermission("canViewLogs"), (req, res) => {
     const user = res.locals.user!
-    const { level, type } = readFilters(req)
+    const { level, type, search } = readFilters(req)
     const page = Math.max(0, parseInt(String(req.query.page)) || 0)
     const limit = Math.min(100, Math.max(10, parseInt(String(req.query.limit)) || 30))
     const skip = page * limit
-    const { logs, total, success, msg } = getLogsPagination(db, user, skip, limit, level, type)
+    const { logs, total, success, msg } = getLogsPagination(db, user, skip, limit, level, type, search)
     const totalPages = Math.ceil((total ?? 0) / limit)
     const theme = getActiveTheme(db, user.id)
     const { types } = getLogTypes(db, user)
@@ -50,6 +53,7 @@ export function logsRouter(db: Database.Database) {
       error: success ? null : msg,
       level,
       type,
+      search: search ?? "",
       types,
       pagination: {
         page,
@@ -69,11 +73,11 @@ export function logsRouter(db: Database.Database) {
   // preserved and drive the next request.
   router.get("/poll", requireAuth, requirePermission("canViewLogs"), (req, res) => {
     const user = res.locals.user!
-    const { level, type } = readFilters(req)
+    const { level, type, search } = readFilters(req)
     const page = Math.max(0, parseInt(String(req.query.page)) || 0)
     const limit = Math.min(100, Math.max(10, parseInt(String(req.query.limit)) || 30))
     const skip = page * limit
-    const { logs, total, success, msg } = getLogsPagination(db, user, skip, limit, level, type)
+    const { logs, total, success, msg } = getLogsPagination(db, user, skip, limit, level, type, search)
     if (!success) return res.json({ success: false, msg })
     const totalPages = Math.ceil((total ?? 0) / limit)
     const { types } = getLogTypes(db, user)
@@ -96,13 +100,13 @@ export function logsRouter(db: Database.Database) {
   // timeframe, streamed as txt/json/csv.
   router.get("/export", requireAuth, requirePermission("canViewLogs"), (req, res) => {
     const user = res.locals.user!
-    const { level, type } = readFilters(req)
+    const { level, type, search } = readFilters(req)
     const from = normalizeBound(typeof req.query.from === "string" ? req.query.from : null, false)
     const to = normalizeBound(typeof req.query.to === "string" ? req.query.to : null, true)
     const formatRaw = typeof req.query.format === "string" ? req.query.format : "txt"
     const format = ["txt", "json", "csv"].includes(formatRaw) ? (formatRaw as "txt" | "json" | "csv") : "txt"
 
-    const { logs } = getLogsForExport(db, user, { level, type, from, to })
+    const { logs } = getLogsForExport(db, user, { level, type, from, to, search })
     const rows = logs ?? []
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")
     const baseName = `logs-${stamp}`

@@ -650,13 +650,17 @@ function closeModalOnOverlay(event) {
 
     if (whisperQueueList) {
       var whisperSubs = whisperSeparate ? subtitles.filter(isWhisperStage) : []
-      // Hide the whisper card content when the setting is off.
-      whisperQueueList.parentElement.style.display = whisperSeparate ? "" : "none"
+      // Only show the whisper card when the separate-queue setting is on AND it
+      // actually has items — otherwise keep it off the dashboard entirely.
+      whisperQueueList.parentElement.style.display = whisperSeparate && whisperSubs.length > 0 ? "" : "none"
       renderQueueList(whisperQueueList, whisperSubs, langMap, "whisper", whisperOpenSubs, whisperOpenSeries)
     }
 
     if (ocrQueueList) {
-      renderOcrQueue(data.ocrJobs || [])
+      var ocrJobs = data.ocrJobs || []
+      // Only show the OCR card when there are OCR jobs to display.
+      ocrQueueList.parentElement.style.display = ocrJobs.length > 0 ? "" : "none"
+      renderOcrQueue(ocrJobs)
     }
   }
 
