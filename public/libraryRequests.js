@@ -255,6 +255,44 @@
     return html
   }
 
+  // One small green badge per target language that already has a BCookieSubs-
+  // translated subtitle file on disk for this item (flag + iso639). Used by the
+  // episode rows and the movie card's translated-language badge row.
+  function translatedLangBadgesHtml(langIds) {
+    if (!langIds || !langIds.length) return ""
+    var html = ""
+    for (var i = 0; i < langIds.length; i++) {
+      var lang = langById(langIds[i])
+      if (!lang) continue
+      html +=
+        '<span class="badge badge-success lrx-badge-sm"' +
+        ' title="' +
+        escAttr(lang.name) +
+        '">' +
+        (lang.flagCode ? '<span class="fi fi-' + escAttr(lang.flagCode) + '"></span> ' : "") +
+        escHtml(lang.iso639) +
+        "</span>"
+    }
+    return html
+  }
+
+  // Ordered union of translated target-lang ids across the given items — drives
+  // the movie card's translated-language badge row. Order follows each item's
+  // already-ordered translatedTargetLangIds, then appends any not yet seen.
+  function translatedLangsUnion(items) {
+    var seen = {}
+    var out = []
+    ;(items || []).forEach(function (it) {
+      ;(it.translatedTargetLangIds || []).forEach(function (id) {
+        if (!seen[id]) {
+          seen[id] = true
+          out.push(id)
+        }
+      })
+    })
+    return out
+  }
+
   function whisperBadgeHtml(item) {
     var cls = item.whisperStatus === "transcription_failed" ? "badge badge-error" : "badge badge-processing"
     return '<span class="' + cls + '">' + escHtml(whisperLabel(item.whisperStatus)) + "</span>"
@@ -336,8 +374,27 @@
     for (var i = 0; i < missing.length; i++) html += missingLangsHtml(missing[i])
     for (var j = 0; j < badges.length; j++) html += whisperBadgeHtml(badges[j])
 
-    if (trans.length > 0) {
+    // Translated-language badges: the ordered union of target languages that
+    // already have a BCookieSubs file on disk across this movie's items. A
+    // "Fully translated" badge leads the row when every translatable item has
+    // all target languages. The column is rendered even when there are no
+    // translate buttons (trans.length === 0) so a fully-translated movie still
+    // shows its badges — it would otherwise be dropped from the page entirely.
+    var translatedLangs = translatedLangsUnion(items)
+    var showActionsCol = trans.length > 0 || translatedLangs.length > 0 || !!group.fullyTranslated
+    if (showActionsCol) {
       html += '<div class="lr-card-actions-col">'
+      if (translatedLangs.length > 0 || group.fullyTranslated) {
+        html += '<div class="lr-lang-badges lr-movie-translated">'
+        if (group.fullyTranslated) {
+          html +=
+            '<span class="badge badge-success"><i class="fa-solid fa-check"></i> ' +
+            escHtml(I18N.fullyTranslated || "Fully translated") +
+            "</span>"
+        }
+        html += translatedLangBadgesHtml(translatedLangs)
+        html += "</div>"
+      }
       if (whisper && PERMS.canCreateSubtitlesWithWhisper) {
         html +=
           '<button type="button" class="btn btn-secondary lr-create-subtitle-btn"' +
@@ -442,6 +499,17 @@
     html += '<div class="lr-card-meta">' + metaHtml(group) + "</div>"
     html += '<div class="lr-season-list">'
     html += '<div class="lr-seasons-overview">'
+    // When every translatable episode (across all seasons) has all the user's
+    // target languages translated, show a single "Fully translated" badge above
+    // the season rows. Per-episode language badges render inside each episode
+    // row (see episodeRowHtml) when its panel is expanded.
+    if (group.fullyTranslated) {
+      html +=
+        '<div class="lr-lang-badges lr-series-translated">' +
+        '<span class="badge badge-success"><i class="fa-solid fa-check"></i> ' +
+        escHtml(I18N.fullyTranslated || "Fully translated") +
+        "</span></div>"
+    }
     for (var i = 0; i < skeys.length; i++) {
       var sk = skeys[i]
       var eps = seasons[sk]
@@ -531,6 +599,14 @@
       html += missingLangsHtml(it)
     }
     html += '<span class="lr-episode-sources"></span>'
+    // Per-episode translated-language badges: when this episode has one or more
+    // BCookieSubs-translated files for the user's target languages, render a
+    // full-width badge row that wraps under the episode line, growing the row.
+    if (it.translatedTargetLangIds && it.translatedTargetLangIds.length > 0) {
+      html += '<div class="lr-lang-badges lr-episode-lang-badges">'
+      html += translatedLangBadgesHtml(it.translatedTargetLangIds)
+      html += "</div>"
+    }
     html += '<span class="lr-whisper-row lr-card-actions">'
     if (it.whisperStatus) {
       html += whisperBadgeHtml(it)
@@ -1135,38 +1211,12 @@
     return choice
   }
 
-  // POST several (item, chosen source) pairs to the translate-prep worker in
-  // one batch so the user can queue multiple tracks at once.
-  function lrQueueBatch(items) {
-    return fetch("/library-requests/items/translate-batch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: items }),
-    }).then(function (r) {
-      return r.json()
-    })
-  }
-
   // Unified renderer for the source picker, used by both the per-episode dialog
   // and the movie popup. entries: [{itemId, source, fileName?, lang?}].
-  // Each row gets a checkbox (so multiple tracks can be queued together) plus a
-  // single-track Translate button; the modal footer's "Queue selected" button
-  // sends every checked row as one batch.
+  // Each row gets a single-track Translate button.
   function lrRenderSourcePicker(entries, btn, guessedLang) {
     var list = document.getElementById("subtitle-source-list")
     list.innerHTML = ""
-    var queueBtn = document.getElementById("lr-queue-selected")
-
-    function refreshQueueBtn() {
-      if (!queueBtn) return
-      var n = list.querySelectorAll(".lr-source-check:checked").length
-      if (n === 0) {
-        queueBtn.style.display = "none"
-      } else {
-        queueBtn.style.display = ""
-        queueBtn.textContent = (I18N.queueSelected || "Queue selected") + " (" + n + ")"
-      }
-    }
 
     entries.forEach(function (entry) {
       var s = entry.source
@@ -1208,9 +1258,6 @@
       else if (s && s.label) detail = s.label
 
       var html = '<div class="lr-source-row-top">'
-      // Checkbox so this row can be included in "Queue selected". Shown whenever
-      // there's a source or at least a language to queue.
-      if (s || srcLang) html += '<input type="checkbox" class="lr-source-check">'
       html += header + "</div>"
       if (detail) html += '<span class="text-dim lr-source-detail">' + escHtml(detail) + "</span>"
 
@@ -1254,50 +1301,9 @@
           })
       })
 
-      var check = row.querySelector(".lr-source-check")
-      if (check) check.addEventListener("change", refreshQueueBtn)
-
       list.appendChild(row)
     })
 
-    // Footer "Queue selected" — send every checked row as one batch to the
-    // translate-prep worker. Spins while the (possibly OCR-heavy) batch runs,
-    // then closes the modal + toast + refresh.
-    if (queueBtn) {
-      queueBtn.onclick = function () {
-        var checked = Array.prototype.slice
-          .call(list.querySelectorAll(".lr-source-check:checked"))
-          .map(function (c) {
-            return c.closest(".lr-source-pick")
-          })
-          .filter(Boolean)
-        if (checked.length === 0) {
-          showToast(I18N.queueSelectedNone || "Select at least one source", "error")
-          return
-        }
-        var items = checked.map(function (r) {
-          return { itemId: r._lrEntry.itemId, sourceOverride: lrChoiceFromRow(r) }
-        })
-        var orig = queueBtn.textContent
-        queueBtn.disabled = true
-        queueBtn.innerHTML =
-          '<span class="lr-btn-spinner" aria-hidden="true"></span> ' + escHtml(I18N.translating || "Translating…")
-        lrQueueBatch(items)
-          .then(function (resp) {
-            closeModal("subtitle-source-modal")
-            showToast(resp.msg || (resp.success ? "Queued" : "Failed"), resp.success ? "success" : "error")
-            if (resp.queued > 0) refreshActiveTab()
-          })
-          .catch(function () {
-            showToast("Request failed", "error")
-          })
-          .then(function () {
-            queueBtn.disabled = false
-            queueBtn.textContent = orig
-          })
-      }
-    }
-    refreshQueueBtn()
     openModal("subtitle-source-modal")
   }
 
@@ -1373,9 +1379,9 @@
 
   function lrShowMovieSourcePopup(opts, btn, showFile) {
     // Reuse the unified picker renderer so movies get the same track-name
-    // highlight + multi-select "Queue selected" as episodes. Pass the file name
-    // through only when several files are listed (so the user can tell them
-    // apart); for a single movie file the track title/codec is the useful detail.
+    // highlight as episodes. Pass the file name through only when several files
+    // are listed (so the user can tell them apart); for a single movie file the
+    // track title/codec is the useful detail.
     var entries = opts.map(function (opt) {
       return {
         itemId: opt.itemId,

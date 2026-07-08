@@ -47,6 +47,12 @@ import {
   getItemSubtitleSources,
 } from "../repositories/subtitleSourceCacheRepository"
 import { addCreditToSubtitle, subtitleExportExtension } from "./subtitleExportService"
+import { CREDIT_TEXT } from "../constants/keys"
+import {
+  getBcookieTranslatedRowsForItem,
+  replaceBcookieTranslatedForItem,
+  BcookieTranslatedRow,
+} from "../repositories/bcookieTranslatedRepository"
 import {
   isSubtitleExtension,
   subtitleExtensionOf,
@@ -368,6 +374,72 @@ function findAllCompanionSrts(videoFilePath: string): string[] {
     }
   }
   return result
+}
+
+// Reconcile the bcookietranslated rows for one library path item against the
+// BCookieSubs-translated subtitle files currently sitting next to its video. A
+// file counts when it is a text subtitle (.srt/.ass/.ssa) named
+// <videoBasename>.<langCode>.<ext> AND its content contains CREDIT_TEXT. The
+// original-language export (<base>.<srcIso>.<ext>) also carries the marker but is
+// not a translation, so files whose lang code matches the source iso are skipped.
+// Runs every scan so a deleted translation file drops its row (and its badge);
+// mtime caching avoids re-reading unchanged files on rescan.
+function reconcileBcookieTranslatedForItem(
+  db: Database.Database,
+  itemId: number,
+  videoFile: string,
+  srcIso: string | null | undefined,
+  srcIso2b: string | null | undefined,
+): void {
+  const videoNorm = normalizeCompanionStem(path.basename(videoFile, path.extname(videoFile)))
+  const srcLower = (srcIso ?? "").toLowerCase()
+  const src2bLower = (srcIso2b ?? "").toLowerCase()
+
+  const companions = findAllCompanionSrts(videoFile)
+  const existing = getBcookieTranslatedRowsForItem(db, itemId)
+  if (companions.length === 0) {
+    if (existing.length) replaceBcookieTranslatedForItem(db, itemId, [])
+    return
+  }
+  const existingByPath = new Map<string, BcookieTranslatedRow>()
+  for (const r of existing) existingByPath.set(r.detectedAtPath, r)
+
+  const desired: BcookieTranslatedRow[] = []
+  const seenLangIds = new Set<number>()
+  for (const f of companions) {
+    const subExt = subtitleExtensionOf(f)
+    if (!subExt) continue // only text-subtitle translations (.srt/.ass/.ssa)
+    const stem = f.endsWith(subExt) ? f.slice(0, f.length - subExt.length) : f
+    const stemNorm = normalizeCompanionStem(path.basename(stem))
+    if (!stemNorm.startsWith(videoNorm + ".")) continue // no lang tag → source subtitle
+    const langCode = stemNorm.slice(videoNorm.length + 1).split(".")[0]
+    if (!langCode) continue
+    if (langCode === srcLower || (src2bLower && langCode === src2bLower)) continue // original-language export
+    const lang = getLanguageByIso(db, langCode)
+    if (!lang || seenLangIds.has(lang.id)) continue
+    let mtime: number | null = null
+    try {
+      mtime = Math.floor(fs.statSync(f).mtimeMs)
+    } catch {
+      continue
+    }
+    const cached = existingByPath.get(f)
+    if (cached && cached.fileMtimeMs === mtime) {
+      // Unchanged since last scan — trust the previously-confirmed marker.
+      desired.push({ languageId: lang.id, detectedAtPath: f, fileMtimeMs: mtime })
+      seenLangIds.add(lang.id)
+      continue
+    }
+    try {
+      if (fs.readFileSync(f, "utf-8").includes(CREDIT_TEXT)) {
+        desired.push({ languageId: lang.id, detectedAtPath: f, fileMtimeMs: mtime })
+        seenLangIds.add(lang.id)
+      }
+    } catch {
+      /* unreadable file — ignore */
+    }
+  }
+  replaceBcookieTranslatedForItem(db, itemId, desired)
 }
 
 function selectBestSrt(
@@ -2099,6 +2171,10 @@ export async function scanLibraryPath(
         if (shouldAbort?.()) throw new ScanAbortedError()
         cacheItemSubtitleSources(db, existingItem.id, videoFile, iso, iso2b, langName)
       }
+      // Reconcile BCookieSubs-translated files next to this video against the
+      // bcookietranslated rows — runs every scan so deleted translations drop
+      // their badges even when the (unchanged) video didn't need a cache refresh.
+      reconcileBcookieTranslatedForItem(db, existingItem.id, videoFile, iso, iso2b)
       continue
     }
 
@@ -2259,7 +2335,10 @@ export async function scanLibraryPath(
       const noSrtItem = createLibraryPathItem(db, libraryPath.id, videoFile, extractFileName, mediaItemId, "no_srts_found", season, episode, isExtra)
       // Cache embedded/external subtitle sources so the picker (if the user opens
       // it to grab an embedded track) doesn't have to re-probe the file later.
-      if (noSrtItem) cacheItemSubtitleSources(db, noSrtItem.id, videoFile, iso, iso2b, langName)
+      if (noSrtItem) {
+        cacheItemSubtitleSources(db, noSrtItem.id, videoFile, iso, iso2b, langName)
+        reconcileBcookieTranslatedForItem(db, noSrtItem.id, videoFile, iso, iso2b)
+      }
       continue
     }
 
@@ -2284,6 +2363,7 @@ export async function scanLibraryPath(
     // Cache this item's subtitle sources (embedded tracks + companion files,
     // with picture counts) so the source picker reads from cache on open.
     cacheItemSubtitleSources(db, item.id, videoFile, iso, iso2b, langName)
+    reconcileBcookieTranslatedForItem(db, item.id, videoFile, iso, iso2b)
 
     if (multipleMatches && candidateMediaItemIds.length > 0) {
       for (const candidateId of candidateMediaItemIds) {
@@ -2650,6 +2730,13 @@ export async function autoTranslateItem(
   } else {
     try {
       srtContent = fs.readFileSync(srtFilePath, "utf-8")
+      // mkvextract prepends a UTF-8 BOM to extracted ASS/SSA tracks, and Node's
+      // "utf-8" decoding leaves it in place. A leading BOM makes the first line
+      // "﻿[Script Info]", which libass won't recognize as a section header
+      // — so PlayResX/PlayResY get dropped and every \pos renders against the
+      // 384x288 fallback instead of the authored canvas. Strip it on read so the
+      // BOM never enters originalText or any exported translation.
+      if (srtContent.charCodeAt(0) === 0xfeff) srtContent = srtContent.slice(1)
     } catch (e) {
       createLog(db, "error", "libraryScanner", "libraryScanner", libraryPathItemId, "Failed to read SRT file for auto-translate", {
         path: srtFilePath,

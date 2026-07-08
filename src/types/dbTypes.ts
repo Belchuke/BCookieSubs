@@ -438,6 +438,18 @@ export type DBLibraryPathItem = {
   updatedAt: string
 }
 
+// Per-(library path item, language) record that a BCookieSubs-translated
+// subtitle file exists on disk next to the media. Reconciled every library scan.
+export type DBBcookieTranslated = {
+  id: number
+  libraryPathItemId: number
+  languageId: number
+  detectedAtPath: string
+  fileMtimeMs: number | null
+  createdAt: string
+  updatedAt: string
+}
+
 export type DBLibraryPathItemBlacklist = {
   id: number
   libraryPathItemId: number

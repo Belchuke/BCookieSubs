@@ -160,12 +160,19 @@ export function serializeAssFromRows(
   rows: TranslatedRow[],
   format: SubtitleFormat,
 ): string {
-  const eol = detectEol(rawOriginal)
-  const lines = rawOriginal.split(eol)
+  // mkvextract prepends a UTF-8 BOM to extracted ASS/SSA tracks, and Node's
+  // "utf-8" decoding leaves it in place. A leading BOM makes the first line
+  // "﻿[Script Info]", which libass won't recognize as a section header — so
+  // PlayResX/PlayResY get dropped and every \pos renders against the 384x288
+  // fallback. Strip it here too, so already-stored BOM-tainted originalText is
+  // cured on the next serialization and the exported file is byte-clean.
+  const clean = rawOriginal.charCodeAt(0) === 0xfeff ? rawOriginal.slice(1) : rawOriginal
+  const eol = detectEol(clean)
+  const lines = clean.split(eol)
 
   // Re-parse to recover each Dialogue row's line index and exact prefix. The
   // parser is deterministic, so the synthetic ids line up with `rows`.
-  const parsed = parseAssRows(rawOriginal, format)
+  const parsed = parseAssRows(clean, format)
   const metaById = new Map<string, { lineIndex: number; prefix: string }>()
   for (const r of parsed) {
     if (r.meta.lineIndex != null && r.meta.prefix != null) {

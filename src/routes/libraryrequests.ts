@@ -34,6 +34,7 @@ import {
   getJobLangStatusBySubtitles,
 } from "../repositories/subtitleRepository"
 import { getItemSubtitleSources } from "../repositories/subtitleSourceCacheRepository"
+import { getBcookieTranslatedByItemIds } from "../repositories/bcookieTranslatedRepository"
 import { enqueueOcrJob } from "../repositories/ocrJobRepository"
 import {
   listSubtitleSourcesForVideo,
@@ -64,6 +65,10 @@ type RequestGroupItem = {
   // True when the item's previous subtitle was soft-deleted — the episode is
   // re-shown so it can be re-translated. The UI badges it "Deleted — re-add".
   subtitleDeleted?: boolean
+  // User target languages that already have a BCookieSubs-translated subtitle
+  // file on disk for this item (ordered by the user's target-lang orderNumber).
+  // Drives the per-episode/per-movie "translated" language badges.
+  translatedTargetLangIds?: number[]
 }
 
 type RequestGroup = {
@@ -81,6 +86,9 @@ type RequestGroup = {
   // Full filesystem path of the file, surfaced for unmatched items so the user
   // can locate it on disk and fix/rename it (unmatched items are read-only here).
   filePath?: string | null
+  // True when at least one translatable item (with a source subtitle) exists
+  // and every such item has all of the user's target languages translated.
+  fullyTranslated?: boolean
 }
 
 // Display name for an OCR queue entry: mediaItem title (+ S##E## for episodes),
@@ -124,7 +132,7 @@ export function libraryRequestsRouter(db: Database.Database) {
 
     const pathIds = libraryPaths.map((lp) => lp.id)
     const enriched = enrichItems(db, getLibraryPathItemsForPaths(db, pathIds))
-    const { jobStatusBySub, whisperByItem } = loadBatchedMaps(enriched)
+    const { jobStatusBySub, whisperByItem, translatedByItem } = loadBatchedMaps(enriched)
 
     // Source language per library path — needed to probe embedded subtitle tracks
     // for movie extras (hasEmbedded gates the per-extra Translate button).
@@ -159,7 +167,7 @@ export function libraryRequestsRouter(db: Database.Database) {
 
     for (const item of enriched) {
       if (!isMatched(item)) continue // unmatched — handled by buildUnmatchedGroups
-      const gi = itemToGroupItem(item, jobStatusBySub, whisperByItem, userTargetLangIds, type)
+      const gi = itemToGroupItem(item, jobStatusBySub, whisperByItem, userTargetLangIds, type, translatedByItem)
       // Movie "extras" (Featurettes/*.mkv attached with isExtra=1) render as
       // sub-rows under the movie card instead of as regular translatable items.
       const isExtraItem = !!item.isExtra && type === "movie"
@@ -190,6 +198,19 @@ export function libraryRequestsRouter(db: Database.Database) {
     const allGroups: RequestGroup[] = []
     for (const g of groupsMap.values()) {
       if (g.items.length === 0 && (!g.extras || g.extras.length === 0)) continue
+      // "Fully translated": at least one translatable item (one with a source
+      // subtitle) exists and every translatable item carries all of the user's
+      // target languages in its translatedTargetLangIds. Extras don't count.
+      const translatable = g.items.filter((it) => it.subtitleId != null)
+      if (
+        translatable.length > 0 &&
+        userTargetLangIds.length > 0 &&
+        translatable.every((it) =>
+          userTargetLangIds.every((id) => (it.translatedTargetLangIds ?? []).includes(id)),
+        )
+      ) {
+        g.fullyTranslated = true
+      }
       allGroups.push(g)
     }
     allGroups.sort((a, b) => a.title.localeCompare(b.title))
@@ -268,23 +289,35 @@ export function libraryRequestsRouter(db: Database.Database) {
     const jobStatusBySub = getJobLangStatusBySubtitles(db, activeSubIds)
     const itemIds = enriched.map((it) => it.id).filter((v): v is number => v != null)
     const whisperByItem = getActiveWhisperSubtitlesByLibraryPathItems(db, itemIds)
-    return { jobStatusBySub, whisperByItem }
+    // Batched lookup of BCookieSubs-translated language ids per item — single
+    // query for the whole tab so the per-episode/per-movie badges avoid N+1.
+    const translatedByItem = getBcookieTranslatedByItemIds(db, itemIds)
+    return { jobStatusBySub, whisperByItem, translatedByItem }
   }
 
   // Shared per-item decision: returns a RequestGroupItem if the item still needs
-  // work (translation / missing langs / whisper), or null if it should be hidden.
+  // work (translation / missing langs / whisper) OR already has BCookieSubs
+  // translations on disk (so it can be badged), or null if it should be hidden.
   function itemToGroupItem(
     item: any,
     jobStatusBySub: Map<number, { targetLangId: number; status: string }[]>,
     whisperByItem: Map<number, any>,
     userTargetLangIds: number[],
     type?: "movie" | "series",
+    translatedByItem?: Map<number, number[]>,
   ): RequestGroupItem | null {
     if (item.blacklist) return null
     const whisperStatus = whisperByItem.get(item.id)?.whisperTranscriptionStatus ?? null
+    // The user's target languages that already have a translated file on disk
+    // for this item, ordered by the user's target-lang orderNumber. The scan
+    // stores all detected languages; here we filter to this user's targets.
+    const translatedTargetLangIds = orderTranslatedLangs(
+      (translatedByItem?.get(item.id) ?? []).filter((id) => userTargetLangIds.includes(id)),
+      userTargetLangIds,
+    )
 
     if (item.status === "not_started" || item.status === "no_srts_found") {
-      return makeGroupItem(item, null, userTargetLangIds, false, whisperStatus)
+      return makeGroupItem(item, null, userTargetLangIds, false, whisperStatus, translatedTargetLangIds)
     }
 
     if (item.subtitleInfo && !item.subtitleInfo.deleted) {
@@ -302,17 +335,22 @@ export function libraryRequestsRouter(db: Database.Database) {
       // For series episodes, keep the row listed even when this subtitle's
       // translations are all complete (or nothing is pending) so the user can
       // add a SECOND subtitle track (e.g. a Signs/Songs track alongside the
-      // Dialogue track) without first deleting the existing one. Movies and
-      // unmatched items keep the original hide-when-done behaviour.
+      // Dialogue track) without first deleting the existing one.
       const keepForSeries = type === "series"
-      if (allCompleted && !keepForSeries) return null
-      if (missingTargetLangIds.length === 0 && !hasActiveJobs && !keepForSeries) return null
+      // Keep movies/unmatched that already have translated files on disk so the
+      // page can badge them (a fully-translated movie is no longer hidden when
+      // there's evidence of prior BCookieSubs exports next to it).
+      const keepForTranslated = type !== "series" && translatedTargetLangIds.length > 0
+      if (allCompleted && !keepForSeries && !keepForTranslated) return null
+      if (missingTargetLangIds.length === 0 && !hasActiveJobs && !keepForSeries && !keepForTranslated)
+        return null
       return makeGroupItem(
         item,
         item.subtitleInfo.subtitleId,
         missingTargetLangIds,
         hasActiveJobs,
         whisperStatus,
+        translatedTargetLangIds,
       )
     }
 
@@ -322,11 +360,22 @@ export function libraryRequestsRouter(db: Database.Database) {
     // re-creation since getSubtitleByFileHash / getActiveSubtitleForLibraryPathItem
     // ignore deletedAt rows). Flag it so the UI can badge it as "Deleted — re-add".
     if (item.subtitleInfo && item.subtitleInfo.deleted) {
-      const groupItem = makeGroupItem(item, null, userTargetLangIds, false, whisperStatus)
+      const groupItem = makeGroupItem(item, null, userTargetLangIds, false, whisperStatus, translatedTargetLangIds)
       groupItem.subtitleDeleted = true
       return groupItem
     }
     return null
+  }
+
+  // Order the translated language ids to match the user's target-lang order
+  // (getUserConfigTranslationLanguages returns rows ordered by orderNumber ASC,
+  // so userTargetLangIds is already in display order).
+  function orderTranslatedLangs(langIds: number[], userTargetLangIds: number[]): number[] {
+    return [...langIds].sort((a, b) => {
+      const ia = userTargetLangIds.indexOf(a)
+      const ib = userTargetLangIds.indexOf(b)
+      return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib)
+    })
   }
 
   function makeGroupItem(
@@ -335,6 +384,7 @@ export function libraryRequestsRouter(db: Database.Database) {
     missingTargetLangIds: number[],
     hasActiveJobs: boolean,
     whisperStatus: string | null,
+    translatedTargetLangIds: number[] = [],
   ): RequestGroupItem {
     return {
       itemId: item.id,
@@ -349,6 +399,7 @@ export function libraryRequestsRouter(db: Database.Database) {
       whisperStatus,
       isVideo: isVideoFile(item.path),
       hasSrt: item.status !== "no_srts_found",
+      translatedTargetLangIds,
     }
   }
 
@@ -409,6 +460,7 @@ export function libraryRequestsRouter(db: Database.Database) {
       unsupportedSubtitle: __("libraryrequests.unsupportedSubtitle"),
       unsupportedShort: __("libraryrequests.unsupportedShort"),
       microdvdFps: __("libraryrequests.microdvdFps"),
+      fullyTranslated: __("libraryrequests.fullyTranslated"),
       whisperStatus: {
         queued_for_transcription: __("libraryrequests.whisperStatus.queued_for_transcription"),
         transcribing: __("libraryrequests.whisperStatus.transcribing"),

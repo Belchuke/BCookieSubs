@@ -1550,6 +1550,15 @@ canvas { max-width: 100%; display: block; }
 }
 .lr-missing-langs .btn { padding: .2rem .45rem; font-size: .72rem; }
 
+/* ── Library Requests: translated-language badges (BCookieSubs files on disk) */
+.lr-lang-badges { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+/* Per-episode badges wrap under the episode line so the row grows taller only
+   when translations are present. flex-basis:100% forces a new line. */
+.lr-episode-lang-badges { flex-basis: 100%; margin-top: .3rem; padding-left: .15rem; }
+.lr-movie-translated { margin-bottom: .1rem; }
+.lr-series-translated { margin-bottom: .45rem; }
+.lr-lang-badges .badge { font-size: .72rem; }
+
 /* ── Library Requests: source picker dialog (item 4) ─────────────────────── */
 .lr-source-pick {
   display: flex;
@@ -1573,7 +1582,6 @@ canvas { max-width: 100%; display: block; }
    sparse "Signs / Songs" track so the user picks the right one. */
 .lr-source-dialogue { border-left: 3px solid var(--success, #2ecc71); padding-left: calc(.85rem - 3px); }
 .lr-source-signs    { border-left: 3px solid var(--text-dim, #888);    padding-left: calc(.85rem - 3px); opacity: .92; }
-.lr-source-check    { margin-right: .4rem; transform: translateY(-1px); }
 .lr-source-row      { display: flex; flex-direction: column; align-items: flex-start; gap: .2rem; padding: .65rem .85rem; width: 100%; text-align: left; }
 .lr-source-row-top  { display: flex; align-items: center; width: 100%; }
 

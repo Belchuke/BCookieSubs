@@ -640,11 +640,19 @@ const createTables = (db: Database.Database) => {
       FOREIGN KEY (subtitleId) REFERENCES subtitle(id) ON DELETE SET NULL
     )`)
 
-    // Provenance for .sub/.sup-derived subtitles. sourceFormat stays 'srt' (the
-    // .sub/.sup is converted to an SRT intermediate before storage); textOrigin +
-    // originalSourceFormat record that the source was a .sub or .sup (PGS) and
-    // whether the text came from parsing or OCR. (Comment kept outside the SQL
-    // string — SQLite does not understand // comments.)
+    db.exec(`CREATE TABLE IF NOT EXISTS bcookietranslated (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    libraryPathItemId INTEGER NOT NULL,
+    languageId INTEGER NOT NULL,
+    detectedAtPath TEXT NOT NULL,
+    fileMtimeMs INTEGER DEFAULT NULL,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (libraryPathItemId, languageId),
+    FOREIGN KEY (libraryPathItemId) REFERENCES libraryPathItem(id) ON DELETE CASCADE,
+    FOREIGN KEY (languageId) REFERENCES language(id) ON DELETE CASCADE
+  )`)
+
     db.exec(`CREATE TABLE IF NOT EXISTS subtitle (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 

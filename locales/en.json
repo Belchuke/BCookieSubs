@@ -519,6 +519,7 @@
     "unsupportedSubtitle": "Unsupported subtitle source — choose a text, VobSub (.sub) or PGS (.sup) source instead.",
     "unsupportedShort": "unsupported",
     "microdvdFps": "FPS (for MicroDVD .sub, blank = auto)",
+    "fullyTranslated": "Fully translated",
     "changeMatch": "Change match",
     "searchMatchPlaceholder": "Search TMDB or local media…",
     "noMatchesFound": "No matches found.",
