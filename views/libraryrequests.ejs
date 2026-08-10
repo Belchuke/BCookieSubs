@@ -146,6 +146,7 @@
   window.LR_PERMS = <%- JSON.stringify(perms) %>;
   window.LR_LANG_BY_ID = <%- JSON.stringify(langById) %>;
   window.LR_SHOW_POSTERS = <%= showPosters ? 'true' : 'false' %>;
+  window.LR_USER_TARGET_LANG_IDS = <%- JSON.stringify(userTargetLangIds || []) %>;
 </script>
 
 <script src="/app.js"></script>

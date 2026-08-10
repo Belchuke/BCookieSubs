@@ -8,6 +8,8 @@ import { requireAnyPermission, requirePermission } from "../services/permissionS
 import { getConfig } from "../repositories/configRepository"
 import {
   getLanguages,
+  getLanguageById,
+  getUserConfigTranslationLanguages,
 } from "../repositories/languageRepository"
 import {
   blacklistLibraryPathItem,
@@ -520,6 +522,27 @@ export function libraryPathsRouter(db: Database.Database) {
             imageBased: body.imageBased === "1" || body.imageBased === "true",
           }
         : null
+
+    // Guard: translating from a source language that is already one of the
+    // user's target languages makes no sense (it would just produce a copy).
+    // Reject server-side before enqueueing an OCR or translation job — the
+    // frontend also disables these source rows, but the backend is the source
+    // of truth (do not rely only on frontend hiding).
+    const srcIso = (body.sourceLanguage || "").toLowerCase()
+    if (srcIso) {
+      const targetIso = new Set(
+        getUserConfigTranslationLanguages(db, res.locals.user!.id)
+          .map((tl) => getLanguageById(db, tl.languageId)?.iso639)
+          .filter((s): s is string => !!s && s.length > 0)
+          .map((s) => s.toLowerCase()),
+      )
+      if (targetIso.has(srcIso)) {
+        const msg = (res.locals.__ as (k: string) => string)("libraryrequests.sourceIsTargetLang")
+        const result = { success: false, msg, skipped: true }
+        if (req.query.json === "1") return res.json(result)
+        return res.redirect("/library-paths?toast=error&msg=" + encodeURIComponent(msg))
+      }
+    }
 
     // Image-based sources (PGS/VobSub) go to the background OCR queue so the
     // source picker modal doesn't block on the ~1 min Tesseract pass — the

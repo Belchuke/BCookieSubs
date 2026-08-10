@@ -6,7 +6,7 @@ import { getConfig, getLogs } from "../repositories/configRepository"
 import { getConfigTranslationLanguages, getLanguages, getUserConfigTranslationLanguages } from "../repositories/languageRepository"
 import { createMediaItem, getMediaItemById, MEDIA_PHOTOS_DIR } from "../repositories/mediaRepository"
 import { getSubtitleItemMediaItemFromPrompt } from "../repositories/promptFormattingRepository"
-import { cancelSubtitle, cancelSubtitleJob, createSubtitleTask, getChunksByJobId, getDashboardData, getExportFileName, getSubtitleById, getSubtitleJobById, getSubtitleJobsBySubtitleId, hideSubtitle, moveSeriesInQueue, moveSubtitleInQueue, moveWhisperSubtitleInQueue, moveWhisperSubtitleToTop, reorderSubtitles, reorderWhisperSubtitles, requeueCancelledSubtitle, resetChunk, retryFailedChunk, softDeleteSubtitle, softDeleteSubtitlesByMediaItem } from "../repositories/subtitleRepository"
+import { bulkCancelDelete, cancelSubtitle, cancelSubtitleJob, cancelSubtitlesByMediaItem, createSubtitleTask, getChunksByJobId, getDashboardData, getExportFileName, getSubtitleById, getSubtitleJobById, getSubtitleJobsBySubtitleId, hideSubtitle, moveSeriesInQueue, moveSubtitleInQueue, moveWhisperSubtitleInQueue, moveWhisperSubtitleToTop, reorderSubtitles, reorderWhisperSubtitles, requeueCancelledSubtitle, resetChunk, retryFailedChunk, softDeleteSubtitle, softDeleteSubtitleJob, softDeleteSubtitlesByMediaItem } from "../repositories/subtitleRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
 import { requireAuth } from "../middleware/auth"
 import { requirePermission } from "../services/permissionService"
@@ -49,6 +49,7 @@ export function dashboardRouter(db: Database.Database) {
       whisperWorkerPaused: getWhisperWorkerBridge().isWorkerPaused(),
       ocrWorkerPaused: getOcrWorkerBridge().isWorkerPaused(),
       showPosters: config.showPosters && user.showPosters !== 0,
+      deleteNotCancel: config.deleteNotCancel === 1,
       toast: req.query.toast ?? null,
       msg: req.query.msg ?? null,
       theme,
@@ -70,6 +71,7 @@ export function dashboardRouter(db: Database.Database) {
         whisperWorkerPaused: getWhisperWorkerBridge().isWorkerPaused(),
         ocrJobs: getOcrJobsForDashboard(db),
         ocrWorkerPaused: getOcrWorkerBridge().isWorkerPaused(),
+        deleteNotCancel: config.deleteNotCancel === 1,
       })
     } catch (e) {
       res.status(500).json({ error: String(e) })
@@ -297,11 +299,20 @@ export function dashboardRouter(db: Database.Database) {
 
   
   router.post("/cancel/:id", requireAuth, (req, res) => {
-    const result = cancelSubtitle(db, res.locals.user!, parseInt(String(req.params.id)))
+    const id = parseInt(String(req.params.id))
+    // deleteNotCancel: when enabled, the cancel action fully deletes the
+    // subtitle instead of marking it cancelled. The delete path enforces
+    // canDeleteTranslation (inside softDeleteSubtitle); the cancel path
+    // enforces canCancelTranslationJob (inside cancelSubtitle) — so the right
+    // permission is checked for whichever action actually runs.
+    const config = getConfig(db)
+    const result = config.deleteNotCancel
+      ? softDeleteSubtitle(db, res.locals.user!, id)
+      : cancelSubtitle(db, res.locals.user!, id)
     if (!result.success) {
       return res.redirect("/dashboard?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed to cancel"))
     }
-    res.redirect("/dashboard?toast=success&msg=" + encodeURIComponent("Job cancelled"))
+    res.redirect("/dashboard?toast=success&msg=" + encodeURIComponent(config.deleteNotCancel ? "Subtitle deleted" : "Job cancelled"))
   })
 
   router.post("/cancel-job/:jobId", requireAuth, (req, res) => {
@@ -362,25 +373,27 @@ export function dashboardRouter(db: Database.Database) {
     res.redirect("/dashboard")
   })
 
-  // Delete the series (its episodes) from the queue the button was clicked in.
-  // `queue` (whisper|translation|all) scopes the delete so removing a series
-  // from the whisper queue doesn't also wipe its translation-queue episodes
-  // (and vice versa). Permission is enforced in the repo (canDeleteTranslation),
-  // matching the per-subtitle /delete/:id route.
+  // Delete (or cancel) the series (its episodes) from the queue the button was
+  // clicked in. `queue` (whisper|translation|all) scopes the action so removing
+  // a series from the whisper queue doesn't also wipe its translation-queue
+  // episodes (and vice versa). By default (config.deleteNotCancel = false) this
+  // CANCELS the series so it stays visible and can be deleted later; when
+  // deleteNotCancel is enabled it fully deletes. Permissions are enforced in the
+  // repo: cancel path checks canCancelTranslationJob, delete path checks
+  // canDeleteTranslation — matching the per-subtitle routes.
   router.post("/delete-series/:mediaItemId", requireAuth, (req, res) => {
     const queue = String(req.query.queue ?? "all")
     const queueScope: "whisper" | "translation" | "all" =
       queue === "whisper" || queue === "translation" ? queue : "all"
-    const result = softDeleteSubtitlesByMediaItem(
-      db,
-      res.locals.user!,
-      parseInt(String(req.params.mediaItemId)),
-      queueScope,
-    )
+    const mediaItemId = parseInt(String(req.params.mediaItemId))
+    const config = getConfig(db)
+    const result = config.deleteNotCancel
+      ? softDeleteSubtitlesByMediaItem(db, res.locals.user!, mediaItemId, queueScope)
+      : cancelSubtitlesByMediaItem(db, res.locals.user!, mediaItemId, queueScope)
     if (!result.success) {
       return res.redirect("/dashboard?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed to delete series"))
     }
-    res.redirect("/dashboard?toast=success&msg=" + encodeURIComponent(result.msg ?? "Series deleted"))
+    res.redirect("/dashboard?toast=success&msg=" + encodeURIComponent(result.msg ?? (config.deleteNotCancel ? "Series deleted" : "Series cancelled")))
   })
 
   // Whisper-queue reordering (separate whisper queue). Any reorder that can
@@ -407,6 +420,27 @@ export function dashboardRouter(db: Database.Database) {
     res.redirect("/dashboard")
   })
 
+
+  // Bulk cancel/delete for the dashboard multi-select flow. Accepts a JSON body:
+  //   { subtitleIds: number[], jobIds: number[] }
+  // Active items cancel (or delete when config.deleteNotCancel is on); cancelled
+  // items are deleted. Permissions are enforced per item inside bulkCancelDelete
+  // (canCancelTranslationJob for cancel, canDeleteTranslation for delete), so a
+  // user only needs the permission relevant to the action that actually runs.
+  router.post("/bulk", requireAuth, (req, res) => {
+    const body = req.body as { subtitleIds?: unknown; jobIds?: unknown }
+    if (!Array.isArray(body.subtitleIds) && !Array.isArray(body.jobIds)) {
+      return res.status(400).json({ success: false, msg: "Invalid payload" })
+    }
+    const subtitleIds = Array.isArray(body.subtitleIds) ? (body.subtitleIds as unknown[]).map(Number).filter((n) => !isNaN(n)) : []
+    const jobIds = Array.isArray(body.jobIds) ? (body.jobIds as unknown[]).map(Number).filter((n) => !isNaN(n)) : []
+    if (subtitleIds.length === 0 && jobIds.length === 0) {
+      return res.json({ success: false, msg: "Nothing selected" })
+    }
+    const config = getConfig(db)
+    const result = bulkCancelDelete(db, res.locals.user!, subtitleIds, jobIds, config.deleteNotCancel === 1)
+    res.json(result)
+  })
 
   router.post("/reorder", requireAuth, (req, res) => {
     const { orderedIds } = req.body as { orderedIds: unknown }

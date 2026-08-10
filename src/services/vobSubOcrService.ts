@@ -11,10 +11,13 @@
 // OCRs them):
 //   1. Parse the .idx for the canvas size and per-event start timestamps.
 //   2. Burn the VobSub subtitle stream onto a solid black canvas with ffmpeg
-//      (reading the .idx via ffmpeg's vobsub demuxer), producing a short
-//      intermediate video that shows each subtitle at its real time.
-//   3. Grab one PNG frame per event (at the event midpoint, where the subtitle
-//      is guaranteed visible) from the intermediate video.
+//      (reading the .idx via ffmpeg's vobsub demuxer), writing a PNG image
+//      sequence (one file per frame) for the full duration. PNG (not ffv1) at a
+//      low fps keeps the encode fast for mostly-black frames; the burn timeout
+//      scales with content length so a long track can't hit a fixed deadline.
+//   3. Pick one PNG per event by time index (the frame at floor(midpoint*fps),
+//      which always lands inside the event since events are clamped to >=1s) —
+//      no per-event ffmpeg seek calls.
 //   4. OCR each PNG with Tesseract, using a language derived from the source
 //      language (see subtitleOcrLanguageMapper).
 //   5. Build SrtEntry[] from the .idx timing + OCR text and serialize to SRT.
@@ -161,20 +164,31 @@ export function ocrVobSubToSrt(subPath: string, idxPath: string, opts: VobSubOcr
   const height = opts.height ?? parsed.height
   const pairs = buildStartEndPairs(parsed.events)
 
+  // 2 fps is plenty for OCR: a frame every 500ms, and events are clamped to
+  // >=1s, so the frame at floor(midpoint*fps) always lands inside the event.
+  // Low fps keeps the rendered frame count (and the burn's runtime/file count)
+  // small relative to the movie length.
+  const fps = 2
   const totalDurationSec = Math.ceil((pairs[pairs.length - 1].endMs + 1000) / 1000)
-  const fps = 10 // 100ms granularity; subtitles last well over that.
 
   // Per-job temp dir under the OS temp folder — never in the media folder.
   const tmpRoot = path.join(os.tmpdir(), `bcookiesubs-vobsub-ocr-${process.pid}-${Date.now()}`)
   fs.mkdirSync(tmpRoot, { recursive: true })
-  const burnedVideo = path.join(tmpRoot, "burned.mkv")
   const framesDir = path.join(tmpRoot, "frames")
   fs.mkdirSync(framesDir, { recursive: true })
 
+  // Burn timeout scales with content length so a long movie can't hit a fixed
+  // deadline (the original 5-min cap timed out with ETIMEDOUT on long tracks).
+  // 3s of render budget per second of video is generous for a 2fps PNG encode.
+  const burnTimeoutMs = Math.max(300_000, totalDurationSec * 3000)
+
   try {
     // 1) Burn the VobSub subtitle stream onto a black canvas for the full
-    //    duration. ffmpeg reads VobSub via the .idx (vobsub demuxer) and the
-    //    overlay renders each image subtitle with its own palette/alpha.
+    //    duration, writing a PNG image sequence (one file per frame). ffmpeg
+    //    reads VobSub via the .idx (vobsub demuxer) and the overlay renders each
+    //    image subtitle with its own palette/alpha. PNG (not ffv1) encodes the
+    //    mostly-black frames fast, and an image sequence lets us pick frames by
+    //    index — no per-event ffmpeg seek calls.
     const burn = runFfmpeg(
       [
         "-y", "-hide_banner", "-loglevel", "error",
@@ -183,10 +197,9 @@ export function ocrVobSubToSrt(subPath: string, idxPath: string, opts: VobSubOcr
         "-filter_complex", "[0:v][1:s]overlay=0:0",
         "-t", String(totalDurationSec),
         "-an",
-        "-c:v", "ffv1", // lossless, frame-accurate seeking for the grabs
-        burnedVideo,
+        path.join(framesDir, "f_%06d.png"),
       ],
-      300_000,
+      burnTimeoutMs,
       "ffmpeg burn VobSub",
     )
     if (!burn.ok) {
@@ -195,30 +208,26 @@ export function ocrVobSubToSrt(subPath: string, idxPath: string, opts: VobSubOcr
       )
     }
 
-    // 2) Grab + OCR one frame per event at its midpoint (subtitle guaranteed
-    //    visible there). Sequential per-event grabs are O(events) ffmpeg calls
-    //    but keep frame↔event mapping unambiguous.
+    // 2) Pick + OCR one frame per event at its midpoint (subtitle guaranteed
+    //    visible there). Frames are pre-rendered, so this is just a file lookup
+    //    by time index + a Tesseract call — no ffmpeg per event.
+    const allFrames = fs.readdirSync(framesDir).filter((f) => f.endsWith(".png")).sort()
+    if (allFrames.length === 0) {
+      throw new VobSubOcrError(
+        "ffmpeg produced no rendered frames. Ensure ffmpeg supports the vobsub demuxer and that the .idx/.sub pair is valid.",
+      )
+    }
     const entries: SrtEntry[] = []
     let emptyRows = 0
     for (let i = 0; i < pairs.length; i++) {
       if (opts.shouldAbort?.()) break
       const { startMs, endMs } = pairs[i]
       const midSec = ((startMs + endMs) / 2) / 1000
-      const framePath = path.join(framesDir, `f_${String(i).padStart(6, "0")}.png`)
-
-      const grab = runFfmpeg(
-        [
-          "-y", "-hide_banner", "-loglevel", "error",
-          "-ss", midSec.toFixed(3),
-          "-i", burnedVideo,
-          "-frames:v", "1",
-          "-q:v", "2",
-          framePath,
-        ],
-        30_000,
-        "ffmpeg frame grab",
-      )
-      if (!grab.ok || !fs.existsSync(framePath)) {
+      // floor (not round) biases toward the event start, so the chosen frame is
+      // always within [start, midpoint] — never the next event's boundary.
+      const fi = Math.min(allFrames.length - 1, Math.max(0, Math.floor(midSec * fps)))
+      const framePath = path.join(framesDir, allFrames[fi])
+      if (!fs.existsSync(framePath)) {
         // One bad frame shouldn't kill the whole OCR; record empty and continue.
         emptyRows++
         continue

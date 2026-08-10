@@ -69,6 +69,10 @@
               <input type="checkbox" id="scanLibraryPaths" name="scanLibraryPaths" value="1" <%= config.scanLibraryPaths ? 'checked' : '' %>>
               <label for="scanLibraryPaths"><%= __('config.enableLibraryScan') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipLibraryScan') %>"></i></label>
             </div>
+            <div class="field field-checkbox">
+              <input type="checkbox" id="deleteNotCancel" name="deleteNotCancel" value="1" <%= config.deleteNotCancel ? 'checked' : '' %>>
+              <label for="deleteNotCancel"><%= __('config.deleteNotCancel') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipDeleteNotCancel') %>"></i></label>
+            </div>
             <% if (config.scanLibraryPaths && can('canManageSettings')) { %>
             <div class="field">
               <label for="rootLibraryPath"><%= __('config.rootLibraryFolder') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipRootLibraryFolder') %>"></i></label>

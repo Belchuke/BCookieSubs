@@ -44,6 +44,7 @@ import {
   markChunkCompletedNoCandidate,
   markChunkFailed,
   markChunkStarted,
+  resetStaleRunningChunks,
   setSelectedCandidateForChunk,
   updateSubtitleJobProgress,
   updateSubtitleJobStatus,
@@ -85,18 +86,18 @@ function isRateLimitError(err: unknown): boolean {
   return false
 }
 
-function classifyRequestError(
-  err: unknown,
-  cancelSignal: AbortSignal,
-  timeoutSignal: AbortSignal,
-): TranslationErrorCode {
-  if (err instanceof DOMException && err.name === "AbortError") {
-    if (cancelSignal.aborted) return "cancelled"
-    if (timeoutSignal.aborted) return "timeout"
-    return "cancelled"
-  }
+// Classifies a request error into a stable category. Timeout and user-cancel
+// are now thrown as typed TranslationError values from abortableSendPrompt, so
+// we never have to infer them from AbortSignal timing (which was racy: a freshly
+// created AbortSignal.timeout(0) is not aborted synchronously, so a real
+// timeout used to be misread here as "cancelled" — leaving the chunk running
+// forever with no retry). A raw AbortError reaching this point is treated as a
+// user cancellation (never retried).
+function classifyRequestError(err: unknown, cancelSignal: AbortSignal): TranslationErrorCode {
   if (err instanceof TranslationError) return err.code
+  if (err instanceof DOMException && err.name === "AbortError") return "cancelled"
   if (isRateLimitError(err)) return "rate_limited"
+  if (cancelSignal.aborted) return "cancelled"
   return "model_error"
 }
 
@@ -154,6 +155,24 @@ export function isWorkerPaused(): boolean {
 export async function taskMain(db: Database.Database): Promise<void> {
   createLog(db, "info", "workerState", "worker", null, "Translation worker started", {})
   console.log("[worker] Translation worker started")
+
+  // Startup watchdog: recover chunks left "running" by a previous crashed
+  // worker. We reset anything that has been running longer than the model
+  // request timeout + a 60s grace margin, so a chunk a fresh worker just
+  // started (single-worker setup) is never clobbered.
+  const staleSeconds = Math.ceil(MODEL_REQUEST_TIMEOUT_MS / 1000) + 60
+  const staleReset = resetStaleRunningChunks(db, staleSeconds)
+  if (staleReset > 0) {
+    createLog(
+      db,
+      "warning",
+      "workerState", "worker",
+      null,
+      `Reset ${staleReset} stale running chunk(s) back to queued on worker startup`,
+      { staleSeconds },
+    )
+    console.log(`[worker] Reset ${staleReset} stale running chunk(s) back to queued`)
+  }
 
   while (true) {
     try {
@@ -225,23 +244,59 @@ async function abortableSendPrompt(
   promptText: string,
   cancelSignal: AbortSignal,
 ): Promise<{ message: { content: string } }> {
-  const timeoutSignal = AbortSignal.timeout(MODEL_REQUEST_TIMEOUT_MS)
-  const combinedSignal = AbortSignal.any([cancelSignal, timeoutSignal])
-
   return new Promise((resolve, reject) => {
-    if (combinedSignal.aborted) {
-      reject(new DOMException("Aborted", "AbortError"))
+    // Reject immediately (as a cancellation) if the worker was already paused
+    // before this request started — no point issuing a model call we will abort.
+    if (cancelSignal.aborted) {
+      reject(new TranslationError("cancelled", "Request cancelled before send"))
       return
     }
-    const onAbort = () => reject(new DOMException("Aborted", "AbortError"))
-    combinedSignal.addEventListener("abort", onAbort, { once: true })
+
+    let settled = false
+
+    const cleanup = () => {
+      clearTimeout(timer)
+      cancelSignal.removeEventListener("abort", onCancel)
+    }
+
+    // Hard ceiling so a hung/cloud model request cannot leave the chunk running
+    // forever. Rejecting with a typed "timeout" error (rather than a bare
+    // AbortError whose source is ambiguous after the fact) lets
+    // classifyRequestError distinguish timeout from user cancellation reliably.
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(
+        new TranslationError(
+          "timeout",
+          `Model request timed out after ${Math.round(MODEL_REQUEST_TIMEOUT_MS / 1000)}s`,
+        ),
+      )
+    }, MODEL_REQUEST_TIMEOUT_MS)
+
+    const onCancel = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(new TranslationError("cancelled", "Request cancelled by user"))
+    }
+    cancelSignal.addEventListener("abort", onCancel, { once: true })
+
     sendPrompt(db, model, promptText).then(
       (result) => {
-        combinedSignal.removeEventListener("abort", onAbort)
+        if (settled) return
+        settled = true
+        cleanup()
         resolve(result)
       },
       (err) => {
-        combinedSignal.removeEventListener("abort", onAbort)
+        if (settled) return
+        settled = true
+        cleanup()
+        // Propagate the original error (e.g. RateLimitError) so rate limiting is
+        // still detectable downstream. The timeout/cancel cases are already
+        // handled above via their own typed rejections.
         reject(err)
       },
     )
@@ -567,8 +622,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
             return
           }
 
-          const timeoutSignal = AbortSignal.timeout(0)
-          const errorCode = classifyRequestError(err, signal, timeoutSignal)
+          const errorCode = classifyRequestError(err, signal)
           const errorSummary = summarizeError(err)
           const durationMs = Date.now() - startMs
 
@@ -920,7 +974,10 @@ async function runJudgeModel(
       }
     } catch (err) {
       const errorSummary = summarizeError(err)
-      const failureCategory = isRateLimitError(err) ? "rate_limited" : "api_error"
+      const failureCategory = classifyRequestError(err, signal)
+      // User cancellation is never retried — bail out of the judge loop so the
+      // worker pause path can release the chunk cleanly.
+      if (failureCategory === "cancelled") return { status: "failed" }
       createLog(
         db,
         "error",
@@ -939,7 +996,7 @@ async function runJudgeModel(
         },
       )
       if (attempt + 1 >= maxRetries) return { status: "failed" }
-      console.log(`[worker] Retrying judge attempt ${attempt + 2}/${maxRetries}: API error — ${errorSummary}`)
+      console.log(`[worker] Retrying judge attempt ${attempt + 2}/${maxRetries}: ${failureCategory} — ${errorSummary}`)
     }
   }
   return { status: "failed" }

@@ -534,6 +534,22 @@ function isInSubsFolder(srtPath: string): boolean {
   return /^subs$/i.test(path.basename(path.dirname(srtPath)))
 }
 
+// True when a subtitle sits directly in the same folder as a movie video — i.e.
+// directly in the movie folder, not in a "Subs" subfolder and not a companion
+// (companions share the video stem and are grouped in the video loop, so they
+// never reach the standalone-srt loop that calls this). For movies any subtitle
+// next to the video belongs to that movie even when its filename is neither the
+// video stem nor a bare language tag (e.g. a release-group label, a foreign
+// title, or a renamed track). Without this, such a file is garbage-matched on
+// its own stem instead of attaching to the owning movie.
+function isInMovieVideoFolder(srtPath: string, videoFiles: string[]): boolean {
+  const srtDir = path.normalize(path.dirname(srtPath))
+  for (const vf of videoFiles) {
+    if (path.normalize(path.dirname(vf)) === srtDir) return true
+  }
+  return false
+}
+
 // For a standalone subtitle, find the video file in the same folder tree whose
 // directory is the nearest enclosing ancestor of the subtitle's directory
 // (the "Subs" subfolder case: the subtitle lives one level under the video's
@@ -1554,6 +1570,29 @@ function stripFolderIdTags(folderName: string): string {
     .trim()
 }
 
+// Release-group/source/codec/resolution tokens that appear in scene release
+// filenames but carry no title information. Stripping them lets the name
+// formatter and TMDB search see "Superman 2025" instead of
+// "Superman.2025.1080p.WEB-DL.x264", which otherwise confuses title/year
+// extraction (the model sometimes keeps "1080p" as part of the title or reads
+// the wrong year). The release year itself is intentionally NOT stripped — it
+// is meaningful and the name formatter extracts it separately.
+const RELEASE_TOKEN_RE =
+  /(?<![A-Za-z0-9])(?:2160p|1080p|720p|576p|480p|4k|uhd|hdr10|hdr|dv|dovi|10bit|8bit|sdr|web-?dl|web-?rip|webrip|webdl|blu-?ray|bdrip|brrip|dvdrip|dvdscr|remux|hdrip|hdtv|pdtv|dsrtv|cam|ts-?hdtc|tc|scr|satrip|tvrip|x264|x265|h264|h265|hevc|avc|vc1|vp9|av1|aac|ac3|eac3|ddp|dd|dts-?hd|dts-?ma|truehd|atmos|5[ .]1|7[ .]1|2[ .]0|2ch|6ch|8ch|repack|proper|internal|limited|festival|3d|imax|nf|amzn|atvp|cmor|hulu|dsnp|starz|crchd|galaxyrg|rarbg|yts|ettv|eztv|tigole|joy|psa|rmteam|footographe|nikita|d3g|telly)(?![A-Za-z0-9])/gi
+
+// Strip release tokens from a release filename stem/folder and normalise
+// dots/underscores to spaces. Hyphens are kept so the regex can match
+// hyphenated release tokens (WEB-DL, Blu-Ray, DTS-HD) while title hyphens
+// (Spider-Man, X-Men) are preserved. The title and any 4-digit year are kept.
+function stripReleaseTokens(name: string): string {
+  if (!name) return name
+  return name
+    .replace(/[._]+/g, " ")
+    .replace(RELEASE_TOKEN_RE, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
 async function matchMediaForFile(
   db: Database.Database,
   adminUser: DBUser,
@@ -1644,6 +1683,7 @@ async function matchMediaForFile(
   // TMDB id pre-check: an NFO tmdb id (if the NFO didn't satisfy the shortcut
   // above) comes first, then a tmdb id embedded in the folder name. Either lets
   // us fetch directly by id and skip the AI name-detection step.
+  const idConfig = getConfig(db)
   const idSources: { tmdbId: number; source: string }[] = []
   if (nfoMeta?.tmdbId) idSources.push({ tmdbId: nfoMeta.tmdbId, source: "NFO" })
   const folderTmdbId = parseTmdbIdFromFolderName(path.basename(nfoDir))
@@ -1700,6 +1740,20 @@ async function matchMediaForFile(
             detectedYear: tmdbYear,
           }
         }
+      } else if (idConfig.theMovieDbActive) {
+        // The embedded tmdb id (from the NFO or folder name) did not resolve to
+        // a valid TMDB entry — it is invalid/deleted, or TMDB was temporarily
+        // unreachable. Warn so the user knows their embedded id is suspect, then
+        // fall through to the next id source and finally to name-based fallback
+        // matching instead of silently leaving the file Unmatched.
+        createLog(
+          db,
+          "warning",
+          "tmdbMatch", "libraryScanner",
+          null,
+          `TMDB id ${tmdbId} (${source}) did not resolve for "${path.basename(fileName)}"; continuing to fallback matching`,
+          { fileName: path.basename(fileName), tmdbId, tmdbIdSource: source },
+        )
       }
     } catch (e) {
       createLog(
@@ -1734,14 +1788,21 @@ async function matchMediaForFile(
     // a fallback for series that live in a badly-named/blank folder or directly
     // in the library root — the episode filename usually carries the show name
     // plus SxxExx, which the name formatter turns back into a clean title.
-    detectionNames.push(getSeriesDetectionName(fileName, libraryPathRoot))
-    if (stem && !detectionNames.includes(stem)) detectionNames.push(stem)
+    detectionNames.push(stripReleaseTokens(getSeriesDetectionName(fileName, libraryPathRoot)))
+    const cleanStem = stripReleaseTokens(stem)
+    if (cleanStem && !detectionNames.includes(cleanStem)) detectionNames.push(cleanStem)
   } else {
     const dir = path.normalize(path.dirname(fileName))
     const root = path.normalize(libraryPathRoot)
-    const folderName = dir === root ? null : stripFolderIdTags(path.basename(dir))
-    detectionNames.push(stem)
-    if (folderName && folderName !== stem) detectionNames.push(folderName)
+    const folderName = dir === root ? null : stripReleaseTokens(stripFolderIdTags(path.basename(dir)))
+    const cleanStem = stripReleaseTokens(stem)
+    // For movies prefer the FILENAME — it is the release-named signal (carries
+    // the title + year + tags) and is what matches reliably even when the
+    // movie's containing folder isn't in a clean "Title (Year)" layout.
+    // stripReleaseTokens removes the resolution/codec/source noise so the name
+    // formatter sees "Superman 2025" instead of "Superman.2025.1080p.WEB-DL.x264".
+    detectionNames.push(cleanStem)
+    if (folderName && folderName !== cleanStem) detectionNames.push(folderName)
   }
 
   type DetectionOutcome = {
@@ -1907,6 +1968,39 @@ async function matchMediaForFile(
               candidateMediaItemIds: [],
             }
           }
+          // Series: reuse an already-matched mediaItem (one carrying a
+          // theMovieDbId) of the same title, ignoring the year. An isolated
+          // episode like "Silo S03E05" sitting in its own folder — separate
+          // from the already-scanned/matched Silo seasons — should join that
+          // matched "Silo" series instead of getting a fresh placeholder
+          // mediaItem (no theMovieDbId) and staying half-resolved/unmatched.
+          // Year is ignored because the matched series row usually carries the
+          // TMDB release year while a name-only detection yields none.
+          if (libraryType === "series") {
+            const matched = db
+              .prepare(
+                `SELECT id FROM mediaItem WHERE title = ? AND type = ? AND theMovieDbId IS NOT NULL AND theMovieDbId != '' ORDER BY createdAt DESC LIMIT 1`,
+              )
+              .get(detected.name, libraryType) as { id: number } | undefined
+            if (matched) {
+              createLog(
+                db,
+                "info",
+                "seriesReuse", "libraryScanner",
+                null,
+                `Reusing matched series media item for "${path.basename(fileName)}" → "${detected.name}" (id ${matched.id})`,
+                { fileName: path.basename(fileName), detectionName: detectionName, detectedName: detected.name, mediaItemId: matched.id },
+              )
+              return {
+                status: "matched",
+                season: attemptSeason,
+                episode: attemptEpisode,
+                detectedYear: attemptYear,
+                mediaItemId: matched.id,
+                candidateMediaItemIds: [],
+              }
+            }
+          }
           const mediaResult = await createMediaItem(
             db,
             adminUser,
@@ -1956,8 +2050,19 @@ async function matchMediaForFile(
   // filename) is preferable to forcing manual selection. If every name is
   // ambiguous, the first "multiple" outcome is returned so the user still gets
   // the manual-selection candidates.
+  //
+  // Series exception: the series-root folder (the first detection name) is the
+  // authoritative title — the episode filename is the episode, not the show, so
+  // a single match derived from it is unreliable (e.g. an episode title like
+  // "The Crush" matching an unrelated movie). When the folder name already
+  // produced candidates ("multiple"), the correct show is almost certainly among
+  // them, so stop and keep those candidates for manual selection instead of
+  // letting the episode filename override the match. The filename is still used
+  // as a fallback when the folder name yields nothing ("none") — e.g. a blank
+  // or badly-named folder, or files sitting directly in the library root.
   let multipleOutcome: DetectionOutcome | null = null
-  for (const detectionName of detectionNames) {
+  for (let i = 0; i < detectionNames.length; i++) {
+    const detectionName = detectionNames[i]
     const outcome = await attemptDetectionMatch(detectionName)
 
     if (outcome.status === "matched") {
@@ -1980,6 +2085,19 @@ async function matchMediaForFile(
     if (outcome.season !== null) season = outcome.season
     if (outcome.episode !== null) episode = outcome.episode
     if (outcome.detectedYear !== null) detectedYear = outcome.detectedYear
+
+    // Series: a "multiple" from the root-folder name is authoritative — don't
+    // let the episode filename override it. (See the series-exception note
+    // above.) Only fall through to the filename when the folder gave nothing.
+    if (
+      libraryType === "series" &&
+      i === 0 &&
+      outcome.status === "multiple" &&
+      multipleOutcome &&
+      multipleOutcome.candidateMediaItemIds.length > 0
+    ) {
+      break
+    }
   }
 
   if (multipleOutcome) {
@@ -2462,7 +2580,10 @@ export async function scanLibraryPath(
     // track for the correct movie. Series are folder-matched and excluded by
     // request.
     let matchedViaOwningVideo = false
-    if (libraryPath.type === "movie" && (isLanguageOnlyStem(stem) || isInSubsFolder(srtFile))) {
+    if (
+      libraryPath.type === "movie" &&
+      (isLanguageOnlyStem(stem) || isInSubsFolder(srtFile) || isInMovieVideoFolder(srtFile, videoFiles))
+    ) {
       const owningVideo = findOwningVideoFile(srtFile, videoFiles)
       const owningItem = owningVideo ? findLibraryPathItemByPath(db, libraryPath.id, owningVideo) : null
       if (owningItem) {

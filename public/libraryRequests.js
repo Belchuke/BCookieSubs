@@ -18,6 +18,23 @@
   var LANG_BY_ID = window.LR_LANG_BY_ID || {}
   var SHOW_POSTERS = !!window.LR_SHOW_POSTERS
 
+  // The user's "My Target Languages" as a set of lowercase iso639 codes. A
+  // source track in one of these languages is not worth translating (it would
+  // just produce a copy of an existing target-language subtitle), so the picker
+  // disables those rows and the backend rejects the POST.
+  var TARGET_LANG_ISO = (function () {
+    var ids = window.LR_USER_TARGET_LANG_IDS || []
+    var set = {}
+    ids.forEach(function (id) {
+      var lang = LANG_BY_ID[id]
+      if (lang && lang.iso639) set[String(lang.iso639).toLowerCase()] = true
+    })
+    return set
+  })()
+  function isTargetLangIso(iso) {
+    return !!iso && !!TARGET_LANG_ISO[String(iso).toLowerCase()]
+  }
+
   // type → { loaded, groups, genres }
   var state = { movie: newState(), series: newState(), unmatched: newState() }
   var activeTab = "movie"
@@ -71,6 +88,13 @@
       history.replaceState(null, "", u.toString())
     }
     if (!S(tab).loaded) loadTab(tab)
+    else {
+      // Re-sync the genre dropdown to this tab's genres (it's shared across
+      // tabs and still holds the previous tab's list), then re-apply the
+      // filter and recount the badge from the visible cards.
+      populateGenres(tab)
+      applyFilters()
+    }
   }
 
   // ── Data loading ─────────────────────────────────────────────────────────
@@ -93,6 +117,9 @@
         st.loaded = true
         renderTab(type)
         updateTabCount(type)
+        // Apply any genre/search filter persisted across tabs and recount the
+        // badge from the visible (filtered) cards.
+        applyFilters()
       })
       .catch(function () {
         st.loading = false
@@ -134,6 +161,25 @@
     var n = S(type).groups.length
     el.textContent = String(n)
     el.style.display = n > 0 ? "" : "none"
+  }
+
+  // Recount the ACTIVE tab's badge from the currently visible cards. The base
+  // count (updateTabCount) reflects every group in the tab, but the genre +
+  // search filters hide cards without recounting — so the badge was stale after
+  // a genre change. This re-derives it from the live DOM so the movie/series
+  // badge matches the filtered set (and returns to the total when cleared).
+  function updateActiveTabBadgeFromVisible() {
+    var container = document.getElementById("lr-tab-" + activeTab)
+    if (!container) return
+    var n = 0
+    container.querySelectorAll(".lr-card").forEach(function (el) {
+      if (el.style.display !== "none") n++
+    })
+    var el = document.querySelector('.lr-tab-count[data-tab="' + activeTab + '"]')
+    if (el) {
+      el.textContent = String(n)
+      el.style.display = n > 0 ? "" : "none"
+    }
   }
 
   // Preload every tab's badge number on first page load so the counts are
@@ -746,6 +792,8 @@
       var matchGenre = !genre || elGenre.indexOf(genre) !== -1
       el.style.display = matchQ && matchGenre ? "" : "none"
     })
+    // Keep the active tab's count badge in sync with the filtered set.
+    updateActiveTabBadgeFromVisible()
   }
 
   // ── Toast ────────────────────────────────────────────────────────────────
@@ -766,6 +814,17 @@
 
   // ── Translate / create actions ───────────────────────────────────────────
   function translateItem(itemId, sourceChoice) {
+    // Frontend guard mirroring the backend one: if the chosen source language
+    // is already one of the user's target languages, don't POST at all — show a
+    // toast and resolve with a skipped result. Covers the movie popup and the
+    // season picker which both call translateItem directly.
+    if (sourceChoice && sourceChoice.language && isTargetLangIso(sourceChoice.language)) {
+      var skipMsg = (I18N.sourceIsTargetLang || "Source language is one of your target languages — skipped")
+      // Don't toast here — callers (onTranslateResponse / lrDoMovieTranslate /
+      // lrTranslateSeason) already surface a toast for non-success responses, so
+      // toasting now would double up. Just resolve with a skipped result.
+      return Promise.resolve({ success: false, msg: skipMsg, skipped: true })
+    }
     var url = "/library-paths/item/" + itemId + "/translate"
     var body = ""
     if (sourceChoice) {
@@ -1281,25 +1340,38 @@
       }
 
       html += '<button type="button" class="btn btn-primary lr-source-use">' + escHtml(I18N.translate) + "</button>"
+
+      // Source language is already one of the user's target languages —
+      // translating it would just duplicate an existing target subtitle, so
+      // disable the row and explain why (the backend rejects it too).
+      var skipSource = isTargetLangIso(srcLang)
+      if (skipSource) {
+        html += '<span class="text-dim lr-source-note">' + escHtml(I18N.sourceIsTargetLang || "Already a target language") + "</span>"
+      }
       row.innerHTML = html
 
       // Single-track Translate: image-based sources return immediately (enqueued
       // to the background OCR queue) so the modal closes right away; text
       // sources resolve synchronously here too. Either way, close + toast.
       var useBtn = row.querySelector(".lr-source-use")
-      useBtn.addEventListener("click", function () {
-        var choice = lrChoiceFromRow(row)
-        setSourceUseButtonLoading(useBtn)
-        translateItem(entry.itemId, choice)
-          .then(function (resp) {
-            closeModal("subtitle-source-modal")
-            onTranslateResponse(btn, resp)
-          })
-          .catch(function () {
-            restoreSourceUseButton(useBtn)
-            showToast("Request failed", "error")
-          })
-      })
+      if (skipSource) {
+        useBtn.disabled = true
+        useBtn.classList.add("lr-source-disabled-btn")
+      } else {
+        useBtn.addEventListener("click", function () {
+          var choice = lrChoiceFromRow(row)
+          setSourceUseButtonLoading(useBtn)
+          translateItem(entry.itemId, choice)
+            .then(function (resp) {
+              closeModal("subtitle-source-modal")
+              onTranslateResponse(btn, resp)
+            })
+            .catch(function () {
+              restoreSourceUseButton(useBtn)
+              showToast("Request failed", "error")
+            })
+        })
+      }
 
       list.appendChild(row)
     })

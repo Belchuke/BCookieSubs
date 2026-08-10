@@ -114,6 +114,25 @@ export const createMediaItem = async (
 
   const existing = getMediaItemByKeys(db, title, type, year, theMovieDbId)
   if (existing) {
+    // Upgrade a filename-derived placeholder (no theMovieDbId) to a real
+    // TMDB-matched item when the caller supplies a theMovieDbId. Without this,
+    // the Change-match "Correct Match" selection dedupes back to the existing
+    // placeholder and the manual match never persists — the item stays
+    // unmatched because its mediaItem still has no theMovieDbId. Upgrading in
+    // place (rather than inserting a second row) also means every other item
+    // already linked to this placeholder graduates to the matched tab too.
+    const existingTmdb = existing.theMovieDbId ? String(existing.theMovieDbId).trim() : ""
+    if (theMovieDbId && !existingTmdb) {
+      db.prepare(
+        `UPDATE mediaItem SET
+           theMovieDbId = ?,
+           originalTitle = COALESCE(NULLIF(originalTitle, ''), ?),
+           year = COALESCE(year, ?),
+           isAnime = ?,
+           genres = COALESCE(NULLIF(genres, ''), ?)
+         WHERE id = ?`,
+      ).run(String(theMovieDbId), originalTitle, year, isAnime ? 1 : 0, genres, existing.id)
+    }
     if (!existing.mediaItemPhotoPath) {
       const uniqueId = theMovieDbId ? `tmdb_${theMovieDbId}` : `media_${existing.id}`
       let photoPath: string | null = null

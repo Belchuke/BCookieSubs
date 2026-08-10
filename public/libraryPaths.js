@@ -372,17 +372,20 @@
     }
 
     var actions = ""
-    // Unmatched groups are read-only: they get no "Select match" and no
-    // "Blacklist" — the scanner already failed to identify these (including
-    // blocked junk matches like TMDB 1054041), so the intent is for the user to
-    // fix the file on disk and rescan, not to re-match/blacklist in-app. The
-    // file's full path is shown under each filename to help locate it.
-    if (!isUnmatchedGroup && PERMS.canChangeMatchForLibraryPaths) {
+    // Unmatched groups get a "Change match" button (aligned far right in
+    // .lpx-group-actions) so a whole unmatched group can be re-matched in-app
+    // in one action instead of one item at a time — the per-item buttons are
+    // only reachable by expanding the accordion. Blacklist stays matched-items
+    // only; the file's full path is shown under each filename to help locate
+    // it on disk too.
+    if (PERMS.canChangeMatchForLibraryPaths) {
       // Manual matching is done from a single modal (no inline list under the
       // group). The button carries the group's full context — item ids, type,
       // candidates and display name — so the modal can match the whole group at
-      // once.
+      // once. Unmatched groups have no mediaItem, so fall back to the folder
+      // name for the modal title.
       var matchLabel = t("changeMatch")
+      var matchGroupName = group.mediaItem ? group.mediaItem.title : groupFolderName
       actions +=
         '<button type="button" class="btn btn-sm btn-secondary lp-group-match-btn" data-group-key="' +
         escAttr(groupKey) +
@@ -395,7 +398,7 @@
         '" data-candidates="' +
         escAttr(JSON.stringify(groupCandidates)) +
         '" data-group-name="' +
-        escAttr(group.mediaItem ? group.mediaItem.title : "") +
+        escAttr(matchGroupName) +
         '">' +
         escHtml(matchLabel) +
         "</button>"
@@ -420,8 +423,10 @@
 
     var header =
       '<div class="lpx-group-header">' +
-      // Unmatched groups have no bulk action (no match/blacklist), so no group
-      // checkbox either — checking it would only feed the bulk-change-match bar.
+      // Unmatched groups have no group-level bulk checkbox — only matched
+      // groups use the bulk-change-match bar. Unmatched items still feed that
+      // bar via their per-item checkbox (lp-item-cb), and the per-group
+      // "Change match" button above handles a single unmatched group at once.
       (!isUnmatchedGroup
         ? '<input type="checkbox" class="lp-group-cb" data-group-key="' +
           escAttr(groupKey) +
@@ -524,19 +529,24 @@
       escHtml(t("delete")) +
       "</button></form></div>"
 
+    // Wrappable separator (regular spaces) so the long meta line can break on
+    // narrow screens instead of overflowing — &nbsp; can't wrap.
+    var SEP = '<span class="lpx-meta-sep"> · </span>'
     var sourceMeta =
       "Source: " +
       escHtml(lp.sourceLangName || "Unknown") +
-      " &nbsp;·&nbsp; AutoTranslate: " +
+      SEP +
+      "AutoTranslate: " +
       (lp.autoTranslate ? "Yes" : "No") +
-      " &nbsp;·&nbsp; AutoExtract: " +
+      SEP +
+      "AutoExtract: " +
       (lp.autoExtract ? "Yes" : "No")
-    if (lp.lastRunAt) sourceMeta += " &nbsp;·&nbsp; Last scan: " + escHtml(lp.lastRunAt)
+    if (lp.lastRunAt) sourceMeta += SEP + "Last scan: " + escHtml(lp.lastRunAt)
 
     // Scan frequency + per-path scan durations (initial / average / last).
     var scanModeLabel =
       lp.scanMode === "custom" ? t("scanCustom") : lp.scanMode === "never" ? t("scanNever") : t("scanHourly")
-    sourceMeta += " &nbsp;·&nbsp; " + escHtml(t("scanFrequency")) + ": " + escHtml(scanModeLabel)
+    sourceMeta += SEP + escHtml(t("scanFrequency")) + ": " + escHtml(scanModeLabel)
     var scanDurParts = []
     var initDur = fmtMs(lp.initialScanDurationMs)
     var avgDur = lp.postInitialScanCount > 0 ? fmtMs(lp.postInitialScanTotalMs / lp.postInitialScanCount) : null
@@ -544,7 +554,7 @@
     if (initDur) scanDurParts.push(escHtml(t("scanInitial")) + ": " + initDur)
     if (avgDur) scanDurParts.push(escHtml(t("scanAverage")) + ": " + avgDur)
     if (lastDur) scanDurParts.push(escHtml(t("scanLast")) + ": " + lastDur)
-    if (scanDurParts.length) sourceMeta += " &nbsp;·&nbsp; " + scanDurParts.join(" &nbsp;·&nbsp; ")
+    if (scanDurParts.length) sourceMeta += SEP + scanDurParts.join(SEP)
 
     var cardOpen = getAccordionState()["lp-" + lp.id] === true ? " open" : ""
 
@@ -582,7 +592,8 @@
       "</span></div>" +
       '<div class="text-dim lpx-folder-meta"><strong class="lpx-text">' +
       escHtml(folderName) +
-      "</strong> &nbsp;·&nbsp; " +
+      "</strong>" +
+      '<span class="lpx-meta-sep"> · </span>' +
       totalFiles +
       " file" +
       (totalFiles !== 1 ? "s" : "") +

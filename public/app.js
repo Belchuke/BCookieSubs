@@ -210,7 +210,151 @@ function closeModalOnOverlay(event) {
   var whisperOpenSubs = {}
   var whisperOpenSeries = {}
 
-  
+  // Per-series accordion open/closed state for the OCR queue, keyed by
+  // mediaItemId. Persisted across poll re-renders so a user's expand/collapse
+  // choice survives (mirrors openSeries for the translation queue).
+  var ocrOpenSeries = {}
+
+  // ---- Multi-select cancel/delete state ---------------------------------
+  // selectMode is toggled by the "Select" button in the dashboard header. While
+  // on, each subtitle entity and each target-language job renders a checkbox.
+  // Selections persist across poll re-renders because we key them by id here,
+  // not in the DOM (the same way openSubs/openSeries survive re-renders).
+  var selectMode = false
+  var selectedSubs = {} // subtitleId -> display name
+  var selectedJobs = {} // jobId -> display label
+  var lastPollData = null // cached poll response for re-render when toggling select mode
+
+  function bulkSelectedSubCount() { return Object.keys(selectedSubs).length }
+  function bulkSelectedJobCount() { return Object.keys(selectedJobs).length }
+
+  function updateBulkBar() {
+    var bar = document.getElementById("dsh-bulk-bar")
+    var countEl = document.getElementById("dsh-bulk-count")
+    if (!bar || !countEl) return
+    var total = bulkSelectedSubCount() + bulkSelectedJobCount()
+    if (!selectMode || total === 0) {
+      bar.style.display = "none"
+      return
+    }
+    bar.style.display = ""
+    var sel = (typeof APP_STRINGS !== "undefined" && APP_STRINGS.selected) || "selected"
+    countEl.textContent = total + " " + sel
+  }
+
+  function clearBulkSelection() {
+    selectedSubs = {}
+    selectedJobs = {}
+    document.querySelectorAll(".dsh-bulk-sub-cb, .dsh-bulk-job-cb").forEach(function (cb) {
+      cb.checked = false
+    })
+    updateBulkBar()
+  }
+
+  function toggleSelectMode() {
+    selectMode = !selectMode
+    if (!selectMode) {
+      selectedSubs = {}
+      selectedJobs = {}
+    }
+    var btn = document.getElementById("dsh-select-btn")
+    if (btn) {
+      btn.textContent = selectMode
+        ? ((typeof APP_STRINGS !== "undefined" && APP_STRINGS.doneSelect) || "Done")
+        : ((typeof APP_STRINGS !== "undefined" && APP_STRINGS.select) || "Select")
+    }
+    var bar = document.getElementById("dsh-bulk-bar")
+    if (bar) bar.style.display = selectMode && (bulkSelectedSubCount() + bulkSelectedJobCount()) > 0 ? "" : "none"
+    // Re-render so checkboxes appear/disappear. renderQueue reads the latest
+    // poll data cached in lastPollData (kept for exactly this re-render case).
+    if (lastPollData) safeRender("queue", function () { renderQueue(lastPollData) })
+  }
+
+  function toggleSubSelect(subId, name, checked) {
+    if (checked) selectedSubs[subId] = name
+    else delete selectedSubs[subId]
+    updateBulkBar()
+  }
+
+  function toggleJobSelect(jobId, label, checked) {
+    if (checked) selectedJobs[jobId] = label
+    else delete selectedJobs[jobId]
+    updateBulkBar()
+  }
+
+  // Build the confirm modal: list selected names + explain what will happen
+  // based on the active items vs cancelled items + the deleteNotCancel setting.
+  function openBulkConfirm() {
+    var subIds = Object.keys(selectedSubs).map(Number)
+    var jobIds = Object.keys(selectedJobs).map(Number)
+    if (subIds.length === 0 && jobIds.length === 0) return
+
+    var list = document.getElementById("bulk-confirm-list")
+    var summary = document.getElementById("bulk-confirm-summary")
+    if (!list || !summary) return
+    list.innerHTML = ""
+    subIds.forEach(function (id) {
+      var li = document.createElement("li")
+      li.textContent = selectedSubs[id] || ("Subtitle #" + id)
+      list.appendChild(li)
+    })
+    jobIds.forEach(function (id) {
+      var li = document.createElement("li")
+      li.textContent = (selectedJobs[id] || ("Job #" + id)) + "  ·  " + ((typeof APP_STRINGS !== "undefined" && APP_STRINGS.bulkJobs) || "job")
+      list.appendChild(li)
+    })
+
+    var mode = (typeof DELETE_NOT_CANCEL !== "undefined" && DELETE_NOT_CANCEL) ? "delete" : "cancel"
+    var lines = []
+    if (mode === "delete") {
+      lines.push((typeof APP_STRINGS !== "undefined" && APP_STRINGS.bulkActiveWillDelete) || "Active items will be deleted.")
+    } else {
+      lines.push((typeof APP_STRINGS !== "undefined" && APP_STRINGS.bulkActiveWillCancel) || "Active items will be cancelled.")
+    }
+    lines.push((typeof APP_STRINGS !== "undefined" && APP_STRINGS.bulkCancelledWillDelete) || "Cancelled items will be deleted.")
+    summary.textContent = lines.join(" ")
+
+    openModal("bulk-confirm-modal")
+  }
+
+  function submitBulkAction() {
+    var subIds = Object.keys(selectedSubs).map(Number)
+    var jobIds = Object.keys(selectedJobs).map(Number)
+    var submitBtn = document.getElementById("bulk-confirm-submit")
+    if (submitBtn) submitBtn.disabled = true
+    fetch("/dashboard/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subtitleIds: subIds, jobIds: jobIds }),
+    })
+      .then(function (r) { return r.json() })
+      .then(function () {
+        // Exit select mode + clear selection; the next poll refreshes the queue.
+        selectedSubs = {}
+        selectedJobs = {}
+        selectMode = false
+        var btn = document.getElementById("dsh-select-btn")
+        if (btn) btn.textContent = (typeof APP_STRINGS !== "undefined" && APP_STRINGS.select) || "Select"
+        closeModal("bulk-confirm-modal")
+        var bar = document.getElementById("dsh-bulk-bar")
+        if (bar) bar.style.display = "none"
+        if (submitBtn) submitBtn.disabled = false
+        poll()
+      })
+      .catch(function () {
+        if (submitBtn) submitBtn.disabled = false
+      })
+  }
+
+  // Expose the onclick handlers to the global scope (inline onclick attributes
+  // resolve them on window). The state lives in this IIFE; the handlers close
+  // over it, so the global wrappers just delegate.
+  window.toggleSelectMode = toggleSelectMode
+  window.clearBulkSelection = clearBulkSelection
+  window.openBulkConfirm = openBulkConfirm
+  window.submitBulkAction = submitBulkAction
+
+
   function posterThumb(mediaItemId) {
     if (typeof SHOW_POSTERS !== 'undefined' && !SHOW_POSTERS) return ''
     if (!mediaItemId) return '<div class="acc-poster-placeholder"></div>'
@@ -270,6 +414,15 @@ function closeModalOnOverlay(event) {
         : t.done + " completed, " + (t.failed || 0) + " failed, " + tRemaining + " remaining"
       var jobActive = t.jobStatus !== "completed" && t.jobStatus !== "cancelled"
       html += '<div class="target-progress">'
+      if (selectMode && t.jobId != null) {
+        // Per target-language job selection checkbox. Label includes the media
+        // name + season/episode + language so the confirm modal is unambiguous.
+        var jobLabel = (s.name || "") + (s.season ? " S" + pad(s.season) + (s.episode ? "E" + pad(s.episode) : "") : "") + " · " + tLangCode
+        html +=
+          '<span class="dsh-bulk-cb-wrap"><input type="checkbox" class="dsh-bulk-job-cb" data-job-id="' +
+          t.jobId + '" data-name="' + escapeHtml(jobLabel) + '"' +
+          (selectedJobs[t.jobId] ? " checked" : "") + "></span>"
+      }
       html += '<span class="target-lang">' + tLabel + "</span>"
       html += segmentedBar(tDonePct, tFailedPct, tTitle, isPlaceholder)
       html += '<span class="progress-label">' + (isPlaceholder ? "—" : t.done + "/" + t.total + " (" + tDonePct + "%)") + "</span>"
@@ -381,9 +534,19 @@ function closeModalOnOverlay(event) {
     var headerClass = "accordion-header acc-sub-header" + (nested ? " acc-nested-header" : "")
     var bodyId = "acc-body-sub-" + s.id
 
-    var html = '<div class="' + itemClass + '"' + (!nested && canMove ? ' data-draggable' : '') + '>'
+    var html = '<div class="' + itemClass + '"' + (!nested && canMove && !selectMode ? ' data-draggable' : '') + '>'
     html += '<div class="' + headerClass + '" data-sub-id="' + s.id + '">'
     html += '<div class="acc-header-left">'
+    if (selectMode) {
+      // Per-subtitle (movie or episode) selection checkbox. The data-name is
+      // attribute-escaped so quotes in filenames can't break the attribute; the
+      // browser decodes it back when we read dataset.name for the confirm list.
+      var entName = s.name + (s.season ? " S" + pad(s.season) + (s.episode ? "E" + pad(s.episode) : "") : "")
+      html +=
+        '<span class="dsh-bulk-cb-wrap"><input type="checkbox" class="dsh-bulk-sub-cb" data-sub-id="' +
+        s.id + '" data-name="' + escapeHtml(entName) + '"' +
+        (selectedSubs[s.id] ? " checked" : "") + "></span>"
+    }
     if (!nested) html += posterThumb(s.mediaItemId)
     html += '<div class="accordion-header-info">'
     html += '<span class="accordion-title">' + titleLabel + "</span>"
@@ -453,13 +616,21 @@ function closeModalOnOverlay(event) {
     // prompt is wired up after render (see the .lr-series-delete submit handler)
     // rather than via an inline onsubmit, so series titles containing quotes or
     // apostrophes can't break out of the attribute.
+    // Cancel/delete the whole series (every episode) — but ONLY from the queue
+    // card the button is on. The action verb depends on config.deleteNotCancel:
+    // by default the series is CANCELLED (stays visible, deletable later); when
+    // deleteNotCancel is enabled it is fully deleted. The button label/icon and
+    // the confirm prompt (see confirmDeleteSeries) both reflect the active mode.
     var deleteHtml = ""
     if (group.mediaItemId && (typeof CAN_STOP === "undefined" || CAN_STOP)) {
+      var seriesMode = (typeof DELETE_NOT_CANCEL !== "undefined" && DELETE_NOT_CANCEL) ? "delete" : "cancel"
+      var seriesBtnTitle = seriesMode === "delete" ? "Delete series from this queue" : "Cancel series from this queue"
+      var seriesBtnIcon = seriesMode === "delete" ? "🗑" : "🚫"
       deleteHtml += '<div class="acc-inline-actions">'
       deleteHtml +=
         '<form method="POST" action="/dashboard/delete-series/' + group.mediaItemId + '?queue=' + qType + '" style="display:inline" class="lr-series-delete" data-series-title="' +
-        escapeHtml(group.title || "") + '" data-media-item-id="' + group.mediaItemId + '" data-queue="' + qType + '">'
-      deleteHtml += '<button type="submit" class="btn btn-icon btn-xs btn-danger" title="Delete series from this queue">🗑</button></form>'
+        escapeHtml(group.title || "") + '" data-media-item-id="' + group.mediaItemId + '" data-queue="' + qType + '" data-mode="' + seriesMode + '">'
+      deleteHtml += '<button type="submit" class="btn btn-icon btn-xs btn-danger" title="' + seriesBtnTitle + '">' + seriesBtnIcon + '</button></form>'
       deleteHtml += "</div>"
     }
 
@@ -490,6 +661,17 @@ function closeModalOnOverlay(event) {
       (group.mediaItemId || "") +
       '">'
     html += '<div class="acc-header-left">'
+    if (selectMode) {
+      // Series-level checkbox: toggles every episode subtitle in the group at
+      // once. data-sub-ids is the comma-joined episode subtitle ids; the handler
+      // (wired after render) adds/removes each from selectedSubs and syncs the
+      // per-episode checkboxes.
+      var epIds = group.items.map(function (s) { return s.id }).join(",")
+      html +=
+        '<span class="dsh-bulk-cb-wrap"><input type="checkbox" class="dsh-bulk-series-cb" data-sub-ids="' +
+        epIds + '" data-name="' + escapeHtml(group.title || "") + '"' +
+        (group.items.every(function (s) { return selectedSubs[s.id] }) ? " checked" : "") + "></span>"
+    }
     html += posterThumb(group.mediaItemId)
     html += '<div class="accordion-header-info">'
     html += '<span class="accordion-title">' + escapeHtml(group.title) + "</span>"
@@ -534,8 +716,8 @@ function closeModalOnOverlay(event) {
 
     var seriesGroupMap = {}
     subtitles.forEach(function (s) {
-      if (!s.season) return
-      var key = s.mediaItemId != null ? "m" + s.mediaItemId : "n" + s.name
+      if (!s || !s.season) return
+      var key = s.mediaItemId != null ? "m" + s.mediaItemId : "n" + (s.name || "")
       if (!seriesGroupMap[key]) {
         seriesGroupMap[key] = {
           key: key,
@@ -553,6 +735,7 @@ function closeModalOnOverlay(event) {
     var entries = []
     var seenSeries = {}
     subtitles.forEach(function (s) {
+      if (!s) return
       if (!s.season) {
         entries.push({ type: "movie", sub: s, order: (s[orderField] != null ? s[orderField] : s.orderNumber) || 0 })
       } else {
@@ -580,7 +763,9 @@ function closeModalOnOverlay(event) {
 
     container.querySelectorAll(".acc-sub-header[data-sub-id]").forEach(function (header) {
       header.addEventListener("click", function (e) {
+        // Don't toggle the accordion when clicking a bulk-select checkbox.
         if (e.target.closest(".acc-inline-actions")) return
+        if (e.target.closest(".dsh-bulk-cb-wrap")) return
         var id = parseInt(this.dataset.subId)
         var body = document.getElementById("acc-body-sub-" + id)
         if (!body) return
@@ -592,12 +777,41 @@ function closeModalOnOverlay(event) {
     container.querySelectorAll(".acc-series-header[data-series-key]").forEach(function (header) {
       header.addEventListener("click", function (e) {
         if (e.target.closest(".acc-inline-actions")) return
+        if (e.target.closest(".dsh-bulk-cb-wrap")) return
         var key = this.dataset.seriesKey
         var body = document.getElementById("acc-body-series-" + key)
         if (!body) return
         seriesState[key] = !seriesState[key]
         body.classList.toggle("open", !!seriesState[key])
         this.querySelector(".accordion-chevron").style.transform = seriesState[key] ? "rotate(90deg)" : ""
+      })
+    })
+
+    // Wire up the bulk-select checkboxes (only present in select mode). Each
+    // change updates the IIFE-level selection maps and the bulk action bar.
+    container.querySelectorAll(".dsh-bulk-sub-cb").forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        toggleSubSelect(parseInt(this.dataset.subId), this.dataset.name || "", this.checked)
+      })
+    })
+    container.querySelectorAll(".dsh-bulk-job-cb").forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        toggleJobSelect(parseInt(this.dataset.jobId), this.dataset.name || "", this.checked)
+      })
+    })
+    container.querySelectorAll(".dsh-bulk-series-cb").forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        var ids = String(this.dataset.subIds || "").split(",").map(function (v) { return parseInt(v) }).filter(function (n) { return !isNaN(n) })
+        var name = this.dataset.name || ""
+        var checked = this.checked
+        ids.forEach(function (id) {
+          if (checked) selectedSubs[id] = name
+          else delete selectedSubs[id]
+          // Keep the per-episode checkbox in sync with the series checkbox.
+          var epCb = container.querySelector('.dsh-bulk-sub-cb[data-sub-id="' + id + '"]')
+          if (epCb) epCb.checked = checked
+        })
+        updateBulkBar()
       })
     })
 
@@ -635,7 +849,12 @@ function closeModalOnOverlay(event) {
       }
     })
 
-    setupDragDrop(container, queueType === "whisper" ? "/dashboard/whisper/reorder" : "/dashboard/reorder")
+    // Skip drag-to-reorder while the multi-select checkboxes are shown — the
+    // checkboxes occupy the drag-handle area and reordering mid-selection would
+    // be confusing.
+    if (!selectMode) {
+      setupDragDrop(container, queueType === "whisper" ? "/dashboard/whisper/reorder" : "/dashboard/reorder")
+    }
   }
 
   function renderQueue(data) {
@@ -646,69 +865,209 @@ function closeModalOnOverlay(event) {
     // When the whisper queue is separate, whisper-stage items live in the
     // whisper card; otherwise everything shows in the translation queue.
     var translationSubs = whisperSeparate ? subtitles.filter(function (s) { return !isWhisperStage(s) }) : subtitles
-    renderQueueList(queueList, translationSubs, langMap, "translation", openSubs, openSeries)
+    // Each section is isolated so a malformed/failed job that throws while
+    // rendering one queue cannot leave the others (whisper, OCR) stuck —
+    // errors are logged to the console instead of aborting the whole render.
+    safeRender("translationQueue", function () {
+      renderQueueList(queueList, translationSubs, langMap, "translation", openSubs, openSeries)
+    })
 
     if (whisperQueueList) {
       var whisperSubs = whisperSeparate ? subtitles.filter(isWhisperStage) : []
       // Only show the whisper card when the separate-queue setting is on AND it
       // actually has items — otherwise keep it off the dashboard entirely.
       whisperQueueList.parentElement.style.display = whisperSeparate && whisperSubs.length > 0 ? "" : "none"
-      renderQueueList(whisperQueueList, whisperSubs, langMap, "whisper", whisperOpenSubs, whisperOpenSeries)
+      safeRender("whisperQueue", function () {
+        renderQueueList(whisperQueueList, whisperSubs, langMap, "whisper", whisperOpenSubs, whisperOpenSeries)
+      })
     }
 
     if (ocrQueueList) {
       var ocrJobs = data.ocrJobs || []
       // Only show the OCR card when there are OCR jobs to display.
       ocrQueueList.parentElement.style.display = ocrJobs.length > 0 ? "" : "none"
-      renderOcrQueue(ocrJobs)
+      safeRender("ocrQueue", function () { renderOcrQueue(ocrJobs) })
     }
   }
 
-  // OCR queue: a flat list of pending/processing/failed image-based OCR jobs.
-  // Simpler than the subtitle queue — no jobs/chunks, just status + controls.
+  // Run a render section inside a try/catch so one failing section (e.g. a
+  // malformed/failed job) cannot abort the rest of the dashboard update. The
+  // error is surfaced to the console for debugging instead of being silently
+  // swallowed — the previous poll .catch() hid every render error, which is
+  // what left the logs and OCR queue stuck in "loading".
+  function safeRender(name, fn) {
+    try {
+      fn()
+    } catch (e) {
+      if (window.console) console.error("[dashboard] render '" + name + "' failed:", e)
+    }
+  }
+
+  // OCR queue: image-based OCR jobs (PGS/VobSub). Series jobs are grouped under
+  // an accordion header (with a poster) like the Translation Queue; standalone
+  // movie jobs render as flat rows. Each row keeps its status badge + error text.
+  function ocrStatusLabel(j) {
+    return j.status === "processing"
+      ? ((typeof APP_STRINGS !== "undefined" && APP_STRINGS.ocrStatus_processing) || "Processing")
+      : j.status === "failed"
+        ? ((typeof APP_STRINGS !== "undefined" && APP_STRINGS.ocrStatus_failed) || "Failed")
+        : ((typeof APP_STRINGS !== "undefined" && APP_STRINGS.ocrStatus_queued) || "Queued")
+  }
+  // processing → accent (badge-processing), failed → red (badge-error),
+  // queued → neutral. Previously failed used badge-danger (which doesn't exist
+  // in CSS, so it rendered with no colour) and processing used badge-success.
+  function ocrStatusClass(j) {
+    return j.status === "processing"
+      ? "badge badge-processing"
+      : j.status === "failed"
+        ? "badge badge-error"
+        : "badge badge-neutral"
+  }
+
+  // Aggregate status for a series group: processing wins, then failed, then
+  // queued — drives the series-level badge so a failed/active series is visible
+  // without expanding it.
+  function ocrSeriesStatus(group) {
+    var anyProcessing = false,
+      anyFailed = false,
+      anyQueued = false
+    group.items.forEach(function (j) {
+      if (j.status === "processing") anyProcessing = true
+      else if (j.status === "failed") anyFailed = true
+      else anyQueued = true
+    })
+    if (anyProcessing) return { cls: "badge badge-processing", label: (typeof APP_STRINGS !== "undefined" && APP_STRINGS.ocrStatus_processing) || "Processing" }
+    if (anyFailed) return { cls: "badge badge-error", label: (typeof APP_STRINGS !== "undefined" && APP_STRINGS.ocrStatus_failed) || "Failed" }
+    return { cls: "badge badge-neutral", label: (typeof APP_STRINGS !== "undefined" && APP_STRINGS.ocrStatus_queued) || "Queued" }
+  }
+
+  // One OCR job row (used for standalone movies AND as a nested episode row
+  // inside a series accordion body). Defensive: coerce every field so a
+  // malformed/failed row can't break the whole queue render.
+  function ocrJobRowHtml(j, nested) {
+    if (!j || j.id == null) return ""
+    var statusLabel = ocrStatusLabel(j)
+    var statusClass = ocrStatusClass(j)
+    // Nested episode rows already sit under a series header (which shows the
+    // poster + title), so lead with the S##E## tag + episode name; standalone
+    // movie rows show the full title.
+    var title = nested
+      ? "S" + pad(j.season) + "E" + pad(j.episode) + (j.name ? " · " + j.name : "")
+      : j.name || j.mediaItemTitle || "OCR job #" + j.id
+    var progress = j.status === "processing" && j.progress > 0 ? " · " + j.progress + "%" : ""
+    var err = j.status === "failed" && j.errorMessage ? '<div class="text-dim" style="font-size:.8rem">⚠ ' + escapeHtml(String(j.errorMessage)) + "</div>" : ""
+
+    var controls = ""
+    if (j.status === "queued") {
+      controls =
+        '<form method="post" action="/dashboard/ocr/move-up/' + j.id + '" style="display:inline"><button class="btn btn-icon" title="Up">↑</button></form>' +
+        '<form method="post" action="/dashboard/ocr/move-down/' + j.id + '" style="display:inline"><button class="btn btn-icon" title="Down">↓</button></form>'
+    }
+    if (j.status === "failed") {
+      controls += '<form method="post" action="/dashboard/ocr/retry/' + j.id + '" style="display:inline"><button class="btn btn-secondary" title="Retry">↻</button></form>'
+    }
+    controls += '<form method="post" action="/dashboard/ocr/delete/' + j.id + '" style="display:inline"><button class="btn btn-icon" title="Remove" onclick="return confirm(\'Remove this OCR job?\')">✕</button></form>'
+
+    return (
+      '<div class="ocr-queue-row' + (nested ? " ocr-queue-row-nested" : "") + '">' +
+        '<div class="ocr-queue-row-main">' +
+          '<strong>' + escapeHtml(String(title)) + '</strong> ' +
+          '<span class="' + statusClass + '">' + escapeHtml(String(statusLabel)) + progress + '</span>' +
+          err +
+        '</div>' +
+        '<div class="ocr-queue-row-controls">' + controls + '</div>' +
+      '</div>'
+    )
+  }
+
   function renderOcrQueue(jobs) {
     if (!ocrQueueList) return
-    if (!jobs.length) {
+    if (!jobs || !jobs.length) {
       ocrQueueList.innerHTML = '<p class="empty-state">No OCR jobs queued.</p>'
       return
     }
-    var html = ""
+
+    // Group series jobs (those with a season) by mediaItemId, preserving the
+    // first-seen order for the series header. Standalone (movie) jobs stay flat.
+    var seriesMap = {}
+    var seriesOrder = []
+    var standalone = []
     jobs.forEach(function (j) {
-      var statusLabel =
-        j.status === "processing" ? ((typeof APP_STRINGS !== "undefined" && APP_STRINGS.ocrStatus_processing) || "Processing")
-        : j.status === "failed" ? ((typeof APP_STRINGS !== "undefined" && APP_STRINGS.ocrStatus_failed) || "Failed")
-        : ((typeof APP_STRINGS !== "undefined" && APP_STRINGS.ocrStatus_queued) || "Queued")
-      var statusClass =
-        j.status === "processing" ? "badge badge-success"
-        : j.status === "failed" ? "badge badge-danger"
-        : "badge badge-neutral"
-      var title = j.name || j.mediaItemTitle || "OCR job #" + j.id
-      if (j.season != null && j.episode != null) title += " S" + pad2(j.season) + "E" + pad2(j.episode)
-      var progress = j.status === "processing" && j.progress > 0 ? " · " + j.progress + "%" : ""
-      var err = j.status === "failed" && j.errorMessage ? '<div class="text-dim" style="font-size:.8rem">⚠ ' + esc(j.errorMessage) + "</div>" : ""
-
-      var controls = ""
-      if (j.status === "queued") {
-        controls =
-          '<form method="post" action="/dashboard/ocr/move-up/' + j.id + '" style="display:inline"><button class="btn btn-icon" title="Up">↑</button></form>' +
-          '<form method="post" action="/dashboard/ocr/move-down/' + j.id + '" style="display:inline"><button class="btn btn-icon" title="Down">↓</button></form>'
+      if (!j || j.id == null) return
+      if (j.mediaItemId != null && j.season != null) {
+        var key = "m" + j.mediaItemId
+        if (!seriesMap[key]) {
+          seriesMap[key] = { key: key, mediaItemId: j.mediaItemId, title: j.mediaItemTitle || j.name, items: [] }
+          seriesOrder.push(key)
+        }
+        seriesMap[key].items.push(j)
+      } else {
+        standalone.push(j)
       }
-      if (j.status === "failed") {
-        controls += '<form method="post" action="/dashboard/ocr/retry/' + j.id + '" style="display:inline"><button class="btn btn-secondary" title="Retry">↻</button></form>'
-      }
-      controls += '<form method="post" action="/dashboard/ocr/delete/' + j.id + '" style="display:inline"><button class="btn btn-icon" title="Remove" onclick="return confirm(\'Remove this OCR job?\')">✕</button></form>'
+    })
 
+    var html = ""
+    standalone.forEach(function (j) {
+      html += ocrJobRowHtml(j, false)
+    })
+    seriesOrder.forEach(function (key) {
+      var group = seriesMap[key]
+      var seriesStatus = ocrSeriesStatus(group)
+      var epCount = group.items.length
+      // Auto-open a series that has failed/processing jobs so the per-episode
+      // errors stay visible (the user asked to keep the error space). A
+      // user's explicit expand/collapse choice in ocrOpenSeries wins.
+      var hasFailedOrActive = group.items.some(function (j) {
+        return j.status === "failed" || j.status === "processing"
+      })
+      var isOpen = ocrOpenSeries.hasOwnProperty(key) ? !!ocrOpenSeries[key] : hasFailedOrActive
+      var bodyId = "acc-body-ocr-series-" + key
+
+      html += '<div class="accordion-item">'
       html +=
-        '<div class="ocr-queue-row">' +
-          '<div class="ocr-queue-row-main">' +
-            '<strong>' + esc(title) + '</strong> ' +
-            '<span class="' + statusClass + '">' + esc(statusLabel) + progress + '</span>' +
-            err +
-          '</div>' +
-          '<div class="ocr-queue-row-controls">' + controls + '</div>' +
-        '</div>'
+        '<div class="accordion-header acc-series-header" data-series-key="ocr-' + key + '">'
+      html += '<div class="acc-header-left">'
+      html += posterThumb(group.mediaItemId)
+      html += '<div class="accordion-header-info">'
+      html += '<span class="accordion-title">' + escapeHtml(String(group.title)) + "</span>"
+      html += '<span class="' + seriesStatus.cls + '">' + escapeHtml(String(seriesStatus.label)) + "</span>"
+      html +=
+        '<span class="text-dim" style="font-size:.8rem">' +
+        epCount +
+        " episode" +
+        (epCount !== 1 ? "s" : "") +
+        "</span>"
+      html += "</div></div>"
+      html += '<span class="accordion-chevron">›</span>'
+      html += "</div>"
+      var bodyHtml = group.items
+        .slice()
+        .sort(function (a, b) {
+          return (a.season || 0) - (b.season || 0) || (a.episode || 0) - (b.episode || 0)
+        })
+        .map(function (j) {
+          return ocrJobRowHtml(j, true)
+        })
+        .join("")
+      html += '<div class="accordion-body' + (isOpen ? " open" : "") + '" id="' + bodyId + '">' + bodyHtml + "</div>"
+      html += "</div>"
     })
     ocrQueueList.innerHTML = html
+
+    // Wire the series accordion toggles. The chevron rotation is handled by
+    // CSS (.accordion-item:has(.accordion-body.open)), so we only flip .open.
+    ocrQueueList.querySelectorAll(".acc-series-header[data-series-key]").forEach(function (header) {
+      header.addEventListener("click", function (e) {
+        // Don't toggle when clicking an inline control inside the header.
+        if (e.target.closest("form") || e.target.closest("button")) return
+        var rawKey = this.dataset.seriesKey // "ocr-m<id>"
+        var key = rawKey && rawKey.indexOf("ocr-") === 0 ? rawKey.slice(4) : rawKey
+        var body = document.getElementById("acc-body-ocr-series-" + key)
+        if (!body) return
+        ocrOpenSeries[key] = !body.classList.contains("open")
+        body.classList.toggle("open", ocrOpenSeries[key])
+      })
+    })
   }
 
   
@@ -782,9 +1141,11 @@ function closeModalOnOverlay(event) {
     }
     var html = ""
     logs.forEach(function (log) {
+      // Skip malformed entries so one bad row can't abort the whole log panel.
+      if (!log) return
       html += '<div class="log-entry">'
       html += '<span class="log-time">' + escapeHtml(formatLocalTime(log.createdAt)) + "</span>"
-      html += '<span class="log-msg">' + escapeHtml(log.message) + "</span>"
+      html += '<span class="log-msg">' + escapeHtml(log.message || "") + "</span>"
       html += "</div>"
     })
     logPanel.innerHTML = html
@@ -816,12 +1177,28 @@ function closeModalOnOverlay(event) {
       })
       .then(function (data) {
         if (!data) return
-        renderQueue(data)
-        renderLogs(data.logs || [])
-        updateWorkerButtons(!!data.workerPaused)
-        updateWhisperWorkerButtons(!!data.whisperWorkerPaused)
+        lastPollData = data
+        // Isolate each section so a malformed/failed job breaking one render
+        // cannot leave the others (logs, OCR queue, worker buttons) stuck in
+        // "loading". Each section logs its own error instead of aborting the
+        // whole .then chain (the old single .catch() swallowed every render
+        // error, which is what left the dashboard stuck after a failed job).
+        safeRender("queue", function () { renderQueue(data) })
+        safeRender("logs", function () { renderLogs(data.logs || []) })
+        safeRender("workerButtons", function () { updateWorkerButtons(!!data.workerPaused) })
+        safeRender("whisperButtons", function () { updateWhisperWorkerButtons(!!data.whisperWorkerPaused) })
+        // Keep the cancel/delete mode in sync with the server setting so the
+        // series + bulk action labels reflect the current deleteNotCancel value
+        // without a full page reload.
+        if (typeof data.deleteNotCancel !== "undefined") {
+          window.DELETE_NOT_CANCEL = !!data.deleteNotCancel
+        }
       })
-      .catch(function () {})
+      .catch(function (err) {
+        // Network/parse failure — keep polling, but surface it for debugging
+        // instead of silently dropping it.
+        if (window.console) console.error("[dashboard] poll failed:", err)
+      })
   }
 
   // Self-scheduling poll: wait POLL_INTERVAL, run a poll, then once that poll's
@@ -924,15 +1301,19 @@ function ocrWorkerControl(action) {
 // left untouched.
 function confirmDeleteSeries(title, mediaItemId, queue) {
   var queueLabel = queue === "whisper" ? "whisper" : queue === "translation" ? "translation" : ""
+  // The backend decides cancel-vs-delete from config.deleteNotCancel; mirror
+  // that here so the prompt matches what will actually happen.
+  var mode = (typeof DELETE_NOT_CANCEL !== "undefined" && DELETE_NOT_CANCEL) ? "delete" : "cancel"
+  var verb = mode === "delete" ? "Delete" : "Cancel"
   var scopeLine =
     queue === "whisper" || queue === "translation"
-      ? "This removes every episode currently in the " + queueLabel +
+      ? "This " + (mode === "delete" ? "removes" : "cancels") + " every episode currently in the " + queueLabel +
         " queue. Episodes in the other queue are left untouched."
-      : "This removes every episode from both the translation and whisper queues."
+      : "This " + (mode === "delete" ? "removes" : "cancels") + " every episode from both the translation and whisper queues."
   return window.confirm(
-    "Delete the entire series \"" + (title || "this series") + "\" (" +
+    verb + " the entire series \"" + (title || "this series") + "\" (" +
       mediaItemId + ") from the " + (queueLabel || "all") + " queue?\n\n" +
-      scopeLine + " This cannot be undone."
+      scopeLine + (mode === "delete" ? " This cannot be undone." : " Cancelled items stay visible and can be deleted later.")
   )
 }
 

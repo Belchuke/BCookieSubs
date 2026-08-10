@@ -458,6 +458,7 @@ export function libraryRequestsRouter(db: Database.Database) {
       selectedCount: __("libraryrequests.selectedCount"),
       queueSelectedNone: __("libraryrequests.queueSelectedNone"),
       unsupportedSubtitle: __("libraryrequests.unsupportedSubtitle"),
+      sourceIsTargetLang: __("libraryrequests.sourceIsTargetLang"),
       unsupportedShort: __("libraryrequests.unsupportedShort"),
       microdvdFps: __("libraryrequests.microdvdFps"),
       fullyTranslated: __("libraryrequests.fullyTranslated"),
@@ -487,6 +488,7 @@ export function libraryRequestsRouter(db: Database.Database) {
       langById,
       i18n,
       perms,
+      userTargetLangIds: getUserConfigTranslationLanguages(db, user.id).map((tl) => tl.languageId),
     })
   })
 

@@ -287,6 +287,13 @@
   var SUBTITLES  = <%- JSON.stringify(subtitles) %>;
   var STR_NO_JUDGE_EVALS = '<%= __("stats.noJudgeEvals") %>';
   var STR_ALL_MODELS = '<%= __("stats.allModels") %>';
+  var STR_JUDGE_SUBTITLE  = '<%= __("stats.judge.subtitle") %>';
+  var STR_JUDGE_SEASON    = '<%= __("stats.judge.season") %>';
+  var STR_JUDGE_EPISODE   = '<%= __("stats.judge.episode") %>';
+  var STR_JUDGE_CHUNK     = '<%= __("stats.judge.chunk") %>';
+  var STR_JUDGE_DATE      = '<%= __("stats.judge.date") %>';
+  var STR_JUDGE_TIMESTAMP = '<%= __("stats.judge.timestamp") %>';
+  function pad2(n) { n = Number(n); return n < 10 ? '0' + n : '' + n; }
   var ACTIVE_NAMES = (function() {
     var s = {};
     ALL_MODELS.forEach(function(m) { if (m.active) s[m.name] = true; });
@@ -596,12 +603,15 @@
           window._judgePromptData.push(r.judgeInput || '');
           cardHtml += '<div class="chunk-stat-card">'+
             '<div class="chunk-stat-header">'+
-              '<span class="text-dim" style="font-size:.8em">'+esc(r.createdAt ? r.createdAt.split(' ')[0] : '—')+'</span>'+
               '<strong>'+esc(r.modelName||'—')+'</strong>'+
             '</div>'+
-            '<div class="chunk-stat-row"><span>Subtitle</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px">'+esc(r.subtitleName||'—')+'</span></div>'+
-            '<div class="chunk-stat-row"><span>Chunk</span><span>'+(r.chunkIndex != null ? '#'+(r.chunkIndex+1) : '—')+'</span></div>'+
-            '<div class="chunk-stat-row" style="justify-content:flex-start;gap:.5rem;flex-wrap:wrap">'+
+            '<div class="chunk-stat-row"><span>'+esc(STR_JUDGE_SUBTITLE)+'</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px">'+esc(r.subtitleName||'—')+'</span></div>'+
+            '<div class="chunk-stat-row"><span>'+esc(STR_JUDGE_SEASON)+'</span><span>'+(r.season != null ? 'S'+pad2(r.season) : '')+'</span></div>'+
+            '<div class="chunk-stat-row"><span>'+esc(STR_JUDGE_EPISODE)+'</span><span>'+(r.episode != null ? 'E'+pad2(r.episode) : '')+'</span></div>'+
+            '<div class="chunk-stat-row"><span>'+esc(STR_JUDGE_CHUNK)+'</span><span>'+(r.chunkIndex != null ? '#'+(r.chunkIndex+1) : '—')+'</span></div>'+
+            '<div class="chunk-stat-row"><span>'+esc(STR_JUDGE_DATE)+'</span><span>'+esc(r.createdAt ? r.createdAt.split(' ')[0] : '—')+'</span></div>'+
+            '<div class="chunk-stat-row"><span>'+esc(STR_JUDGE_TIMESTAMP)+'</span><span>'+esc(r.createdAt ? r.createdAt.split(' ')[1] : '—')+'</span></div>'+
+            '<div class="chunk-stat-row chunk-stat-actions">'+
               (r.judgeReason ? '<button class="btn btn-xs btn-secondary" onclick="openStatsTextModal(\'Reason\',_judgeReasonData['+i+'])">Reason</button>' : '')+
               '<button class="btn btn-xs btn-secondary" onclick="openStatsTextModal(\'Prompt\',_judgePromptData['+i+'])">Prompt</button>'+
             '</div>'+

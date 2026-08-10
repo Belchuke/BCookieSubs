@@ -413,6 +413,11 @@ const createTables = (db: Database.Database) => {
     whisperEnabled INTEGER NOT NULL DEFAULT 1,
     whisperRunAsSeparateTask INTEGER NOT NULL DEFAULT 0,
 
+    -- When 1, cancelling a translation deletes it completely instead of marking
+    -- it cancelled. When 0 (default), cancelled translations remain visible and
+    -- can be deleted later.
+    deleteNotCancel INTEGER NOT NULL DEFAULT 0,
+
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`)
@@ -626,6 +631,30 @@ const createTables = (db: Database.Database) => {
       FOREIGN KEY (libraryPathItemId) REFERENCES libraryPathItem(id) ON DELETE CASCADE
     )`)
     db.exec(`CREATE INDEX IF NOT EXISTS idx_libraryPathOcrJob_status ON libraryPathOcrJob(status, orderNumber)`)
+
+    // ── Stats / candidate-lookup indexes ────────────────────────────────────
+    // subtitleChunkCandidate is the largest table and had only a PK — every
+    // "by modelId" / "by chunkId" lookup and every stats aggregation did a full
+    // scan, which is what made the stats Subtitles (~37s) and Models (~22s)
+    // endpoints crawl. These cover the hot query shapes in statsRepository /
+    // subtitleRepository (getModelCandidateStats, getModelsStats, the
+    // per-chunk candidate COUNT subqueries, and the candidate-by-chunk lookups).
+    // No production data to preserve, so additive CREATE INDEX IF NOT EXISTS
+    // is safe on existing dev DBs.
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_modelId ON subtitleChunkCandidate(modelId)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_chunkId ON subtitleChunkCandidate(subtitleChunkId)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_status  ON subtitleChunkCandidate(status)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_selected ON subtitleChunkCandidate(selected)`)
+    // subtitleChunk.subtitleId is not the leftmost column of any existing index
+    // (the UNIQUE is on (subtitleJobId, chunkIndex)), so give it its own. The
+    // status index backs the "completed chunk" filter used by the stats
+    // subtitles list.
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunk_subtitleId ON subtitleChunk(subtitleId)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunk_status   ON subtitleChunk(status)`)
+    // NOTE: subtitleJob.subtitleId and subtitleChunk.subtitleJobId are already
+    // indexed as the leftmost column of their UNIQUE constraints
+    // (UNIQUE(subtitleId, targetLangId) and UNIQUE(subtitleJobId, chunkIndex)),
+    // so no separate indexes are added for those — avoids duplicate indexes.
 
     db.exec(`CREATE TABLE IF NOT EXISTS bcsubExportedFile (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

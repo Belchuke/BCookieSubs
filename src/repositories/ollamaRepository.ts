@@ -1,5 +1,7 @@
 import Database from "better-sqlite3"
 import axios from "axios"
+import { writeFileSync, mkdirSync } from "node:fs"
+import { dirname, join } from "node:path"
 import { DBModel } from "../types/dbTypes"
 import { ollamaApiSecretKey, openAIApiSecretKey, anthropicApiSecretKey } from "../constants/keys"
 import { Ollama, ModelResponse } from "ollama"
@@ -151,5 +153,40 @@ export async function removeOllamaModel(modelName: string): Promise<{ success: b
     return { success: true }
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+/**
+ * Best-effort: rewrite the Ollama model-tracking file from the models that are
+ * actually pulled in the local Ollama runtime. Mirrors what
+ * update-ollama.sh's snapshot step does, so ./ollama-models.txt stays current
+ * when models are pulled or removed through the app (instead of only when the
+ * shell script runs). Re-snapshotting from Ollama is the source of truth, so
+ * the file can never drift from what is actually installed.
+ *
+ * Path: $OLLAMA_MODELS_FILE, otherwise <cwd>/ollama-models.txt. Set
+ * OLLAMA_MODELS_FILE (on the app and in update-ollama.sh) to the same
+ * host-mounted path so a containerised app and the host script share one file.
+ *
+ * Never throws and never rejects — a missing/unreachable Ollama or an
+ * unwritable path simply leaves the existing file untouched, so callers can
+ * fire-and-forget this without affecting the response.
+ */
+export async function syncOllamaModelsFile(): Promise<void> {
+  try {
+    const filePath = process.env.OLLAMA_MODELS_FILE?.trim() || join(process.cwd(), "ollama-models.txt")
+    let names: string[]
+    try {
+      const list = await ollama.list()
+      names = list.models.map((m) => m.model).filter(Boolean)
+    } catch {
+      // Ollama unreachable — leave the tracking file exactly as it was.
+      return
+    }
+    const sorted = Array.from(new Set(names)).sort()
+    mkdirSync(dirname(filePath), { recursive: true })
+    writeFileSync(filePath, sorted.join("\n") + (sorted.length ? "\n" : ""))
+  } catch {
+    // Writing the tracking file is best-effort; never fail the caller.
   }
 }

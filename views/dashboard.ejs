@@ -31,6 +31,9 @@
           <button id="worker-stop-btn" class="btn btn-warning" onclick="workerControl('pause')" style="<%= workerPaused ? 'display:none' : 'display:inline-flex' %>"><%= __('dashboard.stopWorker') %></button>
           <button id="worker-start-btn" class="btn btn-secondary" onclick="workerControl('resume')" style="<%= workerPaused ? 'display:inline-flex' : 'display:none' %>"><%= __('dashboard.startWorker') %></button>
         <% } %>
+        <% if (can('canCancelTranslationJob') || can('canDeleteTranslation')) { %>
+          <button id="dsh-select-btn" class="btn btn-secondary" onclick="toggleSelectMode()"><%= __('dashboard.select') %></button>
+        <% } %>
         <% if (can('canAddSubtitleToTranslateDashboard')) { %>
           <button class="btn btn-primary" onclick="openModal('upload-modal')"><%= __('dashboard.addSubtitle') %></button>
         <% } %>
@@ -220,10 +223,18 @@
   var CAN_STOP = <%- JSON.stringify(can('canCancelTranslationJob')) %>;
   var CAN_DELETE = <%- JSON.stringify(can('canDeleteTranslation')) %>;
   var SHOW_POSTERS = <%- showPosters ? 'true' : 'false' %>;
+  var DELETE_NOT_CANCEL = <%- deleteNotCancel ? 'true' : 'false' %>;
   var DASHBOARD_NO_JOBS = '<%= __("dashboard.noSubtitleJobs") %>';
   var APP_STRINGS = {
     pleaseSelectSrt:      '<%= __("dashboard.pleaseSelectSrt") %>',
     pleaseSelectLang:     '<%= __("dashboard.pleaseSelectLang") %>',
+    select:               '<%= __("dashboard.select") %>',
+    doneSelect:           '<%= __("dashboard.doneSelect") %>',
+    selected:             '<%= __("dashboard.selected") %>',
+    bulkJobs:             '<%= __("dashboard.bulkJobs") %>',
+    bulkActiveWillCancel: '<%= __("dashboard.bulkActiveWillCancel") %>',
+    bulkActiveWillDelete: '<%= __("dashboard.bulkActiveWillDelete") %>',
+    bulkCancelledWillDelete: '<%= __("dashboard.bulkCancelledWillDelete") %>',
     analyzing:            '<%= __("dashboard.analyzing") %>',
     nextBtn:              '<%= __("dashboard.nextBtn") %>',
     errorAnalyzing:       '<%= __("dashboard.errorAnalyzing") %>',
@@ -359,6 +370,31 @@
     }
   })();
 </script>
+
+<div id="dsh-bulk-bar" class="dsh-bulk-bar" style="display:none">
+  <span id="dsh-bulk-count" class="dsh-bulk-count">0 <%= __('dashboard.selected') %></span>
+  <div class="dsh-row-center">
+    <button id="dsh-bulk-clear-btn" class="btn btn-secondary" onclick="clearBulkSelection()"><%= __('dashboard.clearSelection') %></button>
+    <button id="dsh-bulk-action-btn" class="btn btn-danger" onclick="openBulkConfirm()"><%= __('dashboard.applyCancelDelete') %></button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="bulk-confirm-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="bulk-confirm-title"><%= __('dashboard.bulkConfirmTitle') %></h2>
+      <button class="btn btn-icon" onclick="closeModal('bulk-confirm-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="bulk-confirm-summary" class="text-dim"></p>
+      <ul id="bulk-confirm-list" class="bulk-confirm-list"></ul>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('bulk-confirm-modal')"><%= __('common.cancel') %></button>
+      <button id="bulk-confirm-submit" class="btn btn-danger" onclick="submitBulkAction()"><%= __('dashboard.applyCancelDelete') %></button>
+    </div>
+  </div>
+</div>
 
 <script src="/app.js"></script>
 </body>

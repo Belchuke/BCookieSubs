@@ -28,6 +28,7 @@ export const updateConfig = (
   whisperModelRootPath: string | null,
   whisperEnabled: boolean,
   whisperRunAsSeparateTask: boolean,
+  deleteNotCancel: boolean,
 ): DefaultResponse => {
   const { hasPermission: perm } = userHasPermission(db, user.id, "canManageSettings")
   if (!perm) return { success: false, msg: "Permission denied" }
@@ -36,7 +37,7 @@ export const updateConfig = (
   const theMovieDbActiveState = nameDetectionActive === true ? theMovieDbActive : false
 
   db.prepare(
-    `UPDATE config SET defaultChunkSize = ?, maxRetriesPerChunk = ?, showPosters = ?, nameDetectionActive = ?, theMovieDbActive = ?, finishSingleSubtitleFirst = ?, scanLibraryPaths = ?, scheduleConfigured = ?, clearLogs = ?, clearLogsOlderThanDays = ?, sessionTimeoutMinutes = ?, whisperModel = ?, whisperTimestampsLength = ?, whisperUseCuda = ?, whisperModelRootPath = ?, whisperEnabled = ?, whisperRunAsSeparateTask = ?, updatedAt = datetime('now') WHERE id = 1`,
+    `UPDATE config SET defaultChunkSize = ?, maxRetriesPerChunk = ?, showPosters = ?, nameDetectionActive = ?, theMovieDbActive = ?, finishSingleSubtitleFirst = ?, scanLibraryPaths = ?, scheduleConfigured = ?, clearLogs = ?, clearLogsOlderThanDays = ?, sessionTimeoutMinutes = ?, whisperModel = ?, whisperTimestampsLength = ?, whisperUseCuda = ?, whisperModelRootPath = ?, whisperEnabled = ?, whisperRunAsSeparateTask = ?, deleteNotCancel = ?, updatedAt = datetime('now') WHERE id = 1`,
   ).run(
     defaultChunkSize,
     maxRetriesPerChunk,
@@ -55,6 +56,7 @@ export const updateConfig = (
     whisperModelRootPath,
     whisperEnabled ? 1 : 0,
     whisperRunAsSeparateTask ? 1 : 0,
+    deleteNotCancel ? 1 : 0,
   )
 
   createLog(db, "info", "configUpdate", "config", null, `Updated config settings by ${user.username}`, {
@@ -63,6 +65,7 @@ export const updateConfig = (
     finishSingleSubtitleFirst,
     scanLibraryPaths,
     scheduleConfigured,
+    deleteNotCancel,
   })
 
   return { success: true, msg: null }

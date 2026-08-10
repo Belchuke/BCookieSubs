@@ -90,6 +90,8 @@ export const getJudgeEvaluations = (
     createdAt: string
     chunkIndex: number | null
     subtitleName: string | null
+    season: number | null
+    episode: number | null
   }[]
   total: number
 } => {
@@ -97,11 +99,13 @@ export const getJudgeEvaluations = (
     SELECT je.id, je.subtitleChunkId, je.modelId,
            m.name AS modelName,
            je.judgeInput, je.judgeReason, je.createdAt,
-           sc.chunkIndex, s.name AS subtitleName
+           sc.chunkIndex, s.name AS subtitleName,
+           sj.season, sj.episode
     FROM judgeEvaluation je
     LEFT JOIN model m ON je.modelId = m.id
     LEFT JOIN subtitleChunk sc ON je.subtitleChunkId = sc.id
-    LEFT JOIN subtitle s ON sc.subtitleId = s.id`
+    LEFT JOIN subtitle s ON sc.subtitleId = s.id
+    LEFT JOIN subtitleJob sj ON sc.subtitleJobId = sj.id`
   if (modelId) {
     const total = (
       db.prepare(`SELECT COUNT(*) as cnt FROM judgeEvaluation je WHERE je.modelId = ?`).get(modelId) as any

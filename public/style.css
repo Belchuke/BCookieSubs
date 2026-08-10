@@ -714,25 +714,19 @@ tr:hover td { background: var(--surface-2); }
 }
 
 /* ── Account page grid ──────────────────────────────────────────────────── */
+/* Mirrors .config-layout: a robust 2-col → 1-col flow with no grid-template-
+   areas. The previous areas-based layout was fragile (the "My Roles" card had
+   no card-perms class and card-language had no area, so cards were misplaced
+   and hidden on mobile). Cards now auto-flow in source order. */
 .account-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1.5rem;
-  grid-template-areas:
-    "profile   theme"
-    "settings  password"
-    "langs     password"
-    "perms     perms";
+  align-items: start;
 }
-.account-grid .card-profile   { grid-area: profile; }
-.account-grid .card-settings  { grid-area: settings; }
-.account-grid .card-theme     { grid-area: theme; }
-.account-grid .card-langs     { grid-area: langs; }
-.account-grid .card-password  { grid-area: password; }
-.account-grid .card-perms     { grid-area: perms; }
 
 @media (max-width: 900px) {
-  .account-grid { grid-template-columns: 1fr; grid-template-areas: none; }
+  .account-grid { grid-template-columns: 1fr; }
 }
 
 /* ── Prompt expandable body ─────────────────────────────────────────────── */
@@ -986,9 +980,9 @@ tr:hover td { background: var(--surface-2); }
 .chunk-stat-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   margin-bottom: .5rem;
 }
+.chunk-stat-header strong { font-size: .95rem; }
 .chunk-stat-num { font-weight: 700; font-size: .9rem; }
 .chunk-stat-row {
   display: flex;
@@ -1000,6 +994,14 @@ tr:hover td { background: var(--surface-2); }
 }
 .chunk-stat-row:last-child { border-bottom: none; }
 .chunk-stat-row > span:first-child { color: var(--text-dim); flex-shrink: 0; }
+/* Buttons row in a Judge chunk-stat-card: right-aligned with 0.5rem gap and
+   clear spacing above the rest of the table. */
+.chunk-stat-actions {
+  justify-content: flex-end;
+  gap: .5rem;
+  margin-top: .6rem;
+  border-bottom: none;
+}
 .chunk-stat-reason > span:last-child { color: var(--text-dim); font-size: .78rem; word-break: break-word; text-align: right; }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -1773,6 +1775,11 @@ details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg);
 
 /* ── acc ── */
 .acc-row-end { display:flex;gap:.5rem;align-items:flex-end }
+@media (max-width: 768px) {
+  /* Input + Save button rows (profile, language, theme) wrap instead of
+     overflowing on phones. */
+  .acc-row-end { flex-wrap: wrap; }
+}
 .acc-field-grow { flex:1;margin-bottom: 0px; }
 .acc-no-shrink { flex-shrink:0 }
 .acc-col { display:flex;flex-direction:column }
@@ -1844,6 +1851,14 @@ details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg);
 .ocr-queue-row-main strong { word-break:break-word; }
 .ocr-queue-row-controls { display:flex; align-items:center; gap:.25rem; flex-shrink:0; }
 .ocr-queue-row-controls form { display:inline; }
+/* Compact status badges in the OCR queue so the badge fits its label (the
+   default .badge was much larger than the "Queued/Processing/Failed" text). */
+.ocr-queue-row .badge,
+.acc-series-header .badge { font-size:.7rem; padding:.15rem .4rem; }
+/* Nested episode rows inside a series accordion body — a subtle indent so they
+   read as children of the series header above. */
+.ocr-queue-row-nested { padding-left:1.25rem; }
+.ocr-queue-row-nested strong { font-weight:500; }
 .dsh-mt-15 { margin-top:1.5rem; }
 .dsh-p-5 { padding:.5rem; }
 .dsh-hidden { display:none; }
@@ -2047,6 +2062,31 @@ details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg);
 .lpx-scan-custom .field-row .field { flex:1;min-width:5rem; }
 .lpx-scan-never-hint { font-size:.78rem;margin:.35rem 0 0; }
 
+/* Wrappable meta separator (regular spaces, not &nbsp;) so the long source/
+   folder meta lines can break on narrow screens instead of overflowing. */
+.lpx-meta-sep { color: var(--text-dim); white-space: normal; }
+
+/* ── library-paths mobile tweaks ──────────────────────────────────────────
+   Subtle adjustments so the path cards and their data-lp-group items stay
+   comfortable on phones: tighter padding, wrapping meta, and the group/item
+   rows stacking their actions below the title instead of overflowing. */
+@media (max-width: 768px) {
+  .lpx-card-summary { gap: .5rem; padding: .6rem .75rem; }
+  .lpx-source-meta { font-size: .74rem; line-height: 1.45; }
+  .lpx-folder-meta { font-size: .78rem; line-height: 1.4; }
+  .lpx-path-meta { font-size: .74rem; }
+  .lpx-actions-row { gap: .35rem; }
+  /* Group header: poster + info on top, actions wrap full-width below. */
+  .lpx-group-header { flex-wrap: wrap; gap: .5rem; padding: .6rem; }
+  .lpx-group-info { flex: 1; min-width: 0; }
+  .lpx-group-actions { width: 100%; justify-content: flex-start; }
+  /* Item row: stop the 80%-width main + 8rem-min actions from overflowing —
+     stack the actions below the file info. */
+  .lpx-item-row { flex-wrap: wrap; gap: .4rem; }
+  .lpx-item-main { flex: 1 1 100%; }
+  .lpx-item-actions { min-width: 0; justify-content: flex-start; }
+}
+
 /* ── libraryrequests.ejs migrated styles ── */
 /* libraryrequests.ejs — migrated static inline styles */
 
@@ -2132,4 +2172,46 @@ details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+}
+
+/* ---- Dashboard multi-select bulk action bar + confirm modal ------------ */
+.dsh-bulk-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  padding: .6rem 1rem;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, .15);
+}
+.dsh-bulk-count { font-weight: 600; }
+.dsh-bulk-cb-wrap {
+  display: inline-flex;
+  align-items: center;
+  margin-right: .4rem;
+  /* Tap target stays generous on mobile without overflowing the row. */
+  min-height: 28px;
+}
+.dsh-bulk-cb-wrap input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  cursor: pointer;
+  accent-color: var(--accent, #3b82f6);
+}
+.bulk-confirm-list {
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: .5rem 0 0;
+  padding-left: 1.2rem;
+}
+.bulk-confirm-list li { padding: .15rem 0; word-break: break-word; }
+@media (max-width: 600px) {
+  .dsh-bulk-bar { flex-wrap: wrap; }
+  .dsh-bulk-count { width: 100%; }
 }

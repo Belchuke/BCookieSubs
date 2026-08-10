@@ -32,17 +32,31 @@ case "$(uname -s)" in
     else
       warn "Ollama on http://localhost:11434 is not responding."
       warn "Start it (open the Ollama Mac app, or 'ollama serve' / 'brew services start ollama'),"
-      warn "or run ./macos-setup.sh once to install it, then re-run this script."
+      warn "or run ./setup.sh once to install it, then re-run this script."
     fi
     ;;
   *)
     COMPOSE_FILES=(-f "$ROOT/docker-compose.yml")
+    # On Linux, also layer the GPU overlay if setup.sh previously detected a GPU
+    # (the file only exists when a GPU was found). Dev mode is CPU-focused; for a
+    # full GPU dev setup run ./setup.sh first.
+    if [[ -f "$ROOT/docker-compose.gpu.yml" ]]; then
+      COMPOSE_FILES+=(-f "$ROOT/docker-compose.gpu.yml")
+    fi
     ;;
 esac
 COMPOSE_FILES+=(-f "$ROOT/docker-compose.dev.yml")
 
 step "Bootstrapping .env"
 ensure_env_file "$ROOT"
+
+# Regenerate the base compose file this script layers on (self-sufficient on a
+# fresh clone). dev.yml itself stays committed — it is not generated.
+step "Generating base docker-compose file"
+case "$(uname -s)" in
+  Darwin) write_compose_macos "$ROOT" ;;
+  *)      write_compose_base "$ROOT" ;;
+esac
 
 step "Building and starting the dev stack"
 # `up` builds the dev image the first time (it doesn't exist yet) and reuses the

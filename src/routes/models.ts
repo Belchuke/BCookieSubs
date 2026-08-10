@@ -9,7 +9,7 @@ import {
   updateModel,
   updateRolesForModel,
 } from "../repositories/modelRepository"
-import { downloadModel, getModelsFromOllama, removeOllamaModel } from "../repositories/ollamaRepository"
+import { downloadModel, getModelsFromOllama, removeOllamaModel, syncOllamaModelsFile } from "../repositories/ollamaRepository"
 import { getRecommendedModelById, getUninstalledRecommendedModels } from "../repositories/recommendedModelRepository"
 import { getActiveTheme } from "../repositories/themeRepository"
 import { requireAuth } from "../middleware/auth"
@@ -119,6 +119,7 @@ export function modelsRouter(db: Database.Database) {
     if (!result.success) {
       return res.redirect("/models?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed to add model"))
     }
+    void syncOllamaModelsFile()
     res.redirect("/models?toast=success&msg=" + encodeURIComponent("Model added"))
   })
 
@@ -178,6 +179,7 @@ export function modelsRouter(db: Database.Database) {
     if (!result.success) {
       return res.redirect("/models?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed to sync model"))
     }
+    void syncOllamaModelsFile()
     res.redirect("/models?toast=success&msg=" + encodeURIComponent("Model synced from Ollama"))
   })
 
@@ -211,6 +213,7 @@ export function modelsRouter(db: Database.Database) {
     if (!result.success) {
       return res.redirect("/models?toast=error&msg=" + encodeURIComponent(result.msg ?? "Update failed"))
     }
+    void syncOllamaModelsFile()
     res.redirect("/models?toast=success&msg=" + encodeURIComponent("Model updated"))
   })
 
@@ -255,6 +258,7 @@ export function modelsRouter(db: Database.Database) {
       )
     }
     createLog(db, "info", "modelDelete", "model", null, "Removed Ollama model", { modelName })
+    void syncOllamaModelsFile()
     res.redirect("/models?toast=success&msg=" + encodeURIComponent(`Removed ${modelName} from Ollama`))
   })
 
@@ -286,6 +290,7 @@ export function modelsRouter(db: Database.Database) {
         if (chunk.status === "success") break
       }
       send({ done: true })
+      void syncOllamaModelsFile()
     } catch (err) {
       send({ error: err instanceof Error ? err.message : String(err) })
     }
@@ -341,6 +346,7 @@ export function modelsRouter(db: Database.Database) {
     if (!result.success) {
       return res.redirect("/models?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed to add model"))
     }
+    void syncOllamaModelsFile()
     res.redirect("/models?toast=success&msg=" + encodeURIComponent(`${rec.name} added`))
   })
 

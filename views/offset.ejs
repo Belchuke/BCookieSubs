@@ -170,6 +170,7 @@
   </main>
 </div>
 
+<script src="/app.js"></script>
 <script>
   var MAX_OFFSET_MS = <%= maxOffsetMs %>
   var CAN_EDIT = <%= can('canEditSubtitleOffsets') ? 'true' : 'false' %>
@@ -757,18 +758,6 @@
     }
   })
 
-  // ── Sidebar hamburger ───────────────────────────────────
-
-  var ham = document.getElementById('hamburgerBtn')
-  if (ham) ham.addEventListener('click', function() {
-    document.getElementById('sidebar').classList.toggle('open')
-    document.getElementById('sidebarOverlay').classList.toggle('open')
-  })
-  var ov = document.getElementById('sidebarOverlay')
-  if (ov) ov.addEventListener('click', function() {
-    document.getElementById('sidebar').classList.remove('open')
-    ov.classList.remove('open')
-  })
 </script>
 </body>
 </html>

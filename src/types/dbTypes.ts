@@ -205,6 +205,7 @@ export type DBConfig = {
   whisperModelRootPath: string | null
   whisperEnabled: number
   whisperRunAsSeparateTask: number
+  deleteNotCancel: number
   createdAt: string
   updatedAt: string
 }

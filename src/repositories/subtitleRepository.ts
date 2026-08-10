@@ -97,6 +97,25 @@ export const releaseRunningChunks = (db: Database.Database, chunkIds: number[]):
   ).run(...chunkIds)
 }
 
+// Startup watchdog: chunks left "running" from a crashed/killed worker process
+// are never re-queued (getNextQueuedChunkForWorker only picks status='queued'),
+// so without this sweep they would stay running forever. Only chunks whose
+// startedAt is older than `staleSeconds` are reset — that avoids clobbering a
+// chunk another live worker just started if multiple workers ever run. Returns
+// the number of chunks reset so the caller can log it.
+export const resetStaleRunningChunks = (db: Database.Database, staleSeconds: number): number => {
+  const result = db
+    .prepare(
+      `UPDATE subtitleChunk
+       SET status = 'queued', startedAt = NULL, updatedAt = datetime('now')
+       WHERE status = 'running'
+         AND startedAt IS NOT NULL
+         AND startedAt < datetime('now', ?)`,
+    )
+    .run(`-${staleSeconds} seconds`)
+  return result.changes
+}
+
 // Completed subtitles that originate from a library path item (for auto-export).
 export const getCompletedLibrarySubtitlesForExport = (
   db: Database.Database,
@@ -1000,6 +1019,179 @@ export const softDeleteSubtitlesByMediaItem = (
   return { success: true, msg: `Deleted ${subs.length} subtitle(s)` }
 }
 
+// Cancel (mark cancelled, not deleted) the subtitles tied to a media item that
+// are currently in a given queue. This is the default behaviour for an
+// entire-series "delete" action when config.deleteNotCancel is false: the series
+// goes to cancelled and stays visible, removable later through a real delete.
+// Completed subtitles/jobs/chunks are left intact — only active work is
+// cancelled. `queueScope` mirrors softDeleteSubtitlesByMediaItem so a series
+// straddling the whisper + translation queues is only cancelled in the card the
+// action was triggered from. Permission is canCancelTranslationJob (the cancel
+// permission), matching cancelSubtitle.
+export const cancelSubtitlesByMediaItem = (
+  db: Database.Database,
+  user: DBUser,
+  mediaItemId: number,
+  queueScope: "whisper" | "translation" | "all" = "all",
+): DefaultResponse => {
+  const { hasPermission: perm } = userHasPermission(db, user.id, "canCancelTranslationJob")
+  if (!perm) return { success: false, msg: "Permission denied" }
+
+  const stageClause =
+    queueScope === "whisper"
+      ? `AND source = 'whisper' AND whisperTranscriptionStatus IS NOT NULL AND whisperTranscriptionStatus != 'transcription_completed'`
+      : queueScope === "translation"
+        ? `AND NOT (source = 'whisper' AND whisperTranscriptionStatus IS NOT NULL AND whisperTranscriptionStatus != 'transcription_completed')`
+        : ``
+
+  const subs = db
+    .prepare(
+      `SELECT id, name FROM subtitle
+       WHERE mediaItemId = ? AND deletedAt IS NULL
+         AND status NOT IN ('completed', 'cancelled', 'failed')
+       ${stageClause}`,
+    )
+    .all(mediaItemId) as { id: number; name: string }[]
+
+  if (subs.length === 0) return { success: false, msg: "Series not found in queue" }
+
+  const cancelSub = db.prepare(
+    `UPDATE subtitle
+     SET status = 'cancelled', cancelledAt = datetime('now'), cancelledByUserId = ?, updatedAt = datetime('now')
+     WHERE id = ?`,
+  )
+  const cancelJobs = db.prepare(
+    `UPDATE subtitleJob
+     SET status = 'cancelled', cancelledAt = datetime('now'), cancelledByUserId = ?, updatedAt = datetime('now')
+     WHERE subtitleId = ? AND deletedAt IS NULL AND status NOT IN ('completed', 'cancelled')`,
+  )
+  const cancelChunks = db.prepare(
+    `UPDATE subtitleChunk
+     SET status = 'cancelled', updatedAt = datetime('now')
+     WHERE subtitleId = ? AND status NOT IN ('completed', 'cancelled')`,
+  )
+  db.transaction(() => {
+    for (const s of subs) {
+      cancelSub.run(user.id, s.id)
+      cancelJobs.run(user.id, s.id)
+      cancelChunks.run(s.id)
+      createLog(db, "info", "subtitleCancel", "subtitle", s.id, "Cancelled subtitle (series cancel)", {
+        cancelledBy: user.id,
+        mediaItemId,
+        queueScope,
+        name: s.name,
+      })
+    }
+  })()
+
+  return { success: true, msg: `Cancelled ${subs.length} subtitle(s)` }
+}
+
+// Bulk cancel/delete for the dashboard multi-select flow. Handles a mix of
+// whole-subtitle entities and individual target-language jobs:
+//   - Active subtitle  → cancel (default) or delete (when deleteNotCancel)
+//   - Cancelled subtitle → delete (so cancelled items can be removed later)
+//   - Active job        → cancel (default) or delete (when deleteNotCancel)
+//   - Cancelled job     → delete
+// Completed/failed entities are left alone (skipped). If a subtitle is in the
+// selection, its jobs are NOT processed separately even if also selected (the
+// subtitle-level action already covers them), avoiding double-processing.
+// Permissions are enforced per item via the underlying cancel/delete helpers,
+// each of which checks the appropriate permission (canCancelTranslationJob for
+// cancel, canDeleteTranslation for delete). Returns per-item counts.
+export const bulkCancelDelete = (
+  db: Database.Database,
+  user: DBUser,
+  subtitleIds: number[],
+  jobIds: number[],
+  deleteNotCancel: boolean,
+): {
+  success: boolean
+  msg: string
+  cancelled: number
+  deleted: number
+  skipped: number
+  failed: number
+} => {
+  let cancelled = 0
+  let deleted = 0
+  let skipped = 0
+  let failed = 0
+  const processedSubtitleIds = new Set<number>()
+
+  for (const subtitleId of subtitleIds) {
+    const sub = getSubtitleById(db, subtitleId)
+    if (!sub || sub.deletedAt) {
+      skipped++
+      continue
+    }
+    processedSubtitleIds.add(subtitleId)
+
+    let result: DefaultResponse
+    if (sub.status === "cancelled") {
+      // Cancelled → always delete (remove permanently).
+      result = softDeleteSubtitle(db, user, subtitleId)
+      if (result.success) deleted++
+      else failed++
+    } else if (sub.status === "completed" || sub.status === "failed") {
+      // Leave finished work alone in the bulk flow.
+      skipped++
+    } else {
+      // Active → cancel (default) or delete (when deleteNotCancel).
+      result = deleteNotCancel
+        ? softDeleteSubtitle(db, user, subtitleId)
+        : cancelSubtitle(db, user, subtitleId)
+      if (result.success) {
+        if (deleteNotCancel) deleted++
+        else cancelled++
+      } else {
+        failed++
+      }
+    }
+  }
+
+  for (const jobId of jobIds) {
+    const job = getSubtitleJobById(db, jobId)
+    if (!job || job.deletedAt) {
+      skipped++
+      continue
+    }
+    // Skip jobs whose subtitle was already handled above.
+    if (processedSubtitleIds.has(job.subtitleId)) {
+      skipped++
+      continue
+    }
+
+    let result: DefaultResponse
+    if (job.status === "cancelled") {
+      result = softDeleteSubtitleJob(db, user, jobId)
+      if (result.success) deleted++
+      else failed++
+    } else if (job.status === "completed" || job.status === "failed") {
+      skipped++
+    } else {
+      result = deleteNotCancel
+        ? softDeleteSubtitleJob(db, user, jobId)
+        : cancelSubtitleJob(db, user, jobId)
+      if (result.success) {
+        if (deleteNotCancel) deleted++
+        else cancelled++
+      } else {
+        failed++
+      }
+    }
+  }
+
+  return {
+    success: true,
+    msg: `Cancelled ${cancelled}, deleted ${deleted}, skipped ${skipped}` + (failed > 0 ? `, failed ${failed}` : ""),
+    cancelled,
+    deleted,
+    skipped,
+    failed,
+  }
+}
+
 export const moveSubtitleInQueue = (
   db: Database.Database,
   user: DBUser,
@@ -1208,7 +1400,10 @@ export const getFinishedSubtitlesPage = (
 // Remove a single completed/failed translation row from the Translated page
 // (soft-delete the job). The subtitle and its other target-language jobs are
 // left intact. Gated on the same canDeleteTranslation permission as the
-// dashboard's per-subtitle delete.
+// dashboard's per-subtitle delete. Also cancels any still-active chunks so the
+// worker never picks them up after the job is marked deleted (the chunk queue
+// filters on chunk status, not job.deletedAt) — important when this is used to
+// delete an active job via the dashboard bulk cancel/delete flow.
 export const softDeleteSubtitleJob = (db: Database.Database, user: DBUser, jobId: number): DefaultResponse => {
   const { hasPermission: perm } = userHasPermission(db, user.id, "canDeleteTranslation")
   if (!perm) return { success: false, msg: "Permission denied" }
@@ -1216,9 +1411,15 @@ export const softDeleteSubtitleJob = (db: Database.Database, user: DBUser, jobId
   const job = getSubtitleJobById(db, jobId)
   if (!job) return { success: false, msg: "Translation not found" }
 
-  db.prepare(
-    `UPDATE subtitleJob SET deletedAt = datetime('now'), deletedByUserId = ?, updatedAt = datetime('now') WHERE id = ?`,
-  ).run(user.id, jobId)
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE subtitleJob SET deletedAt = datetime('now'), deletedByUserId = ?, updatedAt = datetime('now') WHERE id = ?`,
+    ).run(user.id, jobId)
+    // Cancel any still-active chunks so the worker stops processing this job.
+    db.prepare(
+      `UPDATE subtitleChunk SET status = 'cancelled', updatedAt = datetime('now') WHERE subtitleJobId = ? AND status NOT IN ('completed', 'cancelled')`,
+    ).run(jobId)
+  })()
 
   createLog(db, "info", "subtitleDelete", "subtitle", job.subtitleId, "Removed translation from Translated page", {
     jobId,
@@ -1234,17 +1435,29 @@ export const getSubtitlesWithLang = (db: Database.Database) => {
               COALESCE(mi.title, s.name) as displayName,
               s.name as fileName,
               l.name as sourceLangName,
-              (SELECT MIN(sj2.season) FROM subtitleJob sj2 WHERE sj2.subtitleId = s.id) as season,
-              (SELECT MIN(sj2.episode) FROM subtitleJob sj2 WHERE sj2.subtitleId = s.id) as episode,
+              sjmin.season as season,
+              sjmin.episode as episode,
               s.createdAt
        FROM subtitle s
        INNER JOIN language l ON s.sourceLangId = l.id
        LEFT JOIN mediaItem mi ON s.mediaItemId = mi.id
+       -- MIN(season)/MIN(episode) per subtitle in one grouped pass instead of
+       -- two correlated subqueries per row (subtitleJob.subtitleId is indexed
+       -- via its UNIQUE(subtitleId, targetLangId) constraint).
+       LEFT JOIN (
+         SELECT subtitleId, MIN(season) as season, MIN(episode) as episode
+         FROM subtitleJob
+         GROUP BY subtitleId
+       ) sjmin ON sjmin.subtitleId = s.id
        WHERE s.deletedAt IS NULL
-         AND EXISTS (
-           SELECT 1 FROM subtitleJob sj
+         -- "has at least one completed chunk": a single pass over completed
+         -- chunks (idx_subtitleChunk_status) joined to subtitleJob by PK,
+         -- instead of a per-row EXISTS. Keeps the returned shape identical.
+         AND s.id IN (
+           SELECT sj.subtitleId
+           FROM subtitleJob sj
            INNER JOIN subtitleChunk sc ON sc.subtitleJobId = sj.id
-           WHERE sj.subtitleId = s.id AND sc.status = 'completed'
+           WHERE sc.status = 'completed'
          )
        ORDER BY s.createdAt DESC`,
     )

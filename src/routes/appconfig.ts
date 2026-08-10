@@ -66,6 +66,7 @@ export function appconfigRouter(db: Database.Database) {
       clearLogsOlderThanDays,
       sessionTimeoutMinutes,
       rootLibraryPath,
+      deleteNotCancel,
     } = req.body as Record<string, string>
 
     // Preserve the Whisper settings (they live in a separate form posted to
@@ -92,6 +93,7 @@ export function appconfigRouter(db: Database.Database) {
       cur.whisperModelRootPath,
       cur.whisperEnabled === 1,
       cur.whisperRunAsSeparateTask === 1,
+      deleteNotCancel === "1",
     )
 
     if (!result.success) {
