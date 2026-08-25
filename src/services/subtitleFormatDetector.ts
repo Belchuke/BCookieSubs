@@ -49,18 +49,40 @@ export function isSubtitleExtension(path: string): boolean {
   return subtitleExtensionOf(path) !== null || isSubFile(path) || isSupFile(path)
 }
 
-// Detect a subtitle's operational format from its filename (preferred) and,
-// when the extension is missing or unknown, a content sniff for ASS/SSA section
-// headers. `.sub`/`.sup` map to "srt" because subSubtitleAdapter / pgsOcrService
-// convert every .sub/.sup (text-parsed or OCR'd) into an SRT intermediate
-// before it is stored — the stored sourceFormat stays one of srt/ass/ssa so the
-// existing chunk/translate/export pipeline is untouched.
+// Distinguishes modern ASS (v4.00+) from genuine legacy SSA (v4.00) by content,
+// since many releases mislabel the file extension (e.g. a real v4.00+ script
+// saved as ".ssa"). `[V4+ Styles]` / `ScriptType: v4.00+` is checked first, so a
+// file carrying both a (possibly stray) legacy marker and a v4+ one is still
+// treated as ASS — that combination is exactly the mislabeled case this exists
+// to catch. Returns null when the content carries neither marker, so the
+// caller can fall back to the extension instead of guessing.
+function sniffAssScriptVariant(content: string): "ass" | "ssa" | null {
+  if (/\[\s*V4\+\s*Styles\s*\]/i.test(content)) return "ass"
+  if (/ScriptType\s*:\s*v4\.00\+/i.test(content)) return "ass"
+  if (/\[\s*V4\s+Styles\s*\]/i.test(content)) return "ssa"
+  if (/ScriptType\s*:\s*v4\.00(?!\+)/i.test(content)) return "ssa"
+  return null
+}
+
+// Detect a subtitle's operational format. `.srt`/`.sub`/`.sup` are trusted from
+// the filename outright. For `.ass`/`.ssa` (or an unknown/missing extension),
+// content — not the original extension — decides ASS vs. SSA: the section
+// headers and ScriptType line are authoritative, since files are frequently
+// named `.ssa` while actually containing v4.00+ (ASS) content. The extension
+// is only used as a fallback when the content carries neither marker (e.g. no
+// content was provided, or the Styles section is missing/malformed).
 export function detectSubtitleFormat(filename: string, content?: string): SubtitleFormat {
   const ext = subtitleExtensionOf(filename)
   if (ext === ".srt") return "srt"
+  if (isSubFile(filename) || isSupFile(filename)) return "srt"
+
+  if ((ext === ".ass" || ext === ".ssa" || ext === null) && content) {
+    const sniffed = sniffAssScriptVariant(content)
+    if (sniffed) return sniffed
+  }
+
   if (ext === ".ass") return "ass"
   if (ext === ".ssa") return "ssa"
-  if (isSubFile(filename) || isSupFile(filename)) return "srt"
 
   if (content) {
     const head = content.slice(0, 4096)

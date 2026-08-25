@@ -199,6 +199,7 @@ export type DBConfig = {
   selectedThemeId: number
   rootLibraryPath: string | null
   defaultLanguage: string
+  thaiAssFont: string
   whisperModel: string
   whisperTimestampsLength: number
   whisperUseCuda: number

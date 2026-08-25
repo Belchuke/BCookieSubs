@@ -21,7 +21,7 @@ import {
   reorderOcrJobs,
   retryOcrJob,
 } from "../repositories/ocrJobRepository"
-import { addCreditToSubtitle } from "../services/subtitleExportService"
+import { finalizeSubtitleForOutput } from "../services/subtitleExportService"
 
 const upload = multer({ storage: multer.memoryStorage() })
 
@@ -559,7 +559,14 @@ export function dashboardRouter(db: Database.Database) {
     const sourceFormat = subtitle?.sourceFormat ?? "srt"
     const filename = getExportFileName(title, job.season, job.episode, mediaItem?.year ?? null, langCode, sourceFormat)
 
-    const exportContent = addCreditToSubtitle(job.translatedText, sourceFormat)
+    const config = getConfig(db)
+    const exportContent = finalizeSubtitleForOutput(
+      job.translatedText,
+      sourceFormat,
+      langCode,
+      lang?.name ?? "",
+      config.thaiAssFont,
+    )
 
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`)
     res.setHeader("Content-Type", "text/plain; charset=utf-8")

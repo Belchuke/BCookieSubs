@@ -2,6 +2,7 @@ import { CREDIT_TEXT } from "../constants/keys"
 import { CREDIT_DURATION_MS } from "../constants/timer"
 import { SubtitleFormat } from "../types/subtitleTypes"
 import { msToAssTime } from "./assSubtitleAdapter"
+import { applyAssFontPolicy } from "./subtitleFontPolicy"
 
 function srtToMs(ts: string): number {
   const [hms, ms] = ts.split(",")
@@ -58,6 +59,24 @@ export function subtitleExportExtension(format: SubtitleFormat): ".srt" | ".ass"
 export function addCreditToSubtitle(content: string, format: SubtitleFormat): string {
   if (format === "ass" || format === "ssa") return addCreditToAss(content)
   return addCreditToSrt(content)
+}
+
+// The single place that turns a job's finished translatedText/originalText
+// into the exact bytes written to disk, stored as an exported-file path, or
+// sent to a download response. Adds the credit line, then applies the
+// language-aware ASS font policy (see subtitleFontPolicy.ts) — currently a
+// no-op for every language except Thai. Every export/download call site
+// should go through this rather than calling addCreditToSubtitle directly, so
+// the font/title fix-up can never be applied inconsistently or skipped.
+export function finalizeSubtitleForOutput(
+  content: string,
+  format: SubtitleFormat,
+  languageCode: string,
+  languageName: string,
+  configuredThaiFont: string | null,
+): string {
+  const credited = addCreditToSubtitle(content, format)
+  return applyAssFontPolicy(credited, format, languageCode, languageName, configuredThaiFont)
 }
 
 // Insert a credit Dialogue line as the first event in [Events], matching the

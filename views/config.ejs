@@ -240,6 +240,20 @@
             <button type="submit" class="btn btn-primary cfg-flex-shrink-0"><%= __('config.saveLanguage') %></button>
           </form>
         </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2><%= __('config.subtitleFonts') %></h2>
+          </div>
+          <p class="text-dim cfg-desc"><%= __('config.thaiAssFontDescription') %></p>
+          <form method="POST" action="/config/subtitlefont" class="cfg-flex-end">
+            <div class="field cfg-field-flex-mb0">
+              <label for="thaiAssFont"><%= __('config.thaiAssFont') %> <i class="fa-solid fa-circle-info setting-info" data-tip="<%= __('config.tipThaiAssFont') %>"></i></label>
+              <input type="text" id="thaiAssFont" name="thaiAssFont" value="<%= config.thaiAssFont %>" placeholder="Garuda" required>
+            </div>
+            <button type="submit" class="btn btn-primary cfg-flex-shrink-0"><%= __('config.saveSubtitleFont') %></button>
+          </form>
+        </div>
         <% } %>
 
         <div class="card">

@@ -46,7 +46,7 @@ import {
   upsertItemSubtitleSources,
   getItemSubtitleSources,
 } from "../repositories/subtitleSourceCacheRepository"
-import { addCreditToSubtitle, subtitleExportExtension } from "./subtitleExportService"
+import { finalizeSubtitleForOutput, subtitleExportExtension } from "./subtitleExportService"
 import { CREDIT_TEXT } from "../constants/keys"
 import {
   getBcookieTranslatedRowsForItem,
@@ -3113,6 +3113,7 @@ export async function exportSubtitleToLibraryFolder(
   let anyExported = false
 
   const ext = subtitleExportExtension(subtitle.sourceFormat)
+  const config = getConfig(db)
   // A subtitle is a "whisper file" (a legitimate translation source) only when
   // Whisper generated it; library/upload sources are not. Used to decide whether
   // our exported copy may reappear as a translatable row on the Library page.
@@ -3129,7 +3130,14 @@ export async function exportSubtitleToLibraryFolder(
       lastExportName = origName
     } else {
       try {
-        fs.writeFileSync(origPath, addCreditToSubtitle(subtitle.originalText, subtitle.sourceFormat), "utf-8")
+        const origContent = finalizeSubtitleForOutput(
+          subtitle.originalText,
+          subtitle.sourceFormat,
+          srcCode,
+          srcLang?.name ?? "",
+          config.thaiAssFont,
+        )
+        fs.writeFileSync(origPath, origContent, "utf-8")
         lastExportName = origName
         anyExported = true
         recordExportedFile(db, item.libraryPathId, origPath, subtitle.id, isWhisperSource)
@@ -3174,7 +3182,13 @@ export async function exportSubtitleToLibraryFolder(
       }
 
       try {
-        const content = addCreditToSubtitle(job.translatedText!, subtitle.sourceFormat)
+        const content = finalizeSubtitleForOutput(
+          job.translatedText!,
+          subtitle.sourceFormat,
+          langCode,
+          lang.name,
+          config.thaiAssFont,
+        )
         fs.writeFileSync(exportPath, content, "utf-8")
         lastExportName = exportName
         anyExported = true

@@ -1,7 +1,7 @@
 import { Router } from "express"
 import Database from "better-sqlite3"
 import multer from "multer"
-import { getConfig, updateConfig, updateWhisperConfig, updateRootLibraryPath, updateDefaultLanguage, isWhisperGpuAvailable } from "../repositories/configRepository"
+import { getConfig, updateConfig, updateWhisperConfig, updateRootLibraryPath, updateDefaultLanguage, updateThaiAssFont, isWhisperGpuAvailable } from "../repositories/configRepository"
 import { isSupportedLocale } from "../i18n"
 import { addConfigTranslationLanguage, getConfigTranslationLanguages, getLanguages, removeConfigTranslationLanguage, reorderConfigTranslationLanguages } from "../repositories/languageRepository"
 import { setOrUpdateSecret } from "../repositories/movieDbRepository"
@@ -248,6 +248,16 @@ export function appconfigRouter(db: Database.Database) {
       return res.redirect("/config?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed to update language"))
     }
     res.redirect("/config?toast=success&msg=" + encodeURIComponent("Default language updated"))
+  })
+
+  router.post("/subtitlefont", requireAuth, requirePermission("canManageSettings"), upload.none(), (req, res) => {
+    const user = res.locals.user!
+    const { thaiAssFont } = req.body as { thaiAssFont?: string }
+    const result = updateThaiAssFont(db, user, thaiAssFont?.trim() || "Garuda")
+    if (!result.success) {
+      return res.redirect("/config?toast=error&msg=" + encodeURIComponent(result.msg ?? "Failed to save subtitle font"))
+    }
+    res.redirect("/config?toast=success&msg=" + encodeURIComponent("Subtitle font saved"))
   })
 
   router.post("/theme/delete/:id", requireAuth, requirePermission("canManageSettings"), (req, res) => {

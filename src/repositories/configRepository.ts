@@ -146,6 +146,18 @@ export const updateDefaultLanguage = (db: Database.Database, user: DBUser, langu
   return { success: true, msg: null }
 }
 
+// Font forced onto Thai ASS/SSA output (see subtitleFontPolicy.ts). A blank
+// value falls back to the hardcoded default rather than being stored empty,
+// since an empty Fontname would break rendering entirely.
+export const updateThaiAssFont = (db: Database.Database, user: DBUser, font: string): DefaultResponse => {
+  const { hasPermission } = userHasPermission(db, user.id, "canManageSettings")
+  if (!hasPermission) return { success: false, msg: "Permission denied" }
+  const resolved = font.trim() || "Garuda"
+  db.prepare(`UPDATE config SET thaiAssFont = ?, updatedAt = datetime('now') WHERE id = 1`).run(resolved)
+  createLog(db, "info", "configUpdate", "config", null, `Updated Thai ASS font to ${resolved} by ${user.username}`, { font: resolved })
+  return { success: true, msg: null }
+}
+
 export const getLogs = (
   db: Database.Database,
   user: DBUser,

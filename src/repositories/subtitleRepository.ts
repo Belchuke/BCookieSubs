@@ -398,6 +398,17 @@ export const finalizeWhisperTranscription = (
   ).run(dedupedSrt, originalFileHash, srtFileName, subtitleId)
 }
 
+// Translating a subtitle into its own source language is never useful — it
+// would just re-run the model on already-correct text. Every job-creation
+// entry point below drops the source language from its requested target list
+// before queuing anything, so re-requesting it (e.g. because it's part of a
+// user's default target-language set) is a silent no-op instead of a wasted
+// translation run. Compared by language row id, not iso code, since a source
+// and target could otherwise be distinct locale rows sharing a code.
+function excludingSourceLanguage(targetLangIds: number[], sourceLangId: number): number[] {
+  return targetLangIds.filter((id) => id !== sourceLangId)
+}
+
 export const createPlaceholderTranslationJobs = (
   db: Database.Database,
   user: DBUser,
@@ -408,6 +419,7 @@ export const createPlaceholderTranslationJobs = (
 ): { success: boolean; msg: string | null } => {
   const subtitle = getSubtitleById(db, subtitleId)
   if (!subtitle) return { success: false, msg: "Subtitle not found" }
+  targetLangIds = excludingSourceLanguage(targetLangIds, subtitle.sourceLangId)
 
   const existingJobs = getSubtitleJobsBySubtitleId(db, subtitleId)
   const existingLangIds = new Set(existingJobs.map((j) => j.targetLangId))
@@ -456,6 +468,7 @@ export const createTranslationJobsForSubtitle = (
 ): DefaultResponse => {
   const subtitle = getSubtitleById(db, subtitleId)
   if (!subtitle) return { success: false, msg: "Subtitle not found" }
+  targetLangIds = excludingSourceLanguage(targetLangIds, subtitle.sourceLangId)
 
   const parsedSubtitles = parseSubtitleRows(subtitle.originalText, subtitle.sourceFormat)
   if (parsedSubtitles.length === 0) {
@@ -597,6 +610,7 @@ export const addMissingTargetLanguageJobs = (
 
   const subtitle = getSubtitleById(db, subtitleId)
   if (!subtitle) return { success: false, msg: "Subtitle not found" }
+  newTargetLangIds = excludingSourceLanguage(newTargetLangIds, subtitle.sourceLangId)
 
   if (newTargetLangIds.length === 0) return { success: true, msg: "No new languages to add" }
 
@@ -700,6 +714,7 @@ export const createSubtitleTask = (
 
   const getLang = getLanguageById(db, sourceLangId)
   if (!getLang) return { success: false, msg: "Source language not found" }
+  targetLangIds = excludingSourceLanguage(targetLangIds, sourceLangId)
 
   const getLangTargetInOrder = targetLangIds
     .map((id, index) => {

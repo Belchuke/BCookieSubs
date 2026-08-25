@@ -406,6 +406,12 @@ const createTables = (db: Database.Database) => {
 
     defaultLanguage TEXT NOT NULL DEFAULT 'en',
 
+    -- Font forced onto every Style: entry (and inline \fn override) of Thai
+    -- ASS/SSA output, since the fonts source subtitles ship with are commonly
+    -- Latin-only and either lack Thai glyphs or aren't installed on the media
+    -- server. See src/services/subtitleFontPolicy.ts.
+    thaiAssFont TEXT NOT NULL DEFAULT 'Garuda',
+
     whisperModel TEXT NOT NULL DEFAULT 'large-v3-turbo',
     whisperTimestampsLength INTEGER NOT NULL DEFAULT 60,
     whisperUseCuda INTEGER NOT NULL DEFAULT 0,
@@ -429,12 +435,20 @@ const createTables = (db: Database.Database) => {
     const scanLibraryPathsDefault = rootLibraryPathDefault ? 1 : 0
     const rawEnvLang = process.env.APP_DEFAULT_LANGUAGE?.trim() ?? ""
     const defaultLanguage = isSupportedLocale(rawEnvLang) ? rawEnvLang : "en"
+    const thaiAssFontDefault = process.env.THAI_ASS_FONT?.trim() || "Garuda"
 
     db.prepare(
-      `INSERT INTO config (id, defaultChunkSize, theMovieDbActive, showPosters, rootLibraryPath, scanLibraryPaths, defaultLanguage, whisperModel, whisperTimestampsLength)
-       VALUES (1, 12, ?, ?, ?, ?, ?, 'large-v3-turbo', 60)
+      `INSERT INTO config (id, defaultChunkSize, theMovieDbActive, showPosters, rootLibraryPath, scanLibraryPaths, defaultLanguage, thaiAssFont, whisperModel, whisperTimestampsLength)
+       VALUES (1, 12, ?, ?, ?, ?, ?, ?, 'large-v3-turbo', 60)
        ON CONFLICT(id) DO NOTHING`,
-    ).run(theMovieDbActiveDefault, showPostersDefault, rootLibraryPathDefault, scanLibraryPathsDefault, defaultLanguage)
+    ).run(
+      theMovieDbActiveDefault,
+      showPostersDefault,
+      rootLibraryPathDefault,
+      scanLibraryPathsDefault,
+      defaultLanguage,
+      thaiAssFontDefault,
+    )
 
     db.exec(`CREATE TABLE IF NOT EXISTS configTranslationLanguage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -632,25 +646,6 @@ const createTables = (db: Database.Database) => {
     )`)
     db.exec(`CREATE INDEX IF NOT EXISTS idx_libraryPathOcrJob_status ON libraryPathOcrJob(status, orderNumber)`)
 
-    // ── Stats / candidate-lookup indexes ────────────────────────────────────
-    // subtitleChunkCandidate is the largest table and had only a PK — every
-    // "by modelId" / "by chunkId" lookup and every stats aggregation did a full
-    // scan, which is what made the stats Subtitles (~37s) and Models (~22s)
-    // endpoints crawl. These cover the hot query shapes in statsRepository /
-    // subtitleRepository (getModelCandidateStats, getModelsStats, the
-    // per-chunk candidate COUNT subqueries, and the candidate-by-chunk lookups).
-    // No production data to preserve, so additive CREATE INDEX IF NOT EXISTS
-    // is safe on existing dev DBs.
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_modelId ON subtitleChunkCandidate(modelId)`)
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_chunkId ON subtitleChunkCandidate(subtitleChunkId)`)
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_status  ON subtitleChunkCandidate(status)`)
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_selected ON subtitleChunkCandidate(selected)`)
-    // subtitleChunk.subtitleId is not the leftmost column of any existing index
-    // (the UNIQUE is on (subtitleJobId, chunkIndex)), so give it its own. The
-    // status index backs the "completed chunk" filter used by the stats
-    // subtitles list.
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunk_subtitleId ON subtitleChunk(subtitleId)`)
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunk_status   ON subtitleChunk(status)`)
     // NOTE: subtitleJob.subtitleId and subtitleChunk.subtitleJobId are already
     // indexed as the leftmost column of their UNIQUE constraints
     // (UNIQUE(subtitleId, targetLangId) and UNIQUE(subtitleJobId, chunkIndex)),
@@ -828,6 +823,13 @@ const createTables = (db: Database.Database) => {
     FOREIGN KEY (selectedCandidateId) REFERENCES subtitleChunkCandidate(id) ON DELETE SET NULL
     )`)
 
+    // subtitleChunk.subtitleId is not the leftmost column of any existing index
+    // (the UNIQUE is on (subtitleJobId, chunkIndex)), so give it its own. The
+    // status index backs the "completed chunk" filter used by the stats
+    // subtitles list.
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunk_subtitleId ON subtitleChunk(subtitleId)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunk_status   ON subtitleChunk(status)`)
+
     db.exec(`CREATE TABLE IF NOT EXISTS subtitleChunkCandidate (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 
@@ -859,6 +861,20 @@ const createTables = (db: Database.Database) => {
     FOREIGN KEY (promptId) REFERENCES prompt(id) ON DELETE SET NULL,
     FOREIGN KEY (promptVersionId) REFERENCES promptVersion(id) ON DELETE SET NULL
     )`)
+
+    // ── Stats / candidate-lookup indexes ────────────────────────────────────
+    // subtitleChunkCandidate is the largest table and had only a PK — every
+    // "by modelId" / "by chunkId" lookup and every stats aggregation did a full
+    // scan, which is what made the stats Subtitles (~37s) and Models (~22s)
+    // endpoints crawl. These cover the hot query shapes in statsRepository /
+    // subtitleRepository (getModelCandidateStats, getModelsStats, the
+    // per-chunk candidate COUNT subqueries, and the candidate-by-chunk lookups).
+    // No production data to preserve, so additive CREATE INDEX IF NOT EXISTS
+    // is safe on existing dev DBs.
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_modelId ON subtitleChunkCandidate(modelId)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_chunkId ON subtitleChunkCandidate(subtitleChunkId)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_status  ON subtitleChunkCandidate(status)`)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_selected ON subtitleChunkCandidate(selected)`)
 
     db.exec(`CREATE TABLE IF NOT EXISTS log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -912,6 +928,7 @@ const validateDb = (db: Database.Database) => {
 // up new columns. PRAGMA table_info is checked first so re-runs are no-ops.
 const COLUMN_MIGRATIONS: { table: string; column: string; definition: string }[] = [
   { table: "config", column: "whisperRunAsSeparateTask", definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "config", column: "thaiAssFont", definition: "TEXT NOT NULL DEFAULT 'Garuda'" },
   { table: "subtitle", column: "whisperOrderNumber", definition: "INTEGER" },
   { table: "subtitle", column: "sourceFormat", definition: "TEXT NOT NULL DEFAULT 'srt'" },
   // .sub provenance metadata (see subtitle table). Nullable so existing rows
