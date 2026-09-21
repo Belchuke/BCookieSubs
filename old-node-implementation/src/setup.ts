@@ -966,6 +966,65 @@ function applyColumnMigrations(db: Database.Database): void {
   }
 }
 
+// Indexes for existing databases. createTables runs only for brand-new DBs,
+// so databases created before these indexes existed never got them (verified
+// against the production DB: only the 3 small auth indexes exist there — see
+// DATABASE_ASSESSMENT.md). CREATE INDEX IF NOT EXISTS keeps re-runs and
+// concurrent getDb() callers no-ops.
+const INDEX_MIGRATIONS: { name: string; sql: string }[] = [
+  // logRepository: deleteLogsJob (createdAt < cutoff), getLogs/getLogsPagination
+  // (ORDER BY createdAt DESC) and the dashboard poll's getLogs(20) all filter
+  // or sort log by createdAt — previously a full scan of 229k+ rows per tick.
+  { name: "idx_log_createdAt", sql: "CREATE INDEX IF NOT EXISTS idx_log_createdAt ON log(createdAt)" },
+  // Chunk claiming/recovery: getNextQueuedChunkForWorker (status='queued') and
+  // resetStaleRunningChunks / releaseRunningChunks (status='running') filter
+  // subtitleChunk by status on every worker tick.
+  {
+    name: "idx_subtitleChunk_status",
+    sql: "CREATE INDEX IF NOT EXISTS idx_subtitleChunk_status ON subtitleChunk(status)",
+  },
+  // Per-chunk candidate reads (judgeAndSelectCandidate) and per-chunk deletes
+  // (deleteUnneededCandidates after selection) filter candidate by chunkId.
+  {
+    name: "idx_subtitleChunkCandidate_chunkId",
+    sql: "CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_chunkId ON subtitleChunkCandidate(subtitleChunkId)",
+  },
+  // Fresh-DB schema parity for existing DBs (createTables defines these for
+  // new databases; listed here so old DBs catch up in one place).
+  {
+    name: "idx_subtitleChunk_subtitleId",
+    sql: "CREATE INDEX IF NOT EXISTS idx_subtitleChunk_subtitleId ON subtitleChunk(subtitleId)",
+  },
+  {
+    name: "idx_subtitleChunkCandidate_modelId",
+    sql: "CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_modelId ON subtitleChunkCandidate(modelId)",
+  },
+  {
+    name: "idx_subtitleChunkCandidate_status",
+    sql: "CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_status ON subtitleChunkCandidate(status)",
+  },
+  {
+    name: "idx_subtitleChunkCandidate_selected",
+    sql: "CREATE INDEX IF NOT EXISTS idx_subtitleChunkCandidate_selected ON subtitleChunkCandidate(selected)",
+  },
+]
+
+function applyIndexMigrations(db: Database.Database): void {
+  for (const { name, sql } of INDEX_MIGRATIONS) {
+    const row = db
+      .prepare("SELECT COUNT(*) c FROM sqlite_master WHERE type='index' AND name = ?")
+      .get(name) as { c: number }
+    if (row.c > 0) continue
+    try {
+      db.exec(sql)
+    } catch (e) {
+      // Concurrent getDb() calls can race index creation; also tolerate a
+      // transient busy lock — the next getDb() re-checks and retries.
+      console.error(`[setup] index migration ${name} failed: ${String(e).slice(0, 120)}`)
+    }
+  }
+}
+
 export function getDb(): Database.Database {
   const dbExists = fs.existsSync(dbName)
   const db = new Database(dbName)
@@ -978,7 +1037,7 @@ export function getDb(): Database.Database {
   db.pragma("journal_mode = WAL")
   db.pragma("synchronous = NORMAL")
   db.pragma("foreign_keys = ON")
-  db.pragma("busy_timeout = 5000")
+  db.pragma("busy_timeout = 10000")
 
   if (!dbExists) {
     createTables(db)
@@ -987,6 +1046,7 @@ export function getDb(): Database.Database {
   }
 
   applyColumnMigrations(db)
+  applyIndexMigrations(db)
 
   return db
 }

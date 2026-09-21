@@ -1288,6 +1288,13 @@ export const moveSeriesInQueue = (
   return { success: true, msg: null }
 }
 
+// Dashboard/poll payload. Only `subtitles` + `languageMap` are consumed (the
+// dashboard route and public/app.js renderQueue — see DATABASE_ASSESSMENT.md).
+// The earlier version also shipped every subtitleJob row (with full
+// translatedText — 543 MB of text in the production DB) and full mediaItem
+// rows in every 15s poll, plus O(n×m) JS joins. Jobs now return only the
+// fields the queue render needs; hasTranslation is computed in SQL so no
+// translatedText ever leaves the DB.
 export const getDashboardData = (db: Database.Database) => {
   const subtitles = db
     .prepare(
@@ -1299,20 +1306,24 @@ export const getDashboardData = (db: Database.Database) => {
     )
     .all() as Omit<DBSubtitle, "originalText">[]
 
-  const jobs = db
-    .prepare(
-      `SELECT id, subtitleId, userId, targetLangId, chunkSetting, chunkSizeTotal, chunkCurrent, season, episode, status, orderNumber, translatedText, outputFilePath, outputHash, finishedAt, cancelledAt, cancelledByUserId, deletedAt, deletedByUserId, createdAt, updatedAt FROM subtitleJob WHERE deletedAt IS NULL ORDER BY orderNumber ASC`,
-    )
-    .all() as Omit<DBSubtitleJob, never>[]
-
-  const mediaItems = db
-    .prepare(
-      `SELECT id, title, year, type, isAnime, genres, theMovieDbId, originalTitle, createdAt, updatedAt FROM mediaItem ORDER BY title ASC`,
-    )
-    .all() as Omit<DBMediaItem, "posterBase64">[]
-
   const languages = getLanguages(db)
   const languageMap = Object.fromEntries(languages.map((l) => [l.id, l]))
+
+  const jobs = db
+    .prepare(
+      `SELECT id, subtitleId, targetLangId, status, season, episode,
+              CASE WHEN translatedText IS NOT NULL AND TRIM(translatedText) <> '' THEN 1 ELSE 0 END AS hasTranslation
+       FROM subtitleJob WHERE deletedAt IS NULL ORDER BY orderNumber ASC`,
+    )
+    .all() as {
+      id: number
+      subtitleId: number
+      targetLangId: number
+      status: DBSubtitleJob["status"]
+      season: number | null
+      episode: number | null
+      hasTranslation: number
+    }[]
 
   const chunkCounts = db
     .prepare(
@@ -1325,8 +1336,21 @@ export const getDashboardData = (db: Database.Database) => {
     .all() as { subtitleJobId: number; total: number; done: number; failed: number }[]
   const chunkCountMap = Object.fromEntries(chunkCounts.map((c) => [c.subtitleJobId, c]))
 
+  // Map-based joins instead of O(n×m) filter/find per subtitle.
+  const jobsBySubtitle = new Map<number, typeof jobs>()
+  for (const j of jobs) {
+    const list = jobsBySubtitle.get(j.subtitleId) || []
+    list.push(j)
+    jobsBySubtitle.set(j.subtitleId, list)
+  }
+  const mediaTitles = new Map(
+    (db.prepare(`SELECT id, title FROM mediaItem`).all() as { id: number; title: string }[]).map(
+      (r) => [r.id, r.title],
+    ),
+  )
+
   const enrichedSubtitles = subtitles.map((s) => {
-    const sJobs = jobs.filter((j) => j.subtitleId === s.id && j.status !== "cancelled")
+    const sJobs = jobsBySubtitle.get(s.id) ?? []
     const firstJob = sJobs[0]
     const targets = sJobs.map((j) => {
       const counts = chunkCountMap[j.id] ?? { total: 0, done: 0, failed: 0 }
@@ -1337,20 +1361,19 @@ export const getDashboardData = (db: Database.Database) => {
         failed: counts.failed,
         jobId: j.id,
         jobStatus: j.status,
-        hasTranslation: !!j.translatedText,
+        hasTranslation: j.hasTranslation === 1,
       }
     })
-    const mediaItem = mediaItems.find((mi) => mi.id === s.mediaItemId)
     return {
       ...s,
       season: firstJob?.season ?? null,
       episode: firstJob?.episode ?? null,
       targets,
-      mediaItemTitle: mediaItem?.title ?? null,
+      mediaItemTitle: mediaTitles.get(s.mediaItemId ?? 0) ?? null,
     }
   })
 
-  return { subtitles: enrichedSubtitles, jobs, mediaItems, languageMap }
+  return { subtitles: enrichedSubtitles, languageMap }
 }
 
 // One page of finished/failed translations for the Translated page. Server-
@@ -1394,7 +1417,6 @@ export const getFinishedSubtitlesPage = (
         m.mediaItemPhotoPath as mediaItemPhotoPath,
         m.year as year,
         sj.status as status,
-        sj.translatedText as translatedText,
         sj.finishedAt as finishedAt,
         (SELECT sc.startedAt FROM subtitleChunk sc WHERE sc.subtitleJobId = sj.id ORDER BY sc.chunkIndex ASC LIMIT 1) as earliestChunkStartedAt
       FROM subtitleJob sj
@@ -1821,13 +1843,16 @@ export const markChunkCompletedNoCandidate = (
   ).run(judgeReason, chunkId)
 }
 
+// promptTextSnapshot is no longer populated (write-only: 673 MB of prompt
+// snapshots in production, never SELECTed — see DATABASE_ASSESSMENT.md);
+// callers pass null and old rows are cleared by db maintenance.
 export const createChunkCandidate = (
   db: Database.Database,
   subtitleChunkId: number,
   modelId: number,
   promptId: number,
   promptVersionId: number,
-  promptTextSnapshot: string,
+  promptTextSnapshot: string | null,
   translatedText: string | null,
   validationPassed: boolean,
   status: DBSubtitleChunkCandidate["status"],

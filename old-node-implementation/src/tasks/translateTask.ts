@@ -7,6 +7,7 @@ import {
   getLanguageById,
 } from "../repositories/languageRepository"
 import { createLog, deleteLogsJob } from "../repositories/logRepository"
+import { judgeRepairPrompt, parseJudgeResponse } from "../services/judgeResponseParser"
 import { getMediaItemById } from "../repositories/mediaRepository"
 import { getActiveModelsByRole, isModelActive, modelExists } from "../repositories/modelRepository"
 import { sendPrompt } from "../repositories/ollamaRepository"
@@ -35,6 +36,7 @@ import {
   getNextQueuedChunkForWorker,
   getNextWhisperSubtitleForTranscription,
   countCompletedChunks,
+  deleteUnneededCandidates,
   releaseRunningChunks,
   getSubtitleById,
   getSubtitleJobById,
@@ -178,12 +180,31 @@ export async function taskMain(db: Database.Database): Promise<void> {
     try {
       await runOnce(db)
     } catch (err) {
+      // A crash inside runOnce can leave the just-claimed chunk stuck in
+      // 'running' (nothing re-queues it until the next worker restart's stale
+      // sweep). Release it back to the queue immediately so the next tick
+      // picks it up.
+      cleanupRunningChunks(db)
       createLog(db, "error", "workerState", "worker", null, `Translation worker loop crashed: ${summarizeError(err)}`, {
         error: String(err),
       })
       console.error("[worker] Unexpected error:", err)
     }
     await sleep(TASK_INTERVAL_MS)
+  }
+}
+
+// Log retention ran on every worker tick; hourly is plenty and keeps the
+// (now indexed) createdAt DELETE + retention config read off the hot path.
+const LOG_CLEANUP_INTERVAL_MS = 60 * 60 * 1000
+let lastLogCleanup = 0
+function maybeDeleteExpiredLogs(db: Database.Database): void {
+  if (Date.now() - lastLogCleanup < LOG_CLEANUP_INTERVAL_MS) return
+  lastLogCleanup = Date.now()
+  try {
+    deleteLogsJob(db)
+  } catch (e) {
+    console.error("[worker] log cleanup failed:", e)
   }
 }
 
@@ -218,7 +239,7 @@ async function runOnce(db: Database.Database): Promise<void> {
 
   const config = getConfig(db)
 
-  deleteLogsJob(db)
+  maybeDeleteExpiredLogs(db)
 
   // When Whisper runs as a separate task, the dedicated Whisper worker owns
   // transcription; this loop must not touch whisper-source subtitles.
@@ -235,7 +256,15 @@ async function runOnce(db: Database.Database): Promise<void> {
     return
   }
 
-  await processChunk(db, chunk)
+  // Remove from the claimed set when the chunk is done (completed, failed, or
+  // early-returned) so pause-time candidate release (cleanupRunningChunks) only
+  // touches chunks still in flight, and the set cannot grow unboundedly over a
+  // long-lived worker.
+  try {
+    await processChunk(db, chunk)
+  } finally {
+    claimedChunkIds.delete(chunk.id)
+  }
 }
 
 async function abortableSendPrompt(
@@ -546,7 +575,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
               model.id,
               promptVersion.promptId,
               promptVersion.id,
-              promptText,
+              null, // promptTextSnapshot: write-only dead weight — no longer stored
               JSON.stringify(storedRows),
               true,
               "completed",
@@ -589,7 +618,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
                 model.id,
                 promptVersion.promptId,
                 promptVersion.id,
-                promptText,
+                null, // promptTextSnapshot: no longer stored
                 null,
                 false,
                 "validation_failed",
@@ -637,7 +666,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
               model.id,
               promptVersion.promptId,
               promptVersion.id,
-              promptText,
+              null, // promptTextSnapshot: no longer stored
               null,
               false,
               "failed",
@@ -678,7 +707,7 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
               model.id,
               promptVersion.promptId,
               promptVersion.id,
-              promptText,
+              null, // promptTextSnapshot: no longer stored
               null,
               false,
               "failed",
@@ -725,6 +754,15 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
           console.log(
             `[worker] Retrying candidate (model=${model.name}, prompt=${promptVersion.id}) attempt ${candidateAttempts + 1}/${config.maxRetriesPerChunk}: ${errorCode} — ${errorSummary}`,
           )
+          // Back off before the next attempt after a timeout/model error so a
+          // struggling provider is not hammered back-to-back (production logs
+          // showed 5 consecutive immediate 300s-timeout retries).
+          if (errorCode === "timeout" || errorCode === "model_error") {
+            const backoffMs = Math.min(30000, 2000 * candidateAttempts)
+            console.log(`[worker] Backing off ${(backoffMs / 1000).toFixed(0)}s after ${errorCode}`)
+            await sleep(backoffMs)
+            if (workerPaused) return
+          }
           createLog(
             db,
             "warning",
@@ -834,6 +872,13 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
       )
     }
 
+    // The winner is recorded (selected=1); the other completed candidates for
+    // this chunk are dead weight (their translatedText was never read — the
+    // ~6.4 GB unaccounted mass in the production DB). Failed/validation-failed
+    // candidates are kept for diagnostics. This was implemented in
+    // deleteUnneededCandidates but never called anywhere.
+    deleteUnneededCandidates(db, chunk.id)
+
     const winner = validCandidates.find((c) => c.candidateId === winnerCandidate.candidateId)
     if (winner) {
       if (modelExists(db, winner.modelId)) {
@@ -892,8 +937,24 @@ async function processChunk(db: Database.Database, chunk: DBSubtitleChunk): Prom
 
 type JudgeRunStatus =
   | { status: "selected"; candidateId: number; judgeModelId: number; judgeReason: string }
-  | { status: "rejected" }
+  | { status: "rejected"; reason: string | null }
   | { status: "failed" }
+
+// Judge format-retry budget: how many times a structurally-invalid judge
+// response (unparseable JSON, missing/non-numeric winnerIndex, out-of-range
+// index) is retried with a short repair instruction before giving up. Each
+// format retry appends judgeRepairPrompt to the original prompt. Transport
+// failures (timeout, rate limit, 5xx) still retry within `maxRetries`.
+// Override with JUDGE_FORMAT_RETRIES=… (default 3).
+const JUDGE_FORMAT_RETRIES_DEFAULT = 3
+function judgeFormatRetryBudget(): number {
+  const raw = process.env.JUDGE_FORMAT_RETRIES
+  if (raw) {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n >= 0) return Math.floor(n)
+  }
+  return JUDGE_FORMAT_RETRIES_DEFAULT
+}
 
 async function runJudgeModel(
   db: Database.Database,
@@ -905,72 +966,83 @@ async function runJudgeModel(
   chunkId: number,
   jobId: number,
 ): Promise<JudgeRunStatus> {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
+  const formatRetries = judgeFormatRetryBudget()
+  let attempts = 0
+  let formatFailures = 0
+  for (;;) {
+    if (attempts >= maxRetries) return { status: "failed" }
+
+    // After the first format failure, ask again with a one-line repair
+    // instruction appended, instead of re-running the identical prompt.
+    const prompt = formatFailures > 0 ? judgeRepairPrompt(judgePromptText, formatFailures) : judgePromptText
+    attempts++
+
     try {
-      const response = await abortableSendPrompt(db, judgeModel, judgePromptText, signal)
-      const jsonMatch = response.message.content.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) {
+      const response = await abortableSendPrompt(db, judgeModel, prompt, signal)
+      const parsed = parseJudgeResponse(response.message.content)
+
+      if (!parsed.ok) {
+        formatFailures++
         createLog(
           db,
           "warning",
           "chunkJudge", "chunk",
           chunkId,
-          `Judge returned no valid JSON (model ${judgeModel.name}, attempt ${attempt + 1}/${maxRetries})`,
+          `Judge returned invalid JSON (model ${judgeModel.name}, attempt ${attempts}/${maxRetries}): ${parsed.error}`,
           {
             judgeModel: judgeModel.name,
             judgeModelId: judgeModel.id,
             chunkId,
             jobId,
-            attempt: attempt + 1,
+            attempt: attempts,
             failureCategory: "invalid_response",
             responseSample: response.message.content.slice(0, 200),
           },
         )
-        if (attempt + 1 >= maxRetries) return { status: "failed" }
-        console.log(`[worker] Retrying judge attempt ${attempt + 2}/${maxRetries}: no valid JSON`)
+        if (formatFailures > formatRetries) return { status: "failed" }
         continue
       }
 
-      const result = JSON.parse(jsonMatch[0]) as { winnerIndex: number; reason?: string }
-
-      if (result.winnerIndex === -1) {
+      if (parsed.winnerIndex === -1) {
         createLog(db, "warning", "chunkJudge", "chunk", chunkId, `Judge rejected all candidates (model ${judgeModel.name})`, {
           judgeModel: judgeModel.name,
           judgeModelId: judgeModel.id,
           chunkId,
           jobId,
-          reason: result.reason,
+          reason: parsed.reason,
         })
-        return { status: "rejected" }
+        // No re-judge on rejection: the candidates are identical on every
+        // retry, so re-asking (up to 14x in production) only burns calls.
+        return { status: "rejected", reason: parsed.reason }
       }
 
-      if (result.winnerIndex < 0 || result.winnerIndex >= candidates.length) {
+      if (parsed.winnerIndex < 0 || parsed.winnerIndex >= candidates.length) {
+        formatFailures++
         createLog(
           db,
           "warning",
           "chunkJudge", "chunk",
           chunkId,
-          `Judge returned out-of-range index ${result.winnerIndex} (model ${judgeModel.name}, ${candidates.length} candidates)`,
+          `Judge returned out-of-range index ${parsed.winnerIndex} (model ${judgeModel.name}, ${candidates.length} candidates)`,
           {
             judgeModel: judgeModel.name,
             judgeModelId: judgeModel.id,
             chunkId,
             jobId,
-            winnerIndex: result.winnerIndex,
+            winnerIndex: parsed.winnerIndex,
             total: candidates.length,
             failureCategory: "out_of_range_index",
           },
         )
-        if (attempt + 1 >= maxRetries) return { status: "failed" }
-        console.log(`[worker] Retrying judge attempt ${attempt + 2}/${maxRetries}: out-of-range index`)
+        if (formatFailures > formatRetries) return { status: "failed" }
         continue
       }
 
       return {
         status: "selected",
-        candidateId: candidates[result.winnerIndex].candidateId,
+        candidateId: candidates[parsed.winnerIndex].candidateId,
         judgeModelId: judgeModel.id,
-        judgeReason: result.reason ?? `Selected candidate ${result.winnerIndex}`,
+        judgeReason: parsed.reason ?? `Selected candidate ${parsed.winnerIndex}`,
       }
     } catch (err) {
       const errorSummary = summarizeError(err)
@@ -983,25 +1055,22 @@ async function runJudgeModel(
         "error",
         "chunkFailed", "chunk",
         chunkId,
-        `Judge call failed (model ${judgeModel.name}, attempt ${attempt + 1}/${maxRetries}, ${failureCategory}): ${errorSummary}`,
+        `Judge call failed (model ${judgeModel.name}, attempt ${attempts}/${maxRetries}, ${failureCategory}): ${errorSummary}`,
         {
           judgeModel: judgeModel.name,
           judgeModelId: judgeModel.id,
           provider: judgeModel.provider,
           chunkId,
           jobId,
-          attempt: attempt + 1,
+          attempt: attempts,
           failureCategory,
           error: errorSummary,
         },
       )
-      if (attempt + 1 >= maxRetries) return { status: "failed" }
-      console.log(`[worker] Retrying judge attempt ${attempt + 2}/${maxRetries}: ${failureCategory} — ${errorSummary}`)
+      if (attempts >= maxRetries) return { status: "failed" }
     }
   }
-  return { status: "failed" }
 }
-
 async function judgeAndSelectCandidate(
   db: Database.Database,
   candidates: {
@@ -1119,19 +1188,28 @@ async function judgeAndSelectCandidate(
       fallbackJudgeModelId: fallbackModels[0].id,
       jobId,
     })
-    if (fallbackResult.status === "rejected") {
-      return null
-    }
   }
 
-  if (runResult.status === "rejected") {
-    return null
-  }
-
+  // The judge could not pick a winner (rejected all candidates, or failed
+  // after its format/transport retry budget). Re-generating identical
+  // candidates and re-judging up to maxRetriesPerChunk times — the old
+  // behavior — produced the production "judge could not select after 14
+  // retries" job failures. Instead, fall back to the first structurally
+  // valid candidate: the chunk completes, and the fallback is visible in the
+  // chunk's judgeReason and in the warning log below.
+  const judgeDetail =
+    runResult.status === "rejected"
+      ? runResult.reason
+        ? `judge rejected all candidates: ${runResult.reason.slice(0, 200)}`
+        : "judge rejected all candidates"
+      : "judge failed after its retry budget"
+  createLog(db, "warning", "chunkJudge", "chunk", chunkId, `No judge selection — using first valid candidate (${judgeDetail})`, {
+    jobId,
+  })
   return {
     candidateId: candidates[0].candidateId,
     judgeModelId: null,
-    judgeReason: "Judge failed — using first candidate",
+    judgeReason: `Fallback: ${judgeDetail} — using first valid candidate`,
     judgePromptText,
   }
 }

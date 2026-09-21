@@ -58,11 +58,12 @@ export function dashboardRouter(db: Database.Database) {
 
 
   router.get("/poll", requireAuth, (_req, res) => {
+    const startedMs = Date.now()
     try {
       const { subtitles, languageMap } = getDashboardData(db)
       const { logs } = getLogs(db, res.locals.user!, 20)
       const config = getConfig(db)
-      res.json({
+      const payload = {
         subtitles,
         languageMap,
         logs: logs ?? [],
@@ -72,7 +73,19 @@ export function dashboardRouter(db: Database.Database) {
         ocrJobs: getOcrJobsForDashboard(db),
         ocrWorkerPaused: getOcrWorkerBridge().isWorkerPaused(),
         deleteNotCancel: config.deleteNotCancel === 1,
-      })
+      }
+      // Slow/heavy poll instrumentation (DATABASE_ASSESSMENT.md): the poll
+      // runs every 15s per open dashboard tab, so regressions compound. Warn
+      // on the console instead of the log table — a DB log per slow poll
+      // would itself add write load.
+      const elapsedMs = Date.now() - startedMs
+      const bodySize = JSON.stringify(payload).length
+      if (elapsedMs > 250 || bodySize > 200_000) {
+        console.warn(
+          `[dashboard] slow poll: ${elapsedMs}ms, payload ${(bodySize / 1024).toFixed(0)}KB, ${subtitles.length} subtitles`,
+        )
+      }
+      res.json(payload)
     } catch (e) {
       res.status(500).json({ error: String(e) })
     }
