@@ -1,0 +1,149 @@
+@using BCookieSubs.Shared.Common
+@model WorkersIndexViewModel
+
+<div class="card">
+    <div class="card-header"><h2>Workers</h2></div>
+    @if (Model.Workers.Count == 0)
+    {
+        <p class="empty-state">No workers enrolled yet. Use “+ Add Worker” to create an enrollment token.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table id="workers-grid">
+                <thead>
+                    <tr>
+                        <th>Worker</th>
+                        <th>Status</th>
+                        <th>Connected</th>
+                        <th>Last seen</th>
+                        <th>Version</th>
+                        <th>OS</th>
+                        <th>CPU</th>
+                        <th>RAM</th>
+                        <th>GPU</th>
+                        <th>Capabilities</th>
+                        <th>Concurrency</th>
+                        @if (Model.CanManage)
+                        {
+                            <th>Actions</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var w in Model.Workers)
+                    {
+                        <tr>
+                            <td><a href="/workers/@w.Id">@w.Name</a></td>
+                            <td><span class="badge @StateBadge(w.EffectiveState)">@w.EffectiveState</span></td>
+                            <td class="text-dim">@(w.Connected ? $"since {w.ConnectedSince:HH:mm:ss}" : "no")</td>
+                            <td class="text-dim">@(w.LastSeenAt?.ToString("yyyy-MM-dd HH:mm") ?? "never")</td>
+                            <td>@(w.WorkerVersion ?? "—")</td>
+                            <td>@(w.OperatingSystem ?? "—")</td>
+                            <td>@(w.Cpu ?? "—")</td>
+                            <td>@(w.Ram ?? "—")</td>
+                            <td>@(w.Gpu is null ? "—" : $"{w.Gpu} ({w.Vram})")</td>
+                            <td>
+                                <span class="text-dim wk-cap-line">reported: @(w.ReportedCapabilities.Count == 0 ? "—" : string.Join(", ", w.ReportedCapabilities))</span>
+                                <span class="text-dim wk-cap-line">allowed: @(w.AllowedCapabilities.Count == 0 ? "—" : string.Join(", ", w.AllowedCapabilities))</span>
+                            </td>
+                            <td>@w.ActiveJobs/@w.MaxConcurrency</td>
+                            @if (Model.CanManage)
+                            {
+                                <td>
+                                    <div class="actions">
+                                        <form method="post" action="/workers/@w.Id/set-enabled">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="enabled" value="@(w.Enabled ? "false" : "true")">
+                                            <button type="submit" class="btn btn-sm">@(w.Enabled ? "Disable" : "Enable")</button>
+                                        </form>
+                                        <form method="post" action="/workers/@w.Id/set-draining">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="draining" value="@(w.Draining ? "false" : "true")">
+                                            <button type="submit" class="btn btn-sm">@(w.Draining ? "Resume" : "Drain")</button>
+                                        </form>
+                                        <form method="post" action="/workers/@w.Id/remove" class="confirm-remove">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="card wk-card-mt">
+    <div class="card-header"><h2>Enrollment tokens</h2></div>
+    @if (Model.Enrollments.Count == 0)
+    {
+        <p class="empty-state">No enrollment tokens.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table id="enrollments-grid">
+                <thead>
+                    <tr>
+                        <th>Token</th>
+                        <th>Label</th>
+                        <th>Created</th>
+                        <th>Expires</th>
+                        <th>Status</th>
+                        @if (Model.CanManage)
+                        {
+                            <th></th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in Model.Enrollments)
+                    {
+                        <tr>
+                            <td><code>@e.CodePrefix…</code></td>
+                            <td>@(e.Label ?? "—")</td>
+                            <td class="text-dim">@e.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td class="text-dim">@e.ExpiresAt.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td><span class="badge @EnrollBadge(e.Status)">@e.Status</span></td>
+                            @if (Model.CanManage)
+                            {
+                                <td>
+                                    @if (e.Status == "active")
+                                    {
+                                        <form method="post" action="/workers/enrollments/@e.Id/revoke">
+                                            @Html.AntiForgeryToken()
+                                            <button type="submit" class="btn btn-sm">Revoke</button>
+                                        </form>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@functions {
+    private static string StateBadge(WorkerEffectiveState s) => s switch
+    {
+        WorkerEffectiveState.Online => "badge-success",
+        WorkerEffectiveState.Busy => "badge-processing",
+        WorkerEffectiveState.Draining => "badge-warning",
+        WorkerEffectiveState.Disabled => "badge-error",
+        _ => "badge-neutral"
+    };
+
+    private static string EnrollBadge(string status) => status switch
+    {
+        "active" => "badge-success",
+        "expired" => "badge-warning",
+        "revoked" or "used" => "badge-neutral",
+        _ => "badge-neutral"
+    };
+}

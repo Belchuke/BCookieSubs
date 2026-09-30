@@ -1,0 +1,33 @@
+@{
+    ViewData["Title"] = "Setup";
+    Layout = "_AuthLayout";
+}
+<div class="auth-card s1-card">
+    <partial name="_SetupSteps" />
+
+    <div class="auth-logo">🔐</div>
+    <h1 class="auth-title">Create Admin Account</h1>
+    <p class="auth-subtitle">This is the initial setup. Create the administrator account.</p>
+
+    @if (!ViewData.ModelState.IsValid && ViewData.ModelState.TryGetValue("", out var state) && state.Errors.Count > 0)
+    {
+        <div class="alert alert-error">@state.Errors[0].ErrorMessage</div>
+    }
+
+    <form method="POST" action="/setup/1">
+        @Html.AntiForgeryToken()
+        <div class="field">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="userName" autocomplete="username" autofocus required>
+        </div>
+        <div class="field">
+            <label for="password">Password <span class="hint">(min 8 chars)</span></label>
+            <input type="password" id="password" name="password" autocomplete="new-password" required>
+        </div>
+        <div class="field">
+            <label for="password2">Confirm Password</label>
+            <input type="password" id="password2" name="confirmPassword" autocomplete="new-password" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">Create Account &amp; Continue</button>
+    </form>
+</div>

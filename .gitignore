@@ -1,0 +1,34 @@
+## C#
+bin/
+obj/
+*.user
+*.suo
+appsettings.*.json.user
+
+## Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+## Environment
+.env
+
+## Legacy implementation artifacts (kept untracked on purpose)
+old-node-implementation/node_modules/
+old-node-implementation/dist/
+old-node-implementation/mediaItemPhotos/
+old-node-implementation/graphify-out/
+old-node-implementation/*.db
+old-node-implementation/*.db-shm
+old-node-implementation/*.db-wal
+
+## Misc
+.vs/
+.idea/
+*.userosscache
+
+## local development files
+files/
+
+thingstodo

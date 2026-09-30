@@ -1,0 +1,881 @@
+@using BCookieSubs.Shared.Database.Entities
+@using BCookieSubs.Shared.Repositories
+@using BCookieSubs.Shared.Security
+@using BCookieSubs.Web.Services
+@inject CurrentUserContext CurrentUser
+@{
+    ViewData["Title"] = "Offset";
+    ViewData["ActiveNav"] = "offset";
+    var toast = Context.Request.Query["toast"].FirstOrDefault();
+    var msg = Context.Request.Query["msg"].FirstOrDefault();
+
+    var libraryPaths = (List<LibraryPath>)ViewBag.LibraryPaths!;
+    var languages = (List<Language>)ViewBag.Languages!;
+    var maxOffsetMs = (int)ViewBag.MaxOffsetMs;
+    var canEdit = CurrentUser.HasPermission(Permissions.CanEditSubtitleOffsets);
+}
+@if (toast == "error" && !string.IsNullOrEmpty(msg))
+{
+    <div class="toast toast-error" id="page-toast">
+        <span class="toast-msg">@msg</span>
+        <button type="button" class="toast-close" aria-label="Close" data-toast-close>✕</button>
+    </div>
+}
+
+<div class="page-header">
+  <h1>Offset</h1>
+</div>
+
+<div class="off-grid">
+  <div class="card">
+    <div class="card-header"><h2>Source</h2></div>
+
+    <div class="off-mode-row">
+      <button type="button" class="btn btn-secondary off-mode-btn is-active" data-mode="upload">
+        <i class="fa-solid fa-upload"></i> Upload a file
+      </button>
+      <button type="button" class="btn btn-secondary off-mode-btn" data-mode="library">
+        <i class="fa-solid fa-folder-open"></i> Use library path
+      </button>
+    </div>
+
+    <div id="off-fps-prompt" class="off-fps-prompt ofs-hidden">
+      <p id="off-fps-prompt-msg" class="ofs-fs-85" style="margin:0 0 .5rem"></p>
+      <div class="ofs-row-center">
+        <input type="number" id="off-fps-prompt-input" min="1" max="200" step="0.001"
+               placeholder="FPS" class="ofs-w-100" aria-label="Frames per second">
+        <button type="button" class="btn btn-primary btn-sm" id="off-fps-prompt-btn">Load with FPS</button>
+      </div>
+    </div>
+
+    <div id="off-panel-upload">
+      <div class="upload-zone" style="height: 15rem !important;" id="off-upload-zone" onclick="document.getElementById('off-file-input').click()">
+        <input type="file" id="off-file-input" accept=".srt,.ass,.ssa,.sub,.sup,text/plain" class="ofs-hidden">
+        <div class="upload-zone-content">
+          <div class="upload-text">
+            <span id="off-upload-text-main" class="upload-text-main">Choose subtitle file</span>
+            <span id="off-upload-text-sub" class="upload-text-sub">Maximum file size: 5MB. Supported: .srt, .ass/.ssa and text .sub (MicroDVD/SubViewer). Image subtitles (VobSub, .sup) can't be offset.</span>
+          </div>
+          <div class="upload-filename" id="off-upload-filename"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="off-panel-library" class="ofs-hidden">
+      @if (libraryPaths.Count == 0)
+      {
+        <p class="text-dim ofs-fs-85">No library paths configured. Add one in Library Scan first.</p>
+      }
+      else
+      {
+        <div class="field">
+          <label for="off-lp-select">Library path</label>
+          <select id="off-lp-select">
+            <option value="">— Select a library path —</option>
+            @foreach (var lp in libraryPaths)
+            {
+              <option value="@lp.Id">@lp.Name</option>
+            }
+          </select>
+        </div>
+        <div id="off-media-wrap" class="ofs-hidden">
+          <div class="field ofs-mb-0">
+            <label for="off-media-search">Media item</label>
+            <input type="text" id="off-media-search" placeholder="Search by title…"
+                   autocomplete="off" class="ofs-mb-0">
+            <div class="off-media-list" id="off-media-list">
+              <div class="off-media-item ofs-media-loading">Loading…</div>
+            </div>
+          </div>
+        </div>
+        <div id="off-srt-wrap" class="ofs-hidden-mt-6">
+          <div class="field ofs-mb-0">
+            <label>Subtitle file</label>
+            <div class="off-srt-list" id="off-srt-list"></div>
+          </div>
+        </div>
+      }
+    </div>
+
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Offset &amp; Actions</h2></div>
+
+    <div class="field">
+      <label>Offset (ms)</label>
+      <div class="ofs-row-center">
+        <button type="button" class="btn btn-secondary btn-sm" id="off-offset-dec-large">−5s</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="off-offset-dec-small">−1s</button>
+        <input type="number" id="off-offset-input" value="0"
+               min="-@maxOffsetMs" max="@maxOffsetMs" step="100"
+               class="ofs-w-100">
+        <button type="button" class="btn btn-secondary btn-sm" id="off-offset-inc-small">+1s</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="off-offset-inc-large">+5s</button>
+      </div>
+    </div>
+
+    <div class="field ofs-hidden" id="off-fps-wrap">
+      <label for="off-fps-input">Frames per second (frame-based .sub)</label>
+      <input type="number" id="off-fps-input" min="1" max="200" step="0.001" class="ofs-w-100">
+      <p class="text-dim ofs-fs-78" id="off-fps-note"></p>
+    </div>
+
+    <div class="field">
+      <label>Scope</label>
+      <div class="ofs-row-wrap">
+        <button type="button" class="btn btn-secondary btn-sm off-scope-btn is-active" data-scope="all">All entries</button>
+        <button type="button" class="btn btn-secondary btn-sm off-scope-btn" data-scope="from">From index…</button>
+        <button type="button" class="btn btn-secondary btn-sm off-scope-btn" data-scope="range">Range…</button>
+      </div>
+      <div id="off-scope-from-wrap" class="ofs-hidden-mt-4">
+        <label class="text-dim ofs-fs-78">From index</label>
+        <input type="number" id="off-scope-from" class="ofs-w-90" min="0" value="0">
+      </div>
+      <div id="off-scope-range-wrap" class="ofs-hidden-mt-4">
+        <label class="text-dim ofs-fs-78">From index</label>
+        <input type="number" id="off-scope-from-r" class="ofs-w-90-mr" min="0" value="0">
+        <label class="text-dim ofs-fs-78">To index</label>
+        <input type="number" id="off-scope-to-r" class="ofs-w-90" min="0" value="0">
+      </div>
+    </div>
+
+    <div class="field field-checkbox ofs-mb-75">
+      <input type="checkbox" id="off-add-credit">
+      <label for="off-add-credit">Add credit to file</label>
+    </div>
+
+    <div class="off-action-stack">
+      <button type="button" class="btn btn-secondary" id="off-preview-btn" disabled>
+        <i class="fa-solid fa-eye"></i> Preview offset
+      </button>
+      @if (canEdit)
+      {
+        <button type="button" class="btn btn-primary" id="off-apply-btn" disabled>
+          <i class="fa-solid fa-check"></i> Apply timestamp changes
+        </button>
+        <button type="button" class="btn btn-secondary" id="off-download-btn" disabled>
+          <i class="fa-solid fa-download"></i> Download
+        </button>
+        <button type="button" class="btn btn-secondary ofs-hidden" id="off-save-to-library-btn" disabled>
+          <i class="fa-solid fa-floppy-disk"></i> Save to library
+        </button>
+      }
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>Entries</h2>
+    <span id="off-entry-count" class="badge badge-neutral ofs-hidden"></span>
+  </div>
+  <div id="off-entries" class="off-entries">
+    <div class="off-empty">Load a subtitle file to begin.</div>
+  </div>
+</div>
+
+@section Scripts {
+<script>
+  var MAX_OFFSET_MS = @maxOffsetMs
+  var CAN_EDIT = @(canEdit ? "true" : "false")
+  var LANGUAGE_LIST = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
+      languages.Select(l => new
+      {
+          id = l.Id, name = l.Name, iso639 = l.Iso639,
+          flagCode = FlagCodes.Derive(l.Locale),
+      }),
+      new System.Text.Json.JsonSerializerOptions
+      {
+          PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+      }))
+  var LANGUAGE_MAP = Object.fromEntries(LANGUAGE_LIST.map(function(l){ return [l.id, l] }))
+</script>
+<script>
+(function () {
+
+  var ORIGINAL_ENTRIES = []
+  var CURRENT_ENTRIES = []
+  var PREVIEW_TIMES = null
+  var CURRENT_FILE_NAME = ''
+  var CURRENT_MODE = 'upload'
+  var CURRENT_SCOPE = { type: 'all' }
+  var CURRENT_FORMAT = 'srt'
+  var CURRENT_RAW = null
+  var CURRENT_FPS = null
+  var CURRENT_LIB_ITEM_PATH = null
+  var CURRENT_LP_ID = null
+  var ALL_MEDIA_ITEMS = []
+  var PENDING_PARSE = null
+
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+  }
+
+  function formatTime(ms) {
+    if (ms < 0) ms = 0
+    var h = Math.floor(ms / 3600000)
+    var m = Math.floor((ms % 3600000) / 60000)
+    var s = Math.floor((ms % 60000) / 1000)
+    var ms2 = ms % 1000
+    return pad2(h) + ':' + pad2(m) + ':' + pad2(s) + ',' + pad3(ms2)
+  }
+  function pad2(n) { return n < 10 ? '0' + n : String(n) }
+  function pad3(n) { return n < 100 ? (n < 10 ? '00' : '0') + n : String(n) }
+
+  function applyOffsetClientSide(entries, offsetMs, scope) {
+    if (offsetMs === 0) return entries.map(function(e){ return Object.assign({}, e) })
+    var frameOffset = CURRENT_FORMAT === 'microdvd' && CURRENT_FPS > 0
+      ? Math.round(offsetMs / 1000 * CURRENT_FPS) : 0
+    return entries.map(function(e, idx) {
+      var inScope = false
+      if (scope.type === 'all') inScope = true
+      else if (scope.type === 'from') inScope = idx >= (scope.startIndex || 0)
+      else if (scope.type === 'range') inScope = idx >= (scope.fromIndex || 0) && idx <= (scope.toIndex || 0)
+      if (!inScope) return Object.assign({}, e)
+      if (frameOffset !== 0 && e.frameStart != null) {
+        var fs = Math.max(0, e.frameStart + frameOffset)
+        var fe = Math.max(fs, e.frameEnd + frameOffset)
+        return Object.assign({}, e, {
+          frameStart: fs, frameEnd: fe,
+          startMs: Math.round(fs / CURRENT_FPS * 1000),
+          endMs: Math.round(fe / CURRENT_FPS * 1000),
+          startTime: formatTime(Math.round(fs / CURRENT_FPS * 1000)),
+          endTime: formatTime(Math.round(fe / CURRENT_FPS * 1000))
+        })
+      }
+      var startMs = Math.max(0, e.startMs + offsetMs)
+      var endMs = Math.max(startMs + 1, e.endMs + offsetMs)
+      return Object.assign({}, e, {
+        startMs: startMs, endMs: endMs,
+        startTime: formatTime(startMs), endTime: formatTime(endMs)
+      })
+    })
+  }
+
+  function recomputeFromFrames(entries, fps) {
+    return entries.map(function(e) {
+      if (e.frameStart == null) return Object.assign({}, e)
+      var startMs = Math.round(e.frameStart / fps * 1000)
+      var endMs = Math.round(e.frameEnd / fps * 1000)
+      return Object.assign({}, e, {
+        startMs: startMs, endMs: endMs,
+        startTime: formatTime(startMs), endTime: formatTime(endMs)
+      })
+    })
+  }
+
+  function clientDownload(blob, fileName) {
+    var url = URL.createObjectURL(blob)
+    var a = document.createElement('a')
+    a.href = url
+    a.download = (fileName || 'subtitle.srt').replace(/[/\\:*?"<>|]/g, '_')
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(function() { URL.revokeObjectURL(url); a.remove() }, 200)
+  }
+
+  function getFinalEntries() {
+    return CURRENT_ENTRIES.map(function(e, i) {
+      var pt = PREVIEW_TIMES && PREVIEW_TIMES[i]
+      if (pt && (pt.startMs !== e.startMs || pt.endMs !== e.endMs)) {
+        return Object.assign({}, e, {
+          startMs: pt.startMs, endMs: pt.endMs,
+          startTime: pt.startTime, endTime: pt.endTime,
+          frameStart: pt.frameStart, frameEnd: pt.frameEnd
+        })
+      }
+      return Object.assign({}, e)
+    })
+  }
+
+  function showOffToast(kind, msg) {
+    if (kind !== 'error') return
+    var existing = document.getElementById('page-toast')
+    if (existing) existing.remove()
+    var div = document.createElement('div')
+    div.id = 'page-toast'
+    div.className = 'toast toast-' + kind
+    div.innerHTML = '<span class="toast-msg">' + escapeHtml(String(msg || '')) + '</span>' +
+      '<button type="button" class="toast-close" aria-label="Close" data-toast-close>✕</button>'
+    var main = document.querySelector('.main-content')
+    if (main) main.prepend(div)
+    else document.body.prepend(div)
+    setTimeout(function() { if (div.parentNode) div.remove() }, 5000)
+  }
+
+
+  function autoResize(ta) {
+    ta.style.height = 'auto'
+    ta.style.height = ta.scrollHeight + 'px'
+  }
+
+  function renderEntries() {
+    var container = document.getElementById('off-entries')
+    var countEl = document.getElementById('off-entry-count')
+    if (!container) return
+
+    if (!CURRENT_ENTRIES.length) {
+      container.innerHTML = '<div class="off-empty">Load a subtitle file to begin.</div>'
+      if (countEl) { countEl.style.display = 'none'; countEl.textContent = '' }
+      return
+    }
+
+    if (countEl) {
+      countEl.textContent = CURRENT_ENTRIES.length + ' entries'
+      countEl.style.display = ''
+    }
+
+    var html = ''
+    for (var i = 0; i < CURRENT_ENTRIES.length; i++) {
+      var e = CURRENT_ENTRIES[i]
+      var pt = PREVIEW_TIMES && PREVIEW_TIMES[i]
+      var timeChanged = pt && (pt.startMs !== e.startMs || pt.endMs !== e.endMs)
+      var textChanged = ORIGINAL_ENTRIES[i] && e.text !== ORIGINAL_ENTRIES[i].text
+      var isModified = timeChanged || textChanged
+      html += '<div class="off-entry' + (isModified ? ' is-modified' : '') + '" id="off-entry-' + i + '">'
+      html += '<div class="off-entry-num">' + (i + 1) + '</div>'
+      html += '<div class="off-entry-times" id="off-times-' + i + '">'
+      if (timeChanged) {
+        html += '<span class="off-time off-time-struck">' + escapeHtml(e.startTime) + ' → ' + escapeHtml(e.endTime) + '</span>'
+        html += '<span class="off-time-new">' + escapeHtml(pt.startTime) + ' → ' + escapeHtml(pt.endTime) + '</span>'
+      } else {
+        html += '<span class="off-time">' + escapeHtml(e.startTime) + ' → ' + escapeHtml(e.endTime) + '</span>'
+      }
+      html += '</div>'
+      html += '<div class="off-entry-text">'
+      if (textChanged) {
+        html += '<div class="off-orig-text">' + escapeHtml(ORIGINAL_ENTRIES[i].text || '') + '</div>'
+      }
+      html += '<textarea class="off-text-field' + (textChanged ? ' is-dirty' : '') + '" data-idx="' + i + '" rows="1">' + escapeHtml(e.text || '') + '</textarea>'
+      html += '</div>'
+      html += '</div>'
+    }
+    container.innerHTML = html
+
+    container.querySelectorAll('.off-text-field').forEach(function(ta) {
+      autoResize(ta)
+      ta.addEventListener('input', function() {
+        autoResize(ta)
+        var idx = parseInt(ta.dataset.idx)
+        if (isNaN(idx)) return
+        var newText = ta.value
+        CURRENT_ENTRIES[idx] = Object.assign({}, CURRENT_ENTRIES[idx], { text: newText })
+        var dirty = ORIGINAL_ENTRIES[idx] && newText !== ORIGINAL_ENTRIES[idx].text
+        ta.classList.toggle('is-dirty', dirty)
+
+        var entryTextEl = ta.parentNode
+        var origEl = entryTextEl && entryTextEl.querySelector('.off-orig-text')
+        if (dirty) {
+          if (!origEl) {
+            origEl = document.createElement('div')
+            origEl.className = 'off-orig-text'
+            origEl.textContent = ORIGINAL_ENTRIES[idx].text || ''
+            entryTextEl.insertBefore(origEl, ta)
+          }
+        } else {
+          if (origEl) origEl.remove()
+        }
+
+        var entry = document.getElementById('off-entry-' + idx)
+        var pt = PREVIEW_TIMES && PREVIEW_TIMES[idx]
+        var timeChanged = pt && (pt.startMs !== CURRENT_ENTRIES[idx].startMs || pt.endMs !== CURRENT_ENTRIES[idx].endMs)
+        if (entry) entry.classList.toggle('is-modified', dirty || !!timeChanged)
+      })
+    })
+  }
+
+  function updatePreviewDisplay() {
+    if (!CURRENT_ENTRIES.length) return
+    for (var i = 0; i < CURRENT_ENTRIES.length; i++) {
+      var e = CURRENT_ENTRIES[i]
+      var pt = PREVIEW_TIMES && PREVIEW_TIMES[i]
+      var timeChanged = pt && (pt.startMs !== e.startMs || pt.endMs !== e.endMs)
+      var timeEl = document.getElementById('off-times-' + i)
+      var entryEl = document.getElementById('off-entry-' + i)
+      if (!timeEl) continue
+      if (timeChanged) {
+        timeEl.innerHTML =
+          '<span class="off-time off-time-struck">' + escapeHtml(e.startTime) + ' → ' + escapeHtml(e.endTime) + '</span>' +
+          '<span class="off-time-new">' + escapeHtml(pt.startTime) + ' → ' + escapeHtml(pt.endTime) + '</span>'
+      } else {
+        timeEl.innerHTML = '<span class="off-time">' + escapeHtml(e.startTime) + ' → ' + escapeHtml(e.endTime) + '</span>'
+      }
+      if (entryEl) {
+        var textChanged = ORIGINAL_ENTRIES[i] && e.text !== ORIGINAL_ENTRIES[i].text
+        entryEl.classList.toggle('is-modified', !!timeChanged || textChanged)
+      }
+    }
+  }
+
+
+  function updateActionButtons() {
+    var hasEntries = CURRENT_ENTRIES.length > 0
+    var hasOffset = getOffset() !== 0
+
+    var previewBtn = document.getElementById('off-preview-btn')
+    var applyBtn = document.getElementById('off-apply-btn')
+    var downloadBtn = document.getElementById('off-download-btn')
+    var saveLibBtn = document.getElementById('off-save-to-library-btn')
+
+    if (previewBtn) previewBtn.disabled = !hasEntries
+    if (applyBtn) applyBtn.disabled = !hasEntries || !hasOffset
+    if (downloadBtn) downloadBtn.disabled = !hasEntries || !CAN_EDIT
+    if (saveLibBtn) {
+      saveLibBtn.style.display = CURRENT_MODE === 'library' ? '' : 'none'
+      saveLibBtn.disabled = !hasEntries || !CAN_EDIT || CURRENT_MODE !== 'library' || !CURRENT_LIB_ITEM_PATH
+    }
+  }
+
+  function setEntries(data, fileName, sourceLang, targetLang) {
+    ORIGINAL_ENTRIES = data.entries.slice()
+    CURRENT_ENTRIES = data.entries.map(function(e){ return Object.assign({}, e) })
+    PREVIEW_TIMES = null
+    CURRENT_FILE_NAME = fileName || 'subtitle.srt'
+    CURRENT_FORMAT = data.format || 'srt'
+    CURRENT_RAW = data.raw || null
+    setFps(data)
+    renderEntries()
+    updateActionButtons()
+  }
+
+  function setFps(data) {
+    CURRENT_FPS = data.fps != null ? data.fps : null
+    var wrap = document.getElementById('off-fps-wrap')
+    var input = document.getElementById('off-fps-input')
+    var note = document.getElementById('off-fps-note')
+    if (CURRENT_FORMAT !== 'microdvd') {
+      wrap.style.display = 'none'
+      return
+    }
+    wrap.style.display = ''
+    input.value = CURRENT_FPS || ''
+    note.textContent = CURRENT_FPS != null
+      ? 'Frame offsets apply as whole frames (offset × fps).'
+      : 'Enter the source video’s FPS above to apply offsets.'
+  }
+
+  document.getElementById('off-fps-input').addEventListener('input', function() {
+    var v = parseFloat(this.value)
+    if (!v || v < 1 || v > 200 || !CURRENT_ENTRIES.length) return
+    CURRENT_FPS = v
+    CURRENT_ENTRIES = recomputeFromFrames(CURRENT_ENTRIES, v)
+    PREVIEW_TIMES = null
+    renderEntries()
+    updateActionButtons()
+  })
+
+
+  function getOffset() {
+    var v = parseInt(document.getElementById('off-offset-input').value) || 0
+    if (v > MAX_OFFSET_MS) v = MAX_OFFSET_MS
+    if (v < -MAX_OFFSET_MS) v = -MAX_OFFSET_MS
+    return v
+  }
+
+  function setOffset(v) {
+    v = Math.max(-MAX_OFFSET_MS, Math.min(MAX_OFFSET_MS, v))
+    document.getElementById('off-offset-input').value = v
+    updateActionButtons()
+  }
+
+  document.getElementById('off-offset-inc-large').addEventListener('click', function() { setOffset(getOffset() + 5000) })
+  document.getElementById('off-offset-inc-small').addEventListener('click', function() { setOffset(getOffset() + 1000) })
+  document.getElementById('off-offset-dec-small').addEventListener('click', function() { setOffset(getOffset() - 1000) })
+  document.getElementById('off-offset-dec-large').addEventListener('click', function() { setOffset(getOffset() - 5000) })
+  document.getElementById('off-offset-input').addEventListener('input', updateActionButtons)
+
+
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest && e.target.closest('.off-mode-btn')
+    if (!btn) return
+    document.querySelectorAll('.off-mode-btn').forEach(function(b) { b.classList.remove('is-active') })
+    btn.classList.add('is-active')
+    CURRENT_MODE = btn.dataset.mode
+    document.getElementById('off-panel-upload').style.display = CURRENT_MODE === 'upload' ? '' : 'none'
+    document.getElementById('off-panel-library').style.display = CURRENT_MODE === 'library' ? '' : 'none'
+    updateActionButtons()
+  })
+
+
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest && e.target.closest('.off-scope-btn')
+    if (!btn) return
+    document.querySelectorAll('.off-scope-btn').forEach(function(b) { b.classList.remove('is-active') })
+    btn.classList.add('is-active')
+    var scope = btn.dataset.scope
+    document.getElementById('off-scope-from-wrap').style.display = scope === 'from' ? '' : 'none'
+    document.getElementById('off-scope-range-wrap').style.display = scope === 'range' ? '' : 'none'
+    updateScope()
+  })
+
+  function updateScope() {
+    var active = document.querySelector('.off-scope-btn.is-active')
+    var scope = active ? active.dataset.scope : 'all'
+    if (scope === 'all') {
+      CURRENT_SCOPE = { type: 'all' }
+    } else if (scope === 'from') {
+      CURRENT_SCOPE = { type: 'from', startIndex: parseInt(document.getElementById('off-scope-from').value) || 0 }
+    } else {
+      CURRENT_SCOPE = {
+        type: 'range',
+        fromIndex: parseInt(document.getElementById('off-scope-from-r').value) || 0,
+        toIndex: parseInt(document.getElementById('off-scope-to-r').value) || 0
+      }
+    }
+  }
+
+  document.getElementById('off-scope-from').addEventListener('input', updateScope)
+  document.getElementById('off-scope-from-r').addEventListener('input', updateScope)
+  document.getElementById('off-scope-to-r').addEventListener('input', updateScope)
+
+
+  ;(function() {
+    var zone = document.getElementById('off-upload-zone')
+    var fileInput = document.getElementById('off-file-input')
+    var fileNameEl = document.getElementById('off-upload-filename')
+    var textMain = document.getElementById('off-upload-text-main')
+    var textSub = document.getElementById('off-upload-text-sub')
+    if (!zone || !fileInput) return
+
+    function setDragOver(e) { e.preventDefault(); e.stopPropagation(); zone.classList.add('drag-over') }
+    function clearDragOver(e) { e.preventDefault(); e.stopPropagation(); zone.classList.remove('drag-over') }
+
+    ;['dragenter', 'dragover'].forEach(function(evt) { zone.addEventListener(evt, setDragOver, false) })
+    ;['dragleave', 'drop'].forEach(function(evt) { zone.addEventListener(evt, clearDragOver, false) })
+
+    zone.addEventListener('drop', function(e) {
+      var files = e.dataTransfer.files
+      if (files.length > 0) {
+        var dt = new DataTransfer()
+        dt.items.add(files[0])
+        fileInput.files = dt.files
+        fileInput.dispatchEvent(new Event('change'))
+      }
+    }, false)
+
+    function showFileName(name) {
+      if (fileNameEl) { fileNameEl.textContent = name; fileNameEl.style.display = 'block' }
+      if (textMain) textMain.style.display = 'none'
+      if (textSub) textSub.style.display = 'none'
+    }
+
+    fileInput.addEventListener('change', function(e) {
+      var file = e.target.files && e.target.files[0]
+      if (!file) return
+      showFileName(file.name)
+      PENDING_PARSE = { kind: 'upload', file: file }
+      parseUpload(file, null)
+    })
+  })()
+
+
+  function parseUpload(file, fps) {
+    var fd = new FormData()
+    fd.append('srt', file)
+    if (fps) fd.append('fps', String(fps))
+    if (typeof csrfToken === 'function') fd.append('__RequestVerificationToken', csrfToken())
+    fetch('/offset/parse', { method: 'POST', body: fd })
+      .then(function(r) { return r.json() })
+      .then(function(data) {
+        if (!data.success) {
+          if (data.needsFps) { showFpsPrompt(data.msg); return }
+          hideFpsPrompt()
+          showOffToast('error', data.msg || 'Failed to parse file')
+          return
+        }
+        hideFpsPrompt()
+        setEntries(data, file.name)
+        showOffToast('success', 'Loaded {{count}} entries'.replace('{{count}}', data.count))
+      })
+      .catch(function() { showOffToast('error', 'Failed to parse file') })
+  }
+
+  function showFpsPrompt(msg) {
+    var wrap = document.getElementById('off-fps-prompt')
+    if (!wrap) return
+    wrap.style.display = ''
+    document.getElementById('off-fps-prompt-msg').textContent = msg || ''
+    var inp = document.getElementById('off-fps-prompt-input')
+    inp.value = ''
+    inp.focus()
+  }
+
+  function hideFpsPrompt() {
+    var wrap = document.getElementById('off-fps-prompt')
+    if (wrap) wrap.style.display = 'none'
+  }
+
+  function submitFpsPrompt() {
+    var v = parseFloat(document.getElementById('off-fps-prompt-input').value)
+    if (!v || v < 1 || v > 200) { showOffToast('error', 'Enter an FPS between 1 and 200'); return }
+    hideFpsPrompt()
+    if (PENDING_PARSE && PENDING_PARSE.kind === 'upload') parseUpload(PENDING_PARSE.file, v)
+    else if (PENDING_PARSE && PENDING_PARSE.kind === 'library') parseLibrary(PENDING_PARSE.path, PENDING_PARSE.lpId, v)
+  }
+
+  document.getElementById('off-fps-prompt-btn').addEventListener('click', submitFpsPrompt)
+  document.getElementById('off-fps-prompt-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); submitFpsPrompt() }
+  })
+
+
+  var offLpSelect = document.getElementById('off-lp-select')
+  if (offLpSelect) {
+    offLpSelect.addEventListener('change', function() {
+      var lpId = offLpSelect.value
+      CURRENT_LP_ID = lpId || null
+      CURRENT_LIB_ITEM_PATH = null
+      ALL_MEDIA_ITEMS = []
+      document.getElementById('off-media-wrap').style.display = 'none'
+      document.getElementById('off-srt-wrap').style.display = 'none'
+      updateActionButtons()
+      if (!lpId) return
+
+      var list = document.getElementById('off-media-list')
+      list.innerHTML = '<div class="off-media-item" style="color:var(--text-dim);cursor:default">Loading…</div>'
+      document.getElementById('off-media-wrap').style.display = ''
+      document.getElementById('off-media-search').value = ''
+
+      fetch('/offset/library-media/' + lpId)
+        .then(function(r) { return r.json() })
+        .then(function(data) {
+          ALL_MEDIA_ITEMS = data.items || []
+          renderMediaList('')
+        })
+        .catch(function() { showOffToast('error', 'Failed to load media items') })
+    })
+  }
+
+  function renderMediaList(filter) {
+    var list = document.getElementById('off-media-list')
+    if (!list) return
+    var q = filter.trim().toLowerCase()
+    var matched = q
+      ? ALL_MEDIA_ITEMS.filter(function(it) { return it.title.toLowerCase().indexOf(q) !== -1 })
+      : ALL_MEDIA_ITEMS
+
+    if (matched.length === 0) {
+      list.innerHTML = '<div class="off-media-item" style="color:var(--text-dim);cursor:default">No matches</div>'
+      return
+    }
+    var html = ''
+    matched.forEach(function(it) {
+      var icon = it.type === 'series' ? 'fa-tv' : 'fa-film'
+      var label = escapeHtml(it.title)
+      if (it.year) label += ' <span style="opacity:.6">(' + it.year + ')</span>'
+      if (it.season != null && it.episode != null) label += ' <span style="opacity:.6">S' + it.season + 'E' + it.episode + '</span>'
+      html += '<div class="off-media-item" data-lpi-id="' + it.lpiId + '" data-title="' + escapeHtml(it.title) + '">' +
+        '<i class="fa-solid ' + icon + '" style="font-size:.75rem;opacity:.5"></i>' +
+        '<span>' + label + '</span></div>'
+    })
+    list.innerHTML = html
+  }
+
+  document.getElementById('off-media-search') && document.getElementById('off-media-search').addEventListener('input', function() {
+    renderMediaList(this.value)
+  })
+
+
+  document.addEventListener('click', function(e) {
+    var item = e.target.closest && e.target.closest('.off-media-item[data-lpi-id]')
+    if (!item) return
+
+    document.querySelectorAll('.off-media-item').forEach(function(el) { el.classList.remove('is-active') })
+    item.classList.add('is-active')
+    CURRENT_LIB_ITEM_PATH = null
+    updateActionButtons()
+
+    var lpiId = item.dataset.lpiId
+    var srtWrap = document.getElementById('off-srt-wrap')
+    var srtList = document.getElementById('off-srt-list')
+    srtList.innerHTML = '<span class="text-dim" style="font-size:.82rem">Loading…</span>'
+    srtWrap.style.display = ''
+
+    fetch('/offset/library-srt-files/' + lpiId)
+      .then(function(r) { return r.json() })
+      .then(function(data) {
+        var files = data.files || []
+        if (files.length === 0) {
+          srtList.innerHTML = '<span class="text-dim" style="font-size:.82rem">No subtitle files found in this folder</span>'
+          return
+        }
+        var html = ''
+        files.forEach(function(f) {
+          var disabled = f.supported === false
+          var cls = 'off-srt-btn' + (disabled ? ' off-srt-unsupported' : '')
+          var label = escapeHtml(f.name) +
+            (disabled && f.note ? ' <span style="opacity:.5;font-size:.78rem">— ' + escapeHtml(f.note) + '</span>' : '')
+          html += '<button type="button" class="' + cls + '"' + (disabled ? ' disabled' : '') +
+            ' data-srt-path="' + escapeHtml(f.path) + '" data-lp-id="' + escapeHtml(String(data.libraryPathId)) + '">' +
+            '<i class="fa-solid ' + (disabled ? 'fa-image' : 'fa-file-lines') + '" style="font-size:.75rem;opacity:.5"></i>' +
+            label + '</button>'
+        })
+        srtList.innerHTML = html
+        if (files.length === 1 && files[0].supported !== false) {
+          srtList.querySelector('.off-srt-btn').click()
+        }
+      })
+      .catch(function() { showOffToast('error', 'Failed to load subtitle files') })
+  })
+
+
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest && e.target.closest('.off-srt-btn')
+    if (!btn || btn.disabled) return
+
+    document.querySelectorAll('.off-srt-btn').forEach(function(b) { b.classList.remove('is-active') })
+    btn.classList.add('is-active')
+
+    var srtPath = btn.dataset.srtPath
+    var lpId = btn.dataset.lpId
+    CURRENT_LIB_ITEM_PATH = srtPath || null
+    updateActionButtons()
+    if (!srtPath || !lpId) return
+
+    parseLibrary(srtPath, lpId, null)
+  })
+
+  function parseLibrary(srtPath, lpId, fps) {
+    PENDING_PARSE = { kind: 'library', path: srtPath, lpId: lpId }
+    fetch('/offset/parse-library', {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ path: srtPath, libraryPathId: lpId, fps: fps || null })
+    })
+      .then(function(r) { return r.json() })
+      .then(function(data) {
+        if (!data.success) {
+          if (data.needsFps) { showFpsPrompt(data.msg); return }
+          hideFpsPrompt()
+          showOffToast('error', data.msg || 'Failed to load subtitle')
+          return
+        }
+        hideFpsPrompt()
+        setEntries(data, srtPath.split(/[\\/]/).pop())
+        showOffToast('success', 'Loaded {{count}} entries'.replace('{{count}}', data.count))
+      })
+      .catch(function() { showOffToast('error', 'Failed to load subtitle') })
+  }
+
+
+  function requireFpsForFrames() {
+    if (CURRENT_FORMAT === 'microdvd' && !CURRENT_FPS) {
+      showOffToast('error', 'MicroDVD subtitles use frame numbers. Enter the source video’s FPS to calculate the offset.')
+      return true
+    }
+    return false
+  }
+
+  document.getElementById('off-preview-btn').addEventListener('click', function() {
+    if (!CURRENT_ENTRIES.length) return
+    if (requireFpsForFrames()) return
+    var offsetMs = getOffset()
+    updateScope()
+    if (offsetMs === 0) {
+      PREVIEW_TIMES = null
+      updatePreviewDisplay()
+      showOffToast('info', 'Offset is 0 — nothing to preview')
+      return
+    }
+    var result = applyOffsetClientSide(CURRENT_ENTRIES, offsetMs, CURRENT_SCOPE)
+    PREVIEW_TIMES = result.map(function(e) { return { startMs: e.startMs, endMs: e.endMs, startTime: e.startTime, endTime: e.endTime } })
+    updatePreviewDisplay()
+    updateActionButtons()
+    showOffToast('success', 'Preview updated')
+  })
+
+
+  document.getElementById('off-apply-btn') && document.getElementById('off-apply-btn').addEventListener('click', function() {
+    if (!CURRENT_ENTRIES.length) return
+    if (requireFpsForFrames()) return
+    var offsetMs = getOffset()
+    if (offsetMs === 0) { showOffToast('info', 'Offset is 0 — nothing to apply'); return }
+    updateScope()
+    var result = applyOffsetClientSide(CURRENT_ENTRIES, offsetMs, CURRENT_SCOPE)
+    CURRENT_ENTRIES = result
+    PREVIEW_TIMES = null
+    document.getElementById('off-offset-input').value = '0'
+    renderEntries()
+    updateActionButtons()
+    showOffToast('success', 'Timestamp changes applied')
+  })
+
+
+  document.getElementById('off-download-btn') && document.getElementById('off-download-btn').addEventListener('click', function() {
+    if (!CURRENT_ENTRIES.length || !CAN_EDIT) return
+    var btn = document.getElementById('off-download-btn')
+    btn.disabled = true
+    fetch('/offset/save', {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/json', 'Accept': 'application/octet-stream' }),
+      body: JSON.stringify({
+        entries: getFinalEntries(),
+        fileName: CURRENT_FILE_NAME || 'subtitle.srt',
+        format: CURRENT_FORMAT,
+        raw: CURRENT_RAW,
+        fps: CURRENT_FPS,
+        addCredit: document.getElementById('off-add-credit').checked
+      })
+    })
+      .then(function(r) {
+        var ct = r.headers.get('Content-Type') || ''
+        if (ct.indexOf('json') !== -1) {
+          return r.json().then(function(d) { throw new Error(d.msg || 'Download failed') })
+        }
+        var cd = r.headers.get('Content-Disposition') || ''
+        var m = cd.match(/filename\*=UTF-8''([^;]+)/) || cd.match(/filename="?([^";]+)"?/)
+        var name = m ? decodeURIComponent(m[1]) : (CURRENT_FILE_NAME || 'subtitle.srt')
+        return r.blob().then(function(b) { clientDownload(b, name) })
+      })
+      .catch(function(err) { showOffToast('error', err.message || 'Download failed') })
+      .finally(function() { btn.disabled = false; updateActionButtons() })
+  })
+
+
+  document.getElementById('off-save-to-library-btn') && document.getElementById('off-save-to-library-btn').addEventListener('click', function() {
+    if (!CURRENT_ENTRIES.length || CURRENT_MODE !== 'library' || !CURRENT_LIB_ITEM_PATH || !CAN_EDIT) return
+    var finalEntries = getFinalEntries()
+    var btn = document.getElementById('off-save-to-library-btn')
+    btn.disabled = true
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'
+    fetch('/offset/save-to-library-path', {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/json', 'Accept': 'application/json' }),
+      body: JSON.stringify({
+        targetPath: CURRENT_LIB_ITEM_PATH,
+        entries: finalEntries,
+        addCredit: document.getElementById('off-add-credit').checked,
+        format: CURRENT_FORMAT,
+        fps: CURRENT_FPS
+      })
+    })
+      .then(function(r) { return r.json() })
+      .then(function(data) {
+        btn.disabled = false
+        btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save to library'
+        if (!data.success) { showOffToast('error', data.msg || 'Save failed'); return }
+        showOffToast('success', (data.fileName ? 'Saved: ' + data.fileName : data.msg) || 'Saved')
+      })
+      .catch(function() {
+        btn.disabled = false
+        btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save to library'
+        showOffToast('error', 'Save failed')
+      })
+  })
+
+
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest && e.target.closest('[data-toast-close]')
+    if (btn) {
+      var t = btn.closest('.toast')
+      if (t) t.remove()
+    }
+  })
+
+})()
+</script>
+}

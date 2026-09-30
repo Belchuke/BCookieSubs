@@ -1,0 +1,146 @@
+name: bcookiesubs
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-4851}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  web:
+    build:
+      context: .
+      dockerfile: src/BCookieSubs.Web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      Orchestration__Url: http://worker:5100
+      Orchestration__ApiKey: ${ORCHESTRATION_API_KEY}
+      Worker__SigningKey: ${WORKER_JWT_SIGNING_KEY}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY}
+      THEMOVIEDB_API_KEY: ${THEMOVIEDB_API_KEY:-}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      TRANSLATION_ROOT_DIR: ${TRANSLATION_ROOT_DIR:-}
+      APP_DEFAULT_LANGUAGE: ${APP_DEFAULT_LANGUAGE:-}
+      THAI_ASS_FONT: ${THAI_ASS_FONT:-}
+      MEDIA_PHOTOS_DIR: /app/mediaItemPhotos
+      ASPNETCORE_URLS: http://+:8080
+      BCOOKIESUBS_STAGING_DIR: ${BCOOKIESUBS_STAGING_DIR:-}
+    ports:
+      - "${WEB_PORT:-4850}:8080"
+    volumes:
+      - media-photos:/app/mediaItemPhotos
+      - media:/media
+      - work:/work
+      - ${TRANSLATION_ROOT_DIR:-/var/empty}:${TRANSLATION_ROOT_DIR:-/var/empty}
+      - dpkeys:/root/.aspnet/DataProtection-Keys
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/healthz >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  worker:
+    build:
+      context: .
+      dockerfile: src/BCookieSubs.Worker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      Orchestration__ApiKey: ${ORCHESTRATION_API_KEY}
+      Orchestration__ListenPort: 5100
+      Worker__SigningKey: ${WORKER_JWT_SIGNING_KEY}
+      Worker__BootstrapToken: ${WORKER_BOOTSTRAP_TOKEN:-}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      TRANSLATION_ROOT_DIR: ${TRANSLATION_ROOT_DIR:-}
+      APP_DEFAULT_LANGUAGE: ${APP_DEFAULT_LANGUAGE:-}
+      THAI_ASS_FONT: ${THAI_ASS_FONT:-}
+      MEDIA_PHOTOS_DIR: /app/mediaItemPhotos
+      BCOOKIESUBS_STAGING_DIR: ${BCOOKIESUBS_STAGING_DIR:-}
+    ports:
+      - "${WORKER_GATEWAY_PORT:-4853}:5100"
+    volumes:
+      - media-photos:/app/mediaItemPhotos
+      - media:/media
+      - work:/work
+      - models:/models
+      - ${TRANSLATION_ROOT_DIR:-/var/empty}:${TRANSLATION_ROOT_DIR:-/var/empty}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS --http2-prior-knowledge http://localhost:5100/healthz >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  python-worker:
+    build:
+      context: workers/python
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      worker:
+        condition: service_healthy
+    environment:
+      BCOKIESUBS_SERVER_URL: http://worker:5100
+      WORKER_ENROLLMENT_TOKEN: ${LOCAL_WORKER_ENROLLMENT_TOKEN:-${WORKER_BOOTSTRAP_TOKEN:-}}
+      WORKER_NAME: ${LOCAL_WORKER_NAME:-local-python-worker}
+      WORKER_CAPABILITIES: ${LOCAL_WORKER_CAPABILITIES:-whisper,ocr}
+      WORKER_MAX_CONCURRENCY: ${LOCAL_WORKER_MAX_CONCURRENCY:-1}
+      WORKER_INSECURE: "1"
+      WORKER_DATA_DIR: /data
+    volumes:
+      - python-worker-data:/data
+      - media:/media
+      - work:/work
+      - models:/models
+      - ${TRANSLATION_ROOT_DIR:-/var/empty}:${TRANSLATION_ROOT_DIR:-/var/empty}
+    healthcheck:
+      test: ["CMD-SHELL", "grep -aq bcookiesubs_worker /proc/1/cmdline || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    profiles: ["ollama"]
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT:-4852}:11434"
+
+volumes:
+  pgdata:
+  python-worker-data:
+  media:
+  work:
+  models:
+  media-photos:
+  dpkeys:
+  ollama:

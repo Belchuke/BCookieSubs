@@ -1,0 +1,17 @@
+# The 14 GB legacy database and the entire legacy implementation must never enter a build context.
+old-node-implementation/
+node_modules/
+**/node_modules/
+mediaItemPhotos/
+subtitles.db
+subtitles.db-wal
+subtitles.db-shm
+**/bin/
+**/obj/
+**/.git/
+**/node_modules/
+workers/python/.venv/
+workers/python/**/__pycache__/
+docs/
+graphify-out/
+.env

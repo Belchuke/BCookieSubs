@@ -1,0 +1,76 @@
+@using BCookieSubs.Shared.Services
+@model SystemInfo
+@{
+    ViewData["Title"] = "About";
+    ViewData["ActiveNav"] = "about";
+    var checklist = (List<SetupChecklistItem>)ViewBag.Checklist;
+    var canViewSettings = (bool)ViewBag.CanViewSettings;
+}
+<div class="page-header"><h1>About</h1></div>
+
+<div class="card">
+    <div class="card-header"><h2>System information</h2></div>
+    <div class="table-wrap">
+        <table>
+            <tbody>
+                <tr><th>App version</th><td>@Model.AppVersion</td></tr>
+                <tr><th>Database</th><td>@Model.DatabaseProvider</td></tr>
+                <tr><th>Environment</th><td>@Model.EnvironmentName</td></tr>
+                <tr><th>Runtime</th><td>@Model.Runtime</td></tr>
+                <tr><th>Operating system</th><td>@Model.Os</td></tr>
+                <tr><th>Workers</th><td>@Model.EnabledWorkers enabled / @Model.TotalWorkers enrolled</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card ab-card-mt">
+    <div class="card-header"><h2>Ollama</h2></div>
+    <div class="table-wrap">
+        <table>
+            <tbody>
+                <tr><th>Host</th><td><code>@Model.OllamaBaseUrl</code></td></tr>
+                <tr><th>Managed by</th>
+                    <td>
+                        @if (Model.OllamaBaseUrlFromEnv)
+                        {
+                            <span class="badge badge-info">Environment (OLLAMA_BASE_URL)</span>
+                        }
+                        else
+                        {
+                            <span class="badge badge-neutral">Built-in default</span>
+                        }
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <p class="text-dim ab-desc">The Ollama host is environment-managed: change OLLAMA_BASE_URL in the environment, not in the UI.</p>
+</div>
+
+<div class="card ab-card-mt">
+    <div class="card-header"><h2>Setup checklist</h2></div>
+    <div class="ab-checklist">
+        @foreach (var item in checklist)
+        {
+            <div class="ab-check-row">
+                @if (item.Complete)
+                {
+                    <span class="badge badge-success">✓ Done</span>
+                }
+                else
+                {
+                    <span class="badge badge-error">✗ Todo</span>
+                }
+                <span class="ab-check-label">@item.Label</span>
+                <span class="text-dim ab-check-hint">@item.Hint</span>
+            </div>
+        }
+    </div>
+    @if (canViewSettings)
+    {
+        <div class="ab-actions">
+            <a href="/settings" class="btn btn-primary">Open Settings</a>
+        </div>
+    }
+</div>

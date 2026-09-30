@@ -1,0 +1,518 @@
+@using BCookieSubs.Shared.Database.Entities
+@using BCookieSubs.Shared.Services
+@using BCookieSubs.Web.Controllers
+@{
+    ViewData["Title"] = "Settings";
+    ViewData["ActiveNav"] = "config";
+    var cfg = (ApplicationConfig)ViewBag.Config!;
+    var themes = (List<Theme>)ViewBag.Themes;
+    var configTheme = (Theme?)ViewBag.ConfigTheme ?? new Theme();
+    var languages = (List<Language>)ViewBag.Languages;
+    var configLangs = (List<TranslationLanguageRow>)ViewBag.GlobalLanguages;
+    var canManage = (bool)ViewBag.CanManage;
+    var canSeeSecrets = (bool)ViewBag.CanSeeSecrets;
+    var secretRows = (List<SecretRow>)ViewBag.Secrets;
+    var whisperGpuAvailable = ConfigService.IsWhisperGpuAvailable();
+}
+@if (ViewBag.ToastError is string toastError)
+{
+    <div class="toast toast-error" id="page-toast">@toastError</div>
+}
+
+<div class="page-header"><h1>Settings</h1></div>
+
+<div class="config-layout">
+
+    <div class="cfg-col-gap-lg">
+
+        <div class="card">
+            <div class="card-header"><h2>General</h2></div>
+            <form method="POST" action="/settings">
+                @Html.AntiForgeryToken()
+                <div class="field">
+                    <label for="defaultChunkSize">Default Chunk Size <span class="hint">(lines per batch)</span> <i class="fa-solid fa-circle-info setting-info" data-tip="How many subtitle lines are grouped into one translation chunk by default."></i></label>
+                    <input type="number" id="defaultChunkSize" name="defaultChunkSize" value="@cfg.DefaultChunkSize" min="1" max="200" required>
+                </div>
+                <div class="field">
+                    <label for="maxRetriesPerChunk">Max Retries Per Chunk <i class="fa-solid fa-circle-info setting-info" data-tip="How many times the worker retries a failed chunk or judge step before marking it failed."></i></label>
+                    <input type="number" id="maxRetriesPerChunk" name="maxRetriesPerChunk" value="@cfg.MaxRetriesPerChunk" min="0" max="20" required>
+                </div>
+                <div class="field">
+                    <label for="sessionTimeoutMinutes">Session Timeout <span class="hint">(minutes)</span> <i class="fa-solid fa-circle-info setting-info" data-tip="How long a user session remains valid before requiring login again."></i></label>
+                    <input type="number" id="sessionTimeoutMinutes" name="sessionTimeoutMinutes" value="@cfg.SessionTimeoutMinutes" min="5" required>
+                </div>
+                <div class="field field-checkbox">
+                    <input type="checkbox" id="finishSingleSubtitleFirst" name="finishSingleSubtitleFirst" value="1" checked="@(cfg.FinishSingleSubtitleFirst ? "checked" : null)">
+                    <label for="finishSingleSubtitleFirst">Finish one subtitle Job before starting the next <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, all chunks for one target language are completed before moving to the next target language."></i></label>
+                </div>
+                <div class="field field-checkbox">
+                    <input type="checkbox" id="nameDetectionActive" name="nameDetectionActive" value="1" checked="@(cfg.NameDetectionActive ? "checked" : null)">
+                    <label for="nameDetectionActive">Enable AI name detection on upload <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, BCookieSubs uses a name formatter model to guess movie/show details from filenames."></i></label>
+                </div>
+                <div class="field field-checkbox">
+                    <input type="checkbox" id="showPosters" name="showPosters" value="1" disabled="@(cfg.NameDetectionActive ? null : "disabled")" checked="@(cfg.ShowPosters ? "checked" : null)">
+                    <label for="showPosters">Show media posters <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, posters are shown on dashboard media cards when available. Requires AI name detection to be active."></i></label>
+                </div>
+                <div class="field field-checkbox">
+                    <input type="checkbox" id="theMovieDbActive" name="theMovieDbActive" value="1" disabled="@(cfg.NameDetectionActive ? null : "disabled")" checked="@(cfg.TheMovieDbActive ? "checked" : null)">
+                    <label for="theMovieDbActive">Enable The Movie DB integration <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, BCookieSubs can fetch metadata and posters from TheMovieDB if an API key is configured. Requires AI name detection to be active."></i></label>
+                </div>
+                <div class="field field-checkbox">
+                    <input type="checkbox" id="scheduleConfigured" name="scheduleConfigured" value="1" checked="@(cfg.ScheduleConfigured ? "checked" : null)">
+                    <label for="scheduleConfigured">Gate translation by schedule <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, translation only runs during configured schedule windows."></i></label>
+                </div>
+                <div class="field field-checkbox">
+                    <input type="checkbox" id="scanLibraryPaths" name="scanLibraryPaths" value="1" checked="@(cfg.ScanLibraryPaths ? "checked" : null)">
+                    <label for="scanLibraryPaths">Enable Library Path Scanning <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, BCookieSubs scans configured media folders for new subtitle and media files."></i></label>
+                </div>
+                <div class="field field-checkbox">
+                    <input type="checkbox" id="deleteNotCancel" name="deleteNotCancel" value="1" checked="@(cfg.DeleteNotCancel ? "checked" : null)">
+                    <label for="deleteNotCancel">Delete not cancel <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, cancelling a translation deletes it completely instead of marking it as cancelled. When disabled, cancelled translations remain visible and can be deleted later."></i></label>
+                </div>
+                @if (cfg.ScanLibraryPaths && canManage)
+                {
+                    <div class="field">
+                        <label for="rootLibraryPath">Root library folder <i class="fa-solid fa-circle-info setting-info" data-tip="Can configure the root folder used to restrict library path browsing. When set, browsing and new library paths are confined to this folder."></i></label>
+                        <input type="text" id="rootLibraryPath" name="rootLibraryPath" value="@cfg.RootLibraryPath" placeholder="e.g. /mnt/media" readonly>
+                    </div>
+                }
+                <div class="field field-checkbox">
+                    <input type="checkbox" id="clearLogs" name="clearLogs" value="1" checked="@(cfg.ClearLogs ? "checked" : null)"
+                           onchange="document.getElementById('clearLogsRow').style.display=this.checked?'':'none'">
+                    <label for="clearLogs">Auto-clear old logs <i class="fa-solid fa-circle-info setting-info" data-tip="When enabled, old logs are automatically deleted according to the retention period below."></i></label>
+                </div>
+                <div class="field" id="clearLogsRow" style="@(cfg.ClearLogs ? "" : "display:none")">
+                    <label for="clearLogsOlderThanDays">Delete logs older than <span class="hint">(days)</span> <i class="fa-solid fa-circle-info setting-info" data-tip="Logs older than this number of days are deleted when auto-clear is active."></i></label>
+                    <input type="number" id="clearLogsOlderThanDays" name="clearLogsOlderThanDays" value="@cfg.ClearLogsOlderThanDays" min="1" required>
+                </div>
+                <button type="submit" class="btn btn-primary cfg-save-btn">Save Configuration</button>
+            </form>
+        </div>
+
+        @if (canManage)
+        {
+            <div class="card">
+                <div class="card-header">
+                    <h2>Theme</h2>
+                </div>
+
+                <form method="POST" action="/settings/theme/select" class="cfg-flex-end-mb">
+                    @Html.AntiForgeryToken()
+                    <div class="field cfg-field-flex-mb0">
+                        <label for="themeId">Active theme <i class="fa-solid fa-circle-info setting-info" data-tip="Controls the active color theme used by the interface. Custom themes can be created below."></i></label>
+                        <select id="themeId" name="themeId">
+                            @foreach (var t in themes)
+                            {
+                                <option value="@t.Id" selected="@(t.Id == configTheme.Id ? "selected" : null)">@(t.Name + (t.IsPublic ? "" : " ✏"))</option>
+                            }
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary cfg-flex-shrink-0">Apply</button>
+                </form>
+
+                @{
+                    var userThemes = themes.Where(t => !t.IsPublic).ToList();
+                }
+                @if (userThemes.Count > 0)
+                {
+                    <div class="cfg-theme-chips">
+                        @foreach (var t in userThemes)
+                        {
+                            <form method="POST" action="/settings/theme/delete/@t.Id" onsubmit="return confirm('@ConfirmDeleteTheme(t.Name)')">
+                                @Html.AntiForgeryToken()
+                                <button type="submit" class="btn btn-sm btn-danger">@t.Name ✕</button>
+                            </form>
+                        }
+                    </div>
+                }
+
+                <details>
+                    <summary class="cfg-summary">+ Create custom theme</summary>
+                    <form method="POST" action="/settings/theme/create" class="cfg-mt">
+                        @Html.AntiForgeryToken()
+                        <div class="field">
+                            <label>Theme name</label>
+                            <input type="text" name="name" required placeholder="My Theme" value="@(configTheme.Name) (copy)">
+                        </div>
+                        <div class="color-grid cfg-color-grid">
+                            @foreach (var f in ColorFields)
+                            {
+                                <div class="field cfg-field-mb">
+                                    <label class="cfg-space-between">@(f.Label) <span class="text-hint cfg-field-hint">@(f.Field)</span></label>
+                                    <div class="cfg-flex-gap-sm-center">
+                                        <input type="color" name="@(f.Field)" value="@(ThemeColor(configTheme, f.Field))" class="cfg-color-input">
+                                        <input type="text" name="_@(f.Field)_hex" value="@(ThemeColor(configTheme, f.Field))" placeholder="#000000" class="cfg-hex-input" oninput="syncColor(this,'@(f.Field)')">
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                        <div class="cfg-mt">
+                            <button type="submit" class="btn btn-primary">Create & Apply</button>
+                        </div>
+                    </form>
+                </details>
+            </div>
+        }
+
+    </div>
+
+    <div class="cfg-col-gap-lg-full">
+
+        <div class="card cfg-card-70">
+            <div class="card-header">
+                <h2>Default Target Languages</h2>
+                <small class="text-dim">Pre-selected on upload</small>
+            </div>
+
+            @if (configLangs.Count == 0)
+            {
+                <p class="empty-state">No defaults set.</p>
+            }
+            else
+            {
+                <div class="cfg-col-gap-xs-flex">
+                    @for (var idx = 0; idx < configLangs.Count; idx++)
+                    {
+                        var cl = configLangs[idx];
+                        <div class="cfg-lang-row">
+                            <span class="text-dim cfg-lang-idx">@(idx + 1).</span>
+                            <span class="cfg-lang-name">
+                                @if (!string.IsNullOrEmpty(cl.FlagCode))
+                                {
+                                    <span class="fi fi-@cl.FlagCode cfg-flex-shrink-0"></span>
+                                }
+                                @cl.Name
+                            </span>
+
+                            @if (canManage)
+                            {
+                                <form method="POST" action="/settings/translationlangs/move/@cl.LanguageId" class="cfg-inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="direction" value="up">
+                                    <button type="submit" class="btn btn-icon btn-sm" disabled="@(idx == 0 ? "disabled" : null)" title="Move up">↑</button>
+                                </form>
+
+                                <form method="POST" action="/settings/translationlangs/move/@cl.LanguageId" class="cfg-inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="direction" value="down">
+                                    <button type="submit" class="btn btn-icon btn-sm" disabled="@(idx == configLangs.Count - 1 ? "disabled" : null)" title="Move down">↓</button>
+                                </form>
+
+                                <form method="POST" action="/settings/translationlangs/remove/@cl.LanguageId" class="cfg-inline">
+                                    @Html.AntiForgeryToken()
+                                    <button type="submit" class="btn btn-sm btn-danger">✕</button>
+                                </form>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (canManage && languages.Count > 0)
+            {
+                <form method="POST" action="/settings/translationlangs/add" style="display:flex;gap:.5rem;align-items:flex-end;margin-top:auto;padding-top:.75rem;@(configLangs.Count == 0 ? "border-top:1px solid var(--border);" : "")">
+                    @Html.AntiForgeryToken()
+                    <div class="field cfg-field-flex">
+                        <label>Add default language</label>
+                        <select name="languageId">
+                            @foreach (var l in languages)
+                            {
+                                <option value="@l.Id">@l.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </form>
+            }
+        </div>
+
+        @if (canManage)
+        {
+            <div class="card">
+                <div class="card-header">
+                    <h2>Default system language</h2>
+                </div>
+                <p class="text-dim cfg-desc">Used as the default interface language for new users and users who have selected System default.</p>
+                <form method="POST" action="/settings/language" class="cfg-flex-end">
+                    @Html.AntiForgeryToken()
+                    <div class="field cfg-field-flex-mb0">
+                        <select name="defaultLanguage">
+                            @foreach (var lc in Locales)
+                            {
+                                <option value="@(lc.Code)" selected="@(cfg.DefaultLanguage == lc.Code ? "selected" : null)">@(lc.Flag) @(lc.Label)</option>
+                            }
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary cfg-flex-shrink-0">Save</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2>Subtitle Fonts</h2>
+                </div>
+                <p class="text-dim cfg-desc">Font forced onto every style and inline override of Thai ASS/SSA subtitle output, since the fonts source subtitles ship with are commonly Latin-only and lack Thai glyphs.</p>
+                <form method="POST" action="/settings/subtitlefont" class="cfg-flex-end">
+                    @Html.AntiForgeryToken()
+                    <div class="field cfg-field-flex-mb0">
+                        <label for="thaiAssFont">Thai ASS font <i class="fa-solid fa-circle-info setting-info" data-tip="Must be a font family installed on your media server (e.g. Jellyfin). Garuda is a Thai-capable font commonly available on Linux."></i></label>
+                        <input type="text" id="thaiAssFont" name="thaiAssFont" value="@cfg.ThaiAssFont" placeholder="Garuda" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary cfg-flex-shrink-0">Save</button>
+                </form>
+            </div>
+        }
+
+        <div class="card">
+            <div class="card-header"><h2>Whisper</h2></div>
+            <form method="POST" action="/settings/whisper">
+                @Html.AntiForgeryToken()
+                <div class="field">
+                    <label for="whisperModel">Whisper model <i class="fa-solid fa-circle-info setting-info" data-tip="Whisper model used to generate source subtitles. Default is large-v3-turbo."></i></label>
+                    <select id="whisperModel" name="whisperModel">
+                        @foreach (var m in ConfigService.WhisperModels)
+                        {
+                            <option value="@m" selected="@(cfg.WhisperModel == m ? "selected" : null)">@m</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="whisperTimestampsLength">Whisper timestamps length <span class="hint">(1–500)</span> <i class="fa-solid fa-circle-info setting-info" data-tip="Maximum dialogue length per subtitle timestamp pair. Must be between 1 and 500."></i></label>
+                    <input type="number" id="whisperTimestampsLength" name="whisperTimestampsLength" value="@cfg.WhisperTimestampsLength" min="1" max="500" required>
+                </div>
+                @if (whisperGpuAvailable)
+                {
+                    <div class="field field-checkbox">
+                        <input type="checkbox" id="whisperUseCuda" name="whisperUseCuda" value="1" checked="@(cfg.WhisperUseCuda ? "checked" : null)">
+                        <label for="whisperUseCuda">Use CUDA for Whisper <i class="fa-solid fa-circle-info setting-info" data-tip="Run Whisper on an NVIDIA GPU. Only available when the deployment was set up with GPU support."></i></label>
+                    </div>
+                }
+                <div class="field field-checkbox">
+                    <input type="checkbox" id="whisperEnabled" name="whisperEnabled" value="1" checked="@(cfg.WhisperEnabled ? "checked" : null)">
+                    <label for="whisperEnabled">Enable Whisper subtitle generation <i class="fa-solid fa-circle-info setting-info" data-tip="Allow users to create source subtitles directly from media files using Whisper."></i></label>
+                </div>
+                <div class="field field-checkbox">
+                    <input type="checkbox" id="whisperRunAsSeparateTask" name="whisperRunAsSeparateTask" value="1" checked="@(cfg.WhisperRunAsSeparateTask ? "checked" : null)">
+                    <label for="whisperRunAsSeparateTask">Run Whisper as a separate task <i class="fa-solid fa-circle-info setting-info" data-tip="Run Whisper transcription on its own worker thread alongside translation, with a separate Whisper queue on the dashboard. When off, Whisper runs on the translation worker as before."></i></label>
+                </div>
+                <div class="field">
+                    <label for="whisperModelRootPath">Whisper model root path <span class="hint">optional</span> <i class="fa-solid fa-circle-info setting-info" data-tip="Optional directory where Whisper models are downloaded and cached. In Docker this defaults to /data/whisper-models."></i></label>
+                    <input type="text" id="whisperModelRootPath" name="whisperModelRootPath" value="@cfg.WhisperModelRootPath" placeholder="e.g. /data/whisper-models">
+                </div>
+                <button type="submit" class="btn btn-primary cfg-save-btn">Save Configuration</button>
+            </form>
+        </div>
+
+    </div>
+</div>
+
+@if (canSeeSecrets)
+{
+    <div class="card cfg-card-mt">
+        <div class="card-header">
+            <h2>Secrets</h2>
+            <small class="text-dim">Manage encrypted application secrets</small>
+        </div>
+
+        <div class="cfg-col-gap-md">
+            @foreach (var sr in secretRows)
+            {
+                <div class="secret-row cfg-secret-row">
+                    <div class="cfg-secret-head">
+                        <div class="cfg-secret-info">
+                            <div class="cfg-secret-title">@sr.DisplayName</div>
+                            <div class="text-dim cfg-secret-desc">
+                                @sr.Description
+                            </div>
+                        </div>
+
+                        <div class="cfg-secret-actions">
+                            @if (sr.HasSecret)
+                            {
+                                @if (sr.SetByEnv)
+                                {
+                                    <span class="badge badge-info">Set by environment</span>
+                                }
+                                else
+                                {
+                                    <span class="badge badge-success">Configured</span>
+                                }
+                            }
+                            else
+                            {
+                                <input type="password" value="" readonly disabled placeholder="No secret set" class="cfg-secret-input">
+                            }
+
+                            @if (sr.HasSecret)
+                            {
+                                <button type="button" class="btn btn-icon" title="Edit" onclick="toggleSecretForm('@sr.Key')">
+                                    Edit
+                                </button>
+
+                                <form method="POST" action="/settings/secrets/delete/@sr.Key" class="cfg-inline" onsubmit="return confirm('Delete this secret?')">
+                                    @Html.AntiForgeryToken()
+                                    <button type="submit" class="btn btn-icon btn-danger" title="Delete">
+                                        Delete
+                                    </button>
+                                </form>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-icon btn-primary" title="Add" onclick="toggleSecretForm('@sr.Key')">
+                                    Add
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <div id="secret-form-@sr.Key" class="cfg-secret-form-wrap">
+                        <form method="POST" action="/settings/secrets/set" class="cfg-secret-form">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="secretName" value="@sr.Key">
+
+                            <div class="field cfg-m0">
+                                <label>
+                                    @(sr.HasSecret ? "New value for " : "Value for ")@sr.DisplayName
+                                </label>
+                                <input type="password" name="secretValue" autocomplete="off"
+                                       placeholder="@(sr.HasSecret ? "Enter a new value" : "Enter secret value")"
+                                       class="cfg-w-full">
+                            </div>
+
+                            <div class="cfg-form-actions">
+                                <button type="button" class="btn" onclick="toggleSecretForm('@sr.Key')">
+                                    Cancel
+                                </button>
+                                <button type="submit" class="btn btn-primary">
+                                    @(sr.HasSecret ? "Save changes" : "Add secret")
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@section Scripts {
+<script>
+  function syncColor(hexInput, fieldName) {
+    var val = hexInput.value.trim()
+    var colorInput = hexInput.previousElementSibling
+    if (colorInput && /^#[0-9a-fA-F]{6}$/.test(val)) {
+      colorInput.value = val
+      var form = hexInput.closest('form')
+      if (form) {
+        var real = form.querySelector('[name="' + fieldName + '"]')
+        if (real) real.value = val
+      }
+    }
+  }
+
+  document.querySelectorAll('input[type="color"]').forEach(function(picker) {
+    picker.addEventListener('input', function() {
+      var hexInput = picker.nextElementSibling
+      if (hexInput) hexInput.value = picker.value
+      picker.value = picker.value
+    })
+  })
+
+  var themeCreateForm = document.querySelector('form[action="/settings/theme/create"]')
+  if (themeCreateForm) {
+    themeCreateForm.addEventListener('submit', function() {
+      themeCreateForm.querySelectorAll('input[type="text"][name^="_"][name$="_hex"]').forEach(function(hexEl) {
+        var fieldName = hexEl.name.replace(/^_/, '').replace(/_hex$/, '')
+        var colorEl = themeCreateForm.querySelector('[name="' + fieldName + '"]')
+        if (colorEl && /^#[0-9a-fA-F]{6}$/.test(hexEl.value.trim())) {
+          colorEl.value = hexEl.value.trim()
+        }
+      })
+    })
+  }
+
+  function toggleSecretForm(secretName) {
+    var el = document.getElementById("secret-form-" + secretName)
+    if (!el) return
+    el.style.display = el.style.display === "none" || !el.style.display ? "block" : "none"
+  }
+
+  document.querySelectorAll(".setting-info").forEach(function (el) {
+    el.addEventListener("click", function (e) { e.stopPropagation() })
+  })
+</script>
+}
+
+@functions {
+    // Theme color-field order/labels.
+    private static readonly (string Field, string Label)[] ColorFields =
+    [
+        ("bg", "Background"), ("surface", "Surface"), ("surface2", "Surface 2"),
+        ("surface3", "Surface 3"), ("borderColor", "Border"),
+        ("textColor", "Text"), ("textDim", "Text Dim"), ("textHint", "Text Hint"),
+        ("accent", "Accent"), ("accentDim", "Accent Dim"),
+        ("success", "Success"), ("successDim", "Success Dim"),
+        ("warning", "Warning"), ("warningDim", "Warning Dim"),
+        ("error", "Error"), ("errorDim", "Error Dim"), ("infoDim", "Info Dim")
+    ];
+
+    // Supported UI locales + their flag emoji and display labels.
+    private static readonly (string Code, string Flag, string Label)[] Locales =
+    [
+        ("en", "🇺🇸", "English"), ("da", "🇩🇰", "Danish"), ("th", "🇹🇭", "Thai"),
+        ("de", "🇩🇪", "German"), ("es", "🇪🇸", "Spanish"), ("fr", "🇫🇷", "French"),
+        ("sv", "🇸🇪", "Swedish"), ("nb", "🇳🇴", "Norwegian"), ("fi", "🇫🇮", "Finnish"),
+        ("pt", "🇧🇷", "Portuguese"), ("ja", "🇯🇵", "Japanese"), ("zh", "🇨🇳", "Chinese"),
+        ("ru", "🇷🇺", "Russian"), ("tr", "🇹🇷", "Turkish"), ("ko", "🇰🇷", "Korean"),
+        ("vi", "🇻🇳", "Vietnamese"), ("nl", "🇳🇱", "Dutch"), ("it", "🇮🇹", "Italian"),
+        ("pl", "🇵🇱", "Polish"), ("uk", "🇺🇦", "Ukrainian"), ("cs", "🇨🇿", "Czech"),
+        ("ro", "🇷🇴", "Romanian"), ("hu", "🇭🇺", "Hungarian"), ("el", "🇬🇷", "Greek"),
+        ("id", "🇮🇩", "Indonesian"), ("ms", "🇲🇾", "Malay"), ("hi", "🇮🇳", "Hindi"),
+        ("ar", "🇸🇦", "Arabic"), ("sq", "🇦🇱", "Albanian"), ("hy", "🇦🇲", "Armenian"),
+        ("az", "🇦🇿", "Azerbaijani"), ("eu", "🇪🇸", "Basque"), ("be", "🇧🇾", "Belarusian"),
+        ("bn", "🇧🇩", "Bengali"), ("bs", "🇧🇦", "Bosnian"), ("bg", "🇧🇬", "Bulgarian"),
+        ("ca", "🇪🇸", "Catalan"), ("hr", "🇭🇷", "Croatian"), ("et", "🇪🇪", "Estonian"),
+        ("fil", "🇵🇭", "Filipino"), ("ka", "🇬🇪", "Georgian"), ("he", "🇮🇱", "Hebrew"),
+        ("is", "🇮🇸", "Icelandic"), ("ga", "🇮🇪", "Irish"), ("kk", "🇰🇿", "Kazakh"),
+        ("lv", "🇱🇻", "Latvian"), ("lt", "🇱🇹", "Lithuanian"), ("mk", "🇲🇰", "Macedonian"),
+        ("sr", "🇷🇸", "Serbian"), ("sk", "🇸🇰", "Slovak"), ("sl", "🇸🇮", "Slovenian"),
+        ("ta", "🇮🇳", "Tamil"), ("te", "🇮🇳", "Telugu"), ("ur", "🇵🇰", "Urdu"),
+        ("fa", "🇮🇷", "Persian"), ("sw", "🇰🇪", "Swahili"), ("af", "🇿🇦", "Afrikaans"),
+        ("zu", "🇿🇦", "Zulu"), ("tl", "🇵🇭", "Tagalog"), ("my", "🇲🇲", "Burmese"),
+        ("km", "🇰🇭", "Khmer"), ("lo", "🇱🇦", "Lao"), ("mn", "🇲🇳", "Mongolian"),
+        ("ne", "🇳🇵", "Nepali"), ("si", "🇱🇰", "Sinhala"), ("gu", "🇮🇳", "Gujarati"),
+        ("kn", "🇮🇳", "Kannada"), ("ml", "🇮🇳", "Malayalam"), ("mr", "🇮🇳", "Marathi"),
+        ("pa", "🇮🇳", "Punjabi"), ("lb", "🇱🇺", "Luxembourgish"), ("mt", "🇲🇹", "Maltese"),
+        ("cy", "🏴", "Welsh"), ("gd", "🏴", "Scottish Gaelic"), ("gl", "🇪🇸", "Galician"),
+        ("am", "🇪🇹", "Amharic"), ("ha", "🇳🇬", "Hausa"), ("ig", "🇳🇬", "Igbo"),
+        ("yo", "🇳🇬", "Yoruba"), ("so", "🇸🇴", "Somali"), ("ky", "🇰🇬", "Kyrgyz"),
+        ("tg", "🇹🇯", "Tajik"), ("tk", "🇹🇲", "Turkmen"), ("uz", "🇺🇿", "Uzbek"),
+        ("eo", "🌍", "Esperanto"), ("la", "🇻🇦", "Latin")
+    ];
+
+    private static string ThemeColor(Theme t, string field) => field switch
+    {
+        "bg" => t.Bg,
+        "surface" => t.Surface,
+        "surface2" => t.Surface2,
+        "surface3" => t.Surface3,
+        "borderColor" => t.BorderColor,
+        "textColor" => t.TextColor,
+        "textDim" => t.TextDim,
+        "textHint" => t.TextHint,
+        "accent" => t.Accent,
+        "accentDim" => t.AccentDim,
+        "success" => t.Success,
+        "successDim" => t.SuccessDim,
+        "warning" => t.Warning,
+        "warningDim" => t.WarningDim,
+        "error" => t.Error,
+        "errorDim" => t.ErrorDim,
+        "infoDim" => t.InfoDim,
+        _ => ""
+    };
+
+    private static string ConfirmDeleteTheme(string name) =>
+        "Delete theme \\'" + name.Replace("'", "\\'") + "\\'?";
+}

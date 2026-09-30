@@ -1,0 +1,19 @@
+services:
+  postgres:
+    ports:
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-4851}:5432"
+
+  web:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+
+  worker:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Logging__LogLevel__Microsoft.AspNetCore: Debug
+    ports:
+      - "${WORKER_DEV_PORT:-5101}:5100"
+
+  python-worker:
+    environment:
+      WORKER_CAPABILITIES: ${LOCAL_WORKER_CAPABILITIES:-whisper,ocr,vision}

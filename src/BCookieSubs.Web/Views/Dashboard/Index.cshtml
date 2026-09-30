@@ -1,0 +1,382 @@
+@using BCookieSubs.Shared.Security
+@using BCookieSubs.Web.Services
+@inject CurrentUserContext CurrentUser
+@{
+    ViewData["Title"] = "Dashboard";
+    ViewData["ActiveNav"] = "dashboard";
+    var toast = Context.Request.Query["toast"].FirstOrDefault();
+    var msg = Context.Request.Query["msg"].FirstOrDefault();
+
+    var languages = (List<BCookieSubs.Shared.Database.Entities.Language>)ViewBag.Languages!;
+    var config = (BCookieSubs.Shared.Database.Entities.ApplicationConfig?)ViewBag.Config;
+    var showPosters = (bool)ViewBag.ShowPosters;
+    var deleteNotCancel = (bool)ViewBag.DeleteNotCancel;
+    var workerPaused = (bool)ViewBag.WorkerPaused;
+    var whisperWorkerPaused = (bool)ViewBag.WhisperWorkerPaused;
+    var ocrWorkerPaused = (bool)ViewBag.OcrWorkerPaused;
+    var whisperSeparate = config?.WhisperRunAsSeparateTask == true;
+    var defaultChunkSize = config?.DefaultChunkSize ?? 12;
+    var defaultTargetLangIds = (List<long>)ViewBag.DefaultTargetLangIds!;
+
+    bool Can(string permission) => CurrentUser.HasPermission(permission);
+    var canStop = Can(Permissions.CanCancelTranslationJob);
+    var canDelete = Can(Permissions.CanDeleteTranslation);
+    var canManageWorker = Can("canManageWorker");
+    var canAdd = Can(Permissions.CanAddSubtitleToTranslateDashboard);
+}
+@if (toast == "error" && !string.IsNullOrEmpty(msg))
+{
+    <div class="toast toast-error" id="page-toast">@msg</div>
+}
+@if (toast == "success" && !string.IsNullOrEmpty(msg))
+{
+    <div class="toast toast-success" id="page-toast">@msg</div>
+}
+
+<div class="page-header">
+    <h1>Dashboard</h1>
+    <div class="dsh-row-center">
+        @if (canManageWorker)
+        {
+            <button id="worker-stop-btn" class="btn btn-warning" onclick="workerControl('pause')"
+                    style="@(workerPaused ? "display:none" : "display:inline-flex")">Stop worker</button>
+            <button id="worker-start-btn" class="btn btn-secondary" onclick="workerControl('resume')"
+                    style="@(workerPaused ? "display:inline-flex" : "display:none")">Start worker</button>
+        }
+        @if (canStop || canDelete)
+        {
+            <button id="dsh-select-btn" class="btn btn-secondary" onclick="toggleSelectMode()">Select</button>
+        }
+        @if (canAdd)
+        {
+            <button class="btn btn-primary" onclick="openModal('upload-modal')">Add subtitle</button>
+        }
+    </div>
+</div>
+
+<div class="card" id="queue-card">
+    <div class="card-header"><h2>Translation Queue</h2></div>
+    <div id="queue-list">
+        <p class="empty-state" id="queue-empty">Loading…</p>
+    </div>
+</div>
+
+<div class="card dsh-mt-15" id="ocr-queue-card" style="display:none">
+    <div class="card-header">
+        <h2>OCR Queue</h2>
+        <div class="dsh-row-center">
+            @if (canManageWorker)
+            {
+                <button id="ocr-worker-stop-btn" class="btn btn-warning" onclick="ocrWorkerControl('pause')"
+                        style="@(ocrWorkerPaused ? "display:none" : "display:inline-flex")">Stop OCR worker</button>
+                <button id="ocr-worker-start-btn" class="btn btn-secondary" onclick="ocrWorkerControl('resume')"
+                        style="@(ocrWorkerPaused ? "display:inline-flex" : "display:none")">Start OCR worker</button>
+            }
+        </div>
+    </div>
+    <div id="ocr-queue-list">
+        <p class="empty-state" id="ocr-queue-empty">Loading…</p>
+    </div>
+</div>
+
+@if (whisperSeparate)
+{
+    <div class="card dsh-mt-15" id="whisper-queue-card" style="display:none">
+        <div class="card-header">
+            <h2>Whisper Queue</h2>
+            <div class="dsh-row-center">
+                @if (canManageWorker)
+                {
+                    <button id="whisper-worker-stop-btn" class="btn btn-warning" onclick="whisperWorkerControl('pause')"
+                            style="@(whisperWorkerPaused ? "display:none" : "display:inline-flex")">Stop Whisper worker</button>
+                    <button id="whisper-worker-start-btn" class="btn btn-secondary" onclick="whisperWorkerControl('resume')"
+                            style="@(whisperWorkerPaused ? "display:inline-flex" : "display:none")">Start Whisper worker</button>
+                }
+            </div>
+        </div>
+        <div id="whisper-queue-list">
+            <p class="empty-state" id="whisper-queue-empty">Loading…</p>
+        </div>
+    </div>
+}
+
+<div class="card dsh-mt-15">
+    <div class="card-header">
+        <h2>Recent Logs</h2>
+        <small class="text-dim" id="log-count">—</small>
+    </div>
+    <div class="log-panel" id="log-panel">
+        <p class="text-dim dsh-p-5">Loading…</p>
+    </div>
+</div>
+
+<div class="modal-overlay" id="upload-modal" onclick="closeModalOnOverlay(event)">
+    <div class="modal modal-xl">
+        <div class="modal-header">
+            <h2>Add subtitle — step 1</h2>
+            <button class="btn btn-icon" onclick="closeModal('upload-modal')">✕</button>
+        </div>
+        <form id="upload-form-step1">
+            <div class="field">
+                <label>Subtitle file</label>
+                <div class="upload-zone" id="upload-zone" onclick="document.getElementById('up1-srtFile').click()">
+                    <input type="file" id="up1-srtFile" name="srtFile" accept=".srt,.ass,.ssa" required class="dsh-hidden">
+                    <div class="upload-zone-content">
+                        <div class="upload-text">
+                            <span id="click-to-upload-1" class="upload-text-main">Click or drop to upload</span>
+                            <span id="click-to-upload-2" class="upload-text-sub">.srt, .ass, .ssa</span>
+                        </div>
+                        <div class="upload-filename" id="upload-filename"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="field">
+                <label for="up1-sourceLangId">Source language</label>
+                <select id="up1-sourceLangId" name="sourceLangId" required>
+                    @{
+                        var englishFound = false;
+                    }
+                    @foreach (var l in languages)
+                    {
+                        var isDefault = !englishFound && l.Iso639 == "en";
+                        if (l.Iso639 == "en") { englishFound = true; }
+                        <option value="@l.Id" selected="@isDefault">@l.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('upload-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary" formnovalidate>Next →</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-overlay" id="upload-modal-step2" onclick="closeModalOnOverlay(event)">
+    <div class="modal modal-xl">
+        <div class="modal-header">
+            <h2>Add subtitle — step 2</h2>
+            <button class="btn btn-icon" onclick="closeModal('upload-modal-step2')">✕</button>
+        </div>
+        <form id="upload-form-step2">
+            @Html.AntiForgeryToken()
+            <input type="hidden" id="up2-sourceLangId" name="sourceLangId" value="">
+            <input type="hidden" id="up2-theMovieDbId" name="theMovieDbId" value="">
+            <input type="hidden" id="up2-posterBase64" name="posterBase64" value="">
+            <input type="hidden" id="up2-originalTitle" name="originalTitle" value="">
+            <input type="hidden" id="up2-isAnime" name="isAnime" value="">
+            <input type="hidden" id="up2-genres" name="genres" value="">
+            <input type="hidden" id="up2-posterUrl" name="posterUrl" value="">
+
+            <div id="up2-tmdb-selector" class="field" style="display:none">
+                <label for="up2-tmdb-select">TheMovieDB match</label>
+                <select id="up2-tmdb-select"></select>
+            </div>
+
+            <div class="upload-step2-body dsh-step2-body">
+                <div class="dsh-flex-1">
+                    <div class="field">
+                        <label for="up2-name">Media title</label>
+                        <input type="text" id="up2-name" name="mediaTitle" required placeholder="e.g. The Dark Knight">
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label for="up2-type">Type</label>
+                            <select id="up2-type" name="mediaType" onchange="toggleSeriesFields(this.value)">
+                                <option value="movie">Movie</option>
+                                <option value="series">Series</option>
+                                <option value="unknown">Unknown</option>
+                            </select>
+                        </div>
+                        <div class="field dsh-mw-7">
+                            <label for="up2-year">Year</label>
+                            <input type="number" id="up2-year" name="mediaYear" min="1900" max="2100" placeholder="2024">
+                        </div>
+                        <div class="field" id="up2-season-field" style="display:none">
+                            <label for="up2-season">Season</label>
+                            <input type="number" id="up2-season" name="season" min="1" placeholder="1">
+                        </div>
+                        <div class="field" id="up2-episode-field" style="display:none">
+                            <label for="up2-episode">Episode</label>
+                            <input type="number" id="up2-episode" name="episode" min="1" placeholder="1">
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Target languages</label>
+                        <div id="up2-lang-chips" class="dsh-lang-chips"></div>
+                        <div class="checkbox-group dsh-mh-90" id="up2-lang-group">
+                            @foreach (var l in languages)
+                            {
+                                var isDefault = defaultTargetLangIds.Contains(l.Id);
+                                <label class="checkbox-label">
+                                    <input type="checkbox" name="targetLangIds" value="@l.Id" checked="@isDefault">
+                                    @if (BCookieSubs.Shared.Repositories.FlagCodes.Derive(l.Locale) is { } flagCode)
+                                    {
+                                        <span class="fi fi-@flagCode"></span>
+                                    }
+                                    @l.Name
+                                </label>
+                            }
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label for="up2-chunkSize">Chunk size override <span class="text-dim">(blank = default @defaultChunkSize)</span></label>
+                        <input type="number" id="up2-chunkSize" name="chunkSetting" min="1" max="200" placeholder="@defaultChunkSize">
+                    </div>
+                </div>
+
+                <div id="up2-poster-wrap" class="dsh-poster-wrap" style="display:none">
+                    <img id="up2-poster" src="" alt="Poster" class="dsh-poster">
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('upload-modal-step2');openModal('upload-modal')">← Back</button>
+                <button type="submit" class="btn btn-primary">Add to Queue</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-overlay" id="inspect-modal" onclick="closeModalOnOverlay(event)">
+    <div class="modal modal-wide">
+        <div class="modal-header">
+            <h2 id="inspect-title">Job details</h2>
+            <button class="btn btn-icon" onclick="closeModal('inspect-modal')">✕</button>
+        </div>
+        <div id="inspect-body" class="inspect-body">Loading…</div>
+    </div>
+</div>
+
+<div id="dsh-bulk-bar" class="dsh-bulk-bar" style="display:none">
+    <span id="dsh-bulk-count" class="dsh-bulk-count">0 selected</span>
+    <div class="dsh-row-center">
+        <button id="dsh-bulk-clear-btn" class="btn btn-secondary" onclick="clearBulkSelection()">Clear selection</button>
+        <button id="dsh-bulk-action-btn" class="btn btn-danger" onclick="openBulkConfirm()">Cancel / Delete</button>
+    </div>
+</div>
+
+<div class="modal-overlay" id="bulk-confirm-modal" onclick="closeModalOnOverlay(event)">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="bulk-confirm-title">Confirm cancel/delete</h2>
+            <button class="btn btn-icon" onclick="closeModal('bulk-confirm-modal')">✕</button>
+        </div>
+        <div class="modal-body">
+            <p id="bulk-confirm-summary" class="text-dim"></p>
+            <ul id="bulk-confirm-list" class="bulk-confirm-list"></ul>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('bulk-confirm-modal')">Cancel</button>
+            <button id="bulk-confirm-submit" class="btn btn-danger" onclick="submitBulkAction()">Cancel / Delete</button>
+        </div>
+    </div>
+</div>
+
+<script>
+  var LANGUAGE_MAP = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
+      languages.ToDictionary(l => l.Id, l => new
+      {
+          id = l.Id, name = l.Name, iso639 = l.Iso639, locale = l.Locale,
+          flagCode = BCookieSubs.Shared.Repositories.FlagCodes.Derive(l.Locale),
+      }),
+      new System.Text.Json.JsonSerializerOptions
+      {
+          PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+      }));
+  var CAN_STOP = @Html.Raw(canStop ? "true" : "false");
+  var CAN_DELETE = @Html.Raw(canDelete ? "true" : "false");
+  var SHOW_POSTERS = @Html.Raw(showPosters ? "true" : "false");
+  var DELETE_NOT_CANCEL = @Html.Raw(deleteNotCancel ? "true" : "false");
+  var APP_STRINGS = {
+    select: "Select",
+    doneSelect: "Done",
+    selected: "selected",
+    bulkJobs: "jobs",
+    bulkActiveWillCancel: "Active items will be cancelled.",
+    bulkActiveWillDelete: "Active items will be deleted.",
+    bulkCancelledWillDelete: "Cancelled items will be deleted.",
+    whispering: "Whispering",
+    ocrStatus_queued: "Queued",
+    ocrStatus_processing: "Processing",
+    ocrStatus_failed: "Failed"
+  };
+
+  function toggleSeriesFields(val) {
+    document.getElementById("up2-season-field").style.display = val === "series" ? "" : "none"
+    document.getElementById("up2-episode-field").style.display = val === "series" ? "" : "none"
+  }
+
+  function updateLangChips() {
+    var el = document.getElementById("up2-lang-chips")
+    if (!el) return
+    var checked = Array.from(document.querySelectorAll('#up2-lang-group input[type="checkbox"]:checked'))
+    if (checked.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:.78rem">None selected</span>'
+      return
+    }
+    el.innerHTML = checked.map(function (cb) {
+      var lbl = cb.closest("label")
+      var text = lbl ? lbl.textContent.trim() : cb.value
+      return '<span class="badge badge-info" style="font-size:.73rem">' + text + "</span>"
+    }).join("")
+  }
+
+  ;(function () {
+    var group = document.getElementById("up2-lang-group")
+    if (group) group.addEventListener("change", updateLangChips)
+    updateLangChips()
+  })()
+
+  ;(function () {
+    var zone = document.getElementById('upload-zone')
+    var fileInput = document.getElementById('up1-srtFile')
+    var fileNameEl = document.getElementById('upload-filename')
+    var uploadText1 = document.getElementById('click-to-upload-1')
+    var uploadText2 = document.getElementById('click-to-upload-2')
+    if (!zone || !fileInput) return
+
+    function setDragOver(e) {
+      e.preventDefault()
+      e.stopPropagation()
+      zone.classList.add('drag-over')
+    }
+    function clearDragOver(e) {
+      e.preventDefault()
+      e.stopPropagation()
+      zone.classList.remove('drag-over')
+    }
+
+    ;['dragenter', 'dragover'].forEach(function (evt) {
+      zone.addEventListener(evt, setDragOver, false)
+    })
+    ;['dragleave', 'drop'].forEach(function (evt) {
+      zone.addEventListener(evt, clearDragOver, false)
+    })
+
+    zone.addEventListener('drop', function (e) {
+      var files = e.dataTransfer.files
+      if (files.length > 0) {
+        var dt = new DataTransfer()
+        dt.items.add(files[0])
+        fileInput.files = dt.files
+        updateFileName(files[0].name)
+      }
+    }, false)
+
+    fileInput.addEventListener('change', function () {
+      if (fileInput.files.length > 0) {
+        updateFileName(fileInput.files[0].name)
+        uploadText1.style.display = 'none'
+        uploadText2.style.display = 'none'
+      }
+    })
+
+    function updateFileName(name) {
+      if (fileNameEl) {
+        fileNameEl.textContent = name
+        fileNameEl.style.display = 'block'
+      }
+    }
+  })()
+</script>

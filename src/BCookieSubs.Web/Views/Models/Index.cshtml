@@ -1,0 +1,826 @@
+@using System.Globalization
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@using BCookieSubs.Shared.Database.Entities
+@using BCookieSubs.Shared.Database.Enums
+@using BCookieSubs.Shared.Services
+@{
+    ViewData["Title"] = "Models";
+    ViewData["ActiveNav"] = "models";
+    var configured = (List<Model>)ViewBag.Models;
+    var ollama = (OllamaCatalogResult)ViewBag.Ollama;
+    var recommended = (List<RecommendedCatalogEntry>)ViewBag.Recommended;
+    var canAdd = (bool)ViewBag.CanAdd;
+    var canEdit = (bool)ViewBag.CanEdit;
+    var canManageRoles = (bool)ViewBag.CanManageRoles;
+    var canDelete = (bool)ViewBag.CanDelete;
+    var canAnyAction = canAdd || canEdit || canManageRoles || canDelete;
+    var ollamaError = ollama.Success ? null : (ollama.OllamaRunning ? ollama.Error : null);
+    var ollamaDown = !ollama.Success && !ollama.OllamaRunning;
+}
+@if (ViewBag.ToastError is string toastError)
+{
+    <div class="toast toast-error" id="page-toast">@toastError</div>
+}
+
+<div class="page-header">
+    <h1>Models</h1>
+    @if (canAdd)
+    {
+        <button class="btn btn-primary" onclick="openAddModal()">+ Add Model</button>
+    }
+</div>
+
+@if (ollamaDown)
+{
+    <div class="alert alert-error mdl-alert-mb">Ollama is not running. Start Ollama to add local models.</div>
+}
+else if (ollamaError != null)
+{
+    <div class="alert alert-warning mdl-alert-mb">@ollamaError</div>
+}
+
+<div class="card">
+    <div class="card-header"><h2>Configured Models</h2></div>
+    @if (configured.Count == 0)
+    {
+        <p class="empty-state">No models configured yet.</p>
+    }
+    else
+    {
+        <div class="table-wrap models-table-wrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Model ID</th>
+                    <th>Provider</th>
+                    <th>Roles</th>
+                    <th>Status</th>
+                    @if (canAnyAction)
+                    {
+                        <th>Actions</th>
+                    }
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var m in configured)
+                {
+                    var roleNames = m.ModelRoles.Where(r => r.DeletedAt == null).Select(r => r.Role).ToList();
+                    <tr>
+                        <td><strong>@m.Name</strong></td>
+                        <td><code>@m.ModelName</code>
+                            @if (m.ParameterSize != null)
+                            {
+                                <span class="text-dim"> (@m.ParameterSize)</span>
+                            }
+                        </td>
+                        <td>
+                            @switch (m.Provider)
+                            {
+                                case ModelProvider.ChatGpt:
+                                    <span class="badge badge-success">ChatGPT</span>
+                                    break;
+                                case ModelProvider.Claude:
+                                    <span class="badge badge-warning">Claude</span>
+                                    break;
+                                case ModelProvider.OllamaCloud:
+                                    <span class="badge badge-info">Ollama Cloud</span>
+                                    break;
+                                case ModelProvider.Custom:
+                                    <span class="badge badge-neutral">Custom</span>
+                                    break;
+                                default:
+                                    <span class="text-dim">Ollama</span>
+                                    break;
+                            }
+                        </td>
+                        <td>
+                            @if (roleNames.Count == 0)
+                            {
+                                <span class="text-dim">—</span>
+                            }
+                            @if (roleNames.Contains(ModelRoleKind.Translation))
+                            {
+                                <span class="badge badge-info mdl-mr-qtr">Translation</span>
+                            }
+                            @if (roleNames.Contains(ModelRoleKind.Judge))
+                            {
+                                <span class="badge badge-warning mdl-mr-qtr">Judge</span>
+                            }
+                            @if (roleNames.Contains(ModelRoleKind.FallbackJudge))
+                            {
+                                <span class="badge badge-warning mdl-mr-qtr-dim">Fallback Judge</span>
+                            }
+                            @if (roleNames.Contains(ModelRoleKind.NameFormatter))
+                            {
+                                <span class="badge badge-neutral">Name Formatter</span>
+                            }
+                        </td>
+                        <td>
+                            <span class="badge @(m.Active ? "badge-success" : "badge-neutral")">
+                                @(m.Active ? "Active" : "Inactive")
+                            </span>
+                        </td>
+                        @if (canAnyAction)
+                        {
+                            <td class="actions">
+                                @if (canEdit)
+                                {
+                                    <button class="btn btn-sm btn-secondary" id="edit-btn-@m.Id"
+                                            data-model="@ModelJson(m)">
+                                        Edit
+                                    </button>
+                                }
+                                @if (canManageRoles)
+                                {
+                                    <button class="btn btn-sm btn-secondary" id="role-btn-@m.Id"
+                                            data-model="@ModelJson(m)">
+                                        Roles
+                                    </button>
+                                }
+                                @if (canDelete)
+                                {
+                                    <form method="POST" action="/models/delete/@m.Id" class="mdl-inline"
+                                          onsubmit="return confirm('@ConfirmRemove(m.Name)')">
+                                        @Html.AntiForgeryToken()
+                                        <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+                                    </form>
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="model-cards">
+            @foreach (var m in configured)
+            {
+                var roleNames = m.ModelRoles.Where(r => r.DeletedAt == null).Select(r => r.Role).ToList();
+                <div class="model-card">
+                    <div class="model-card-header">
+                        <div>
+                            <strong>@m.Name</strong>
+                            <span class="badge @(m.Active ? "badge-success" : "badge-neutral") mdl-ml-sm">
+                                @(m.Active ? "Active" : "Inactive")
+                            </span>
+                        </div>
+                        <span class="text-dim mdl-fs-80">@ProviderText(m.Provider)</span>
+                    </div>
+                    <div class="model-card-name text-dim"><code>@m.ModelName</code>@(m.ParameterSize != null ? $" · {m.ParameterSize}" : "")</div>
+                    <div class="model-card-roles mdl-card-roles">
+                        @if (roleNames.Count == 0)
+                        {
+                            <span class="text-dim mdl-fs-82">No role</span>
+                        }
+                        @if (roleNames.Contains(ModelRoleKind.Translation))
+                        {
+                            <span class="badge badge-info">Translation</span>
+                        }
+                        @if (roleNames.Contains(ModelRoleKind.Judge))
+                        {
+                            <span class="badge badge-warning">Judge</span>
+                        }
+                        @if (roleNames.Contains(ModelRoleKind.FallbackJudge))
+                        {
+                            <span class="badge badge-warning mdl-dim-soft">Fallback Judge</span>
+                        }
+                        @if (roleNames.Contains(ModelRoleKind.NameFormatter))
+                        {
+                            <span class="badge badge-neutral">Name Formatter</span>
+                        }
+                    </div>
+                    @if (canAnyAction)
+                    {
+                        <div class="actions">
+                            @if (canEdit)
+                            {
+                                <button class="btn btn-sm btn-secondary" id="edit-btn-m-@m.Id"
+                                        data-model="@ModelJson(m)">
+                                    Edit
+                                </button>
+                            }
+                            @if (canManageRoles)
+                            {
+                                <button class="btn btn-sm btn-secondary" id="role-btn-m-@m.Id"
+                                        data-model="@ModelJson(m)">
+                                    Roles
+                                </button>
+                            }
+                            @if (canDelete)
+                            {
+                                <form method="POST" action="/models/delete/@m.Id" class="mdl-inline"
+                                      onsubmit="return confirm('@ConfirmRemove(m.Name)')">
+                                    @Html.AntiForgeryToken()
+                                    <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+                                </form>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (ollama.Entries.Count > 0)
+{
+    <div class="card mdl-card-mt">
+        <div class="card-header">
+            <h2>Available in Ollama</h2>
+            <small class="text-dim">@ollama.Entries.Count model(s) found</small>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>Model</th><th>Size</th><th>Parameters</th><th>Updated At</th>
+                    @if (canAdd || canDelete)
+                    {
+                        <th class="mdl-th-actions">Actions</th>
+                    }
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var e in ollama.Entries)
+                {
+                    var alreadyAdded = configured.Any(d => d.ModelName == e.Name);
+                    <tr>
+                        <td><code>@e.Name</code></td>
+                        <td class="text-dim">@FormatSizeGb(e.Size)</td>
+                        <td class="text-dim">@(e.ParameterSize ?? "—")</td>
+                        <td class="text-dim">@FormatModifiedAt(e.ModifiedAt)</td>
+                        @if (canAdd || canDelete)
+                        {
+                            <td class="mdl-td-actions">
+                                @if (alreadyAdded)
+                                {
+                                    <span class="badge badge-success">Added</span>
+                                }
+                                else
+                                {
+                                    <div class="mdl-actions-row">
+                                        @if (canAdd)
+                                        {
+                                            <button class="btn btn-sm btn-primary" data-ollama-model="@e.Name">
+                                                + Add
+                                            </button>
+                                        }
+                                        @if (canDelete)
+                                        {
+                                            <form method="POST" action="/models/remove-ollama"
+                                                  class="ollama-remove-form mdl-inline">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="modelName" value="@e.Name">
+                                                <button type="submit" class="btn btn-sm btn-danger"
+                                                        data-model-name="@e.Name">Remove</button>
+                                            </form>
+                                        }
+                                    </div>
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@if (recommended.Count > 0)
+{
+    <div class="card mdl-card-mt">
+        <div class="card-header">
+            <h2>Recommended Models</h2>
+            <small class="text-dim">@recommended.Count model(s)</small>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Provider</th>
+                    <th>Roles</th>
+                    <th>Score</th>
+                    @if (canAdd)
+                    {
+                        <th class="mdl-tac">Actions</th>
+                    }
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var r in recommended)
+                {
+                    <tr>
+                        <td>
+                            <code>@r.Name</code>
+                            @if (r.RequireSubscription)
+                            {
+                                <span class="badge badge-warning mdl-ml-35">Subscription</span>
+                            }
+                        </td>
+                        <td>
+                            @if (r.Provider == ModelProvider.OllamaCloud)
+                            {
+                                <span class="badge badge-info">Ollama Cloud</span>
+                            }
+                            else
+                            {
+                                <span class="text-dim">Ollama</span>
+                            }
+                        </td>
+                        <td class="text-dim mdl-fs-82">@(r.Roles.Count > 0 ? string.Join(", ", r.Roles.Select(RoleKey)) : "—")</td>
+                        <td><span class="badge badge-neutral">@r.Score</span></td>
+                        @if (canAdd)
+                        {
+                            <td class="mdl-tac">
+                                <button class="btn btn-sm btn-primary"
+                                        data-recommended-model="@RecommendedJson(r)">
+                                    + Add
+                                </button>
+                            </td>
+                        }
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@if (canAnyAction)
+{
+    <div class="modal-overlay" id="add-manual-modal" onclick="closeModalOnOverlay(event)">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="add-modal-title">Add Model</h2>
+                <button class="btn btn-icon" onclick="closeModal('add-manual-modal')">✕</button>
+            </div>
+            <form method="POST" id="add-model-form" action="/models/add">
+                @Html.AntiForgeryToken()
+                <input type="hidden" id="add-from-ollama" name="_fromOllama" value="0">
+
+                <div class="field">
+                    <label for="add-provider">Provider</label>
+                    <select id="add-provider" name="provider" onchange="onAddProviderChange()">
+                        <option value="ollama">Ollama (local)</option>
+                        <option value="ollama cloud">Ollama Cloud</option>
+                        <option value="chatgpt">ChatGPT (OpenAI)</option>
+                        <option value="claude">Claude (Anthropic)</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="add-modelName" id="add-modelName-label">Name</label>
+                    <input type="text" id="add-modelName" name="modelName" placeholder="e.g. llama3.1:8b" required>
+                    <small id="add-modelName-hint" class="text-dim"></small>
+                </div>
+
+                <div class="field" id="add-baseUrl-field" style="display:none">
+                    <label for="add-baseUrl">Base URL</label>
+                    <input type="text" id="add-baseUrl" name="baseUrl" placeholder="https://your-host:11434">
+                </div>
+
+                <div class="field" id="add-apikey-hint-field" style="display:none">
+                    <div class="alert alert-warning mdl-alert-inline" id="add-apikey-hint"></div>
+                </div>
+
+                <div class="field">
+                    <label for="add-name">Display Name <span class="hint">(leave blank to use model name)</span></label>
+                    <input type="text" id="add-name" name="name" placeholder="My Model">
+                </div>
+
+                <div class="field">
+                    <label>Roles</label>
+                    <div class="checkbox-group mdl-maxh-none">
+                        <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="translation" checked> Translation</label>
+                        <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="judge"> Judge</label>
+                        <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="fallbackJudge"> Fallback Judge</label>
+                        <label class="checkbox-label"><input type="checkbox" class="add-role-check" name="roles" value="nameFormatter"> Name Formatter</label>
+                    </div>
+                </div>
+
+                <div class="field field-checkbox" id="add-closeAfterUse-field">
+                    <input type="hidden" id="add-closeAfterUse-hidden" name="closeAfterUse" value="0" disabled>
+                    <input type="checkbox" id="add-closeAfterUse" name="closeAfterUse" value="1" checked onchange="document.getElementById('add-closeAfterUse-hidden').disabled = this.checked">
+                    <label for="add-closeAfterUse">Unload after use <span class="hint">(Ollama only)</span></label>
+                </div>
+
+                <div class="field field-checkbox">
+                    <input type="checkbox" id="add-active" name="active" value="1" checked>
+                    <label for="add-active">Active</label>
+                </div>
+
+                <div id="pull-progress-wrap" style="display:none;padding:.75rem 0">
+                    <div class="mdl-pull-status">
+                        <strong id="pull-status-text">Installing…</strong>
+                    </div>
+                    <div class="mdl-pull-track">
+                        <div id="pull-progress-bar" style="height:100%;width:0%;background:var(--accent);transition:width .3s ease"></div>
+                    </div>
+                    <small id="pull-progress-label" class="text-dim mdl-pull-label"></small>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="add-cancel-btn" onclick="closeModal('add-manual-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="add-submit-btn">Add Model</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="edit-modal" onclick="closeModalOnOverlay(event)">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Edit Model</h2>
+                <button class="btn btn-icon" onclick="closeModal('edit-modal')">✕</button>
+            </div>
+            <form method="POST" id="edit-form" action="">
+                @Html.AntiForgeryToken()
+
+                <div class="field">
+                    <label for="edit-provider">Provider</label>
+                    <select id="edit-provider" name="provider" onchange="onEditProviderChange()">
+                        <option value="ollama">Ollama (local)</option>
+                        <option value="ollama cloud">Ollama Cloud</option>
+                        <option value="chatgpt">ChatGPT (OpenAI)</option>
+                        <option value="claude">Claude (Anthropic)</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+
+                <div class="field" id="edit-baseUrl-field" style="display:none">
+                    <label for="edit-baseUrl">Base URL</label>
+                    <input type="text" id="edit-baseUrl" name="baseUrl" placeholder="https://your-host:11434">
+                </div>
+
+                <div class="field" id="edit-apikey-hint-field" style="display:none">
+                    <div class="alert alert-warning mdl-alert-inline" id="edit-apikey-hint"></div>
+                </div>
+
+                <div class="field">
+                    <label for="edit-name">Display Name</label>
+                    <input type="text" id="edit-name" name="name" required>
+                </div>
+
+                <div class="field field-checkbox" id="edit-closeAfterUse-field">
+                    <input type="checkbox" id="edit-closeAfterUse" name="closeAfterUse" value="1">
+                    <label for="edit-closeAfterUse">Unload after use <span class="hint">(Ollama only)</span></label>
+                </div>
+
+                <div class="field field-checkbox">
+                    <input type="checkbox" id="edit-active" name="active" value="1">
+                    <label for="edit-active">Active</label>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('edit-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="role-modal" onclick="closeModalOnOverlay(event)">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Manage Roles —  — <span id="role-modal-name"></span></h2>
+                <button class="btn btn-icon" onclick="closeModal('role-modal')">✕</button>
+            </div>
+            <div id="role-modal-body" class="mdl-role-body"></div>
+        </div>
+    </div>
+}
+
+<div id="ollama-models-data" class="mdl-hidden" data-models="@(JsonSerializer.Serialize(ollama.Entries.Select(e => e.Name).ToList()))"></div>
+
+@section Scripts {
+@if (canAnyAction)
+{
+    <script>
+      var INSTALLED_OLLAMA_MODELS = JSON.parse(document.getElementById('ollama-models-data').dataset.models || '[]');
+      var AF_TOKEN = document.querySelector('#add-model-form input[name="__RequestVerificationToken"]').value;
+
+      var PROVIDER_HINTS = {
+        'ollama':       { modelLabel: 'Ollama Model Name', placeholder: 'e.g. llama3.1:8b',    hint: '',                                              baseUrl: false, apiHint: '',                                              unload: true  },
+        'ollama cloud': { modelLabel: 'Ollama Model Name', placeholder: 'e.g. llama3.1:8b',    hint: '',                                              baseUrl: true,  apiHint: '',                                              unload: false, defaultBaseUrl: 'https://ollama.com' },
+        'chatgpt':      { modelLabel: 'OpenAI Model ID',   placeholder: 'e.g. gpt-4o',         hint: '',                                              baseUrl: false, apiHint: 'API key is read from OPENAI_API_KEY env var.',   unload: false },
+        'claude':       { modelLabel: 'Claude Model ID',   placeholder: 'e.g. claude-opus-4-5',hint: '',                                              baseUrl: false, apiHint: 'API key is read from ANTHROPIC_API_KEY env var.',unload: false },
+        'custom':       { modelLabel: 'Model Name',        placeholder: 'model name',           hint: '',                                              baseUrl: true,  apiHint: '',                                              unload: false },
+      };
+
+      function applyProviderUI(prefix, provider) {
+        var cfg = PROVIDER_HINTS[provider] || PROVIDER_HINTS['ollama'];
+        var lbl = document.getElementById(prefix + '-modelName-label');
+        var inp = document.getElementById(prefix + '-modelName');
+        var hnt = document.getElementById(prefix + '-modelName-hint');
+        if (lbl) lbl.textContent = cfg.modelLabel;
+        if (inp) inp.placeholder = cfg.placeholder;
+        if (hnt) hnt.textContent = cfg.hint;
+
+        var buField = document.getElementById(prefix + '-baseUrl-field');
+        if (buField) buField.style.display = cfg.baseUrl ? '' : 'none';
+
+        var akField = document.getElementById(prefix + '-apikey-hint-field');
+        var akHint  = document.getElementById(prefix + '-apikey-hint');
+        if (akField) akField.style.display = cfg.apiHint ? '' : 'none';
+        if (akHint)  akHint.textContent = cfg.apiHint;
+
+        var ulField = document.getElementById(prefix + '-closeAfterUse-field');
+        if (ulField) ulField.style.display = cfg.unload ? '' : 'none';
+      }
+
+      function onAddProviderChange() {
+        var provider = document.getElementById('add-provider').value;
+        applyProviderUI('add', provider);
+        var cfg = PROVIDER_HINTS[provider] || PROVIDER_HINTS['ollama'];
+        var buInput = document.getElementById('add-baseUrl');
+        if (buInput && cfg.defaultBaseUrl) buInput.value = cfg.defaultBaseUrl;
+      }
+      function onEditProviderChange() {
+        applyProviderUI('edit', document.getElementById('edit-provider').value);
+      }
+
+      var pullInProgress = false;
+
+      function isOllamaProvider(provider) {
+        return provider === 'ollama' || provider === 'ollama cloud';
+      }
+
+      document.getElementById('add-model-form').addEventListener('submit', function(e) {
+        if (pullInProgress) { e.preventDefault(); return; }
+        var provider = document.getElementById('add-provider').value;
+        var modelName = document.getElementById('add-modelName').value.trim();
+        if (!isOllamaProvider(provider)) return;
+        if (INSTALLED_OLLAMA_MODELS.indexOf(modelName) !== -1) return;
+
+        e.preventDefault();
+        startPull(modelName, this);
+      });
+
+      function startPull(modelName, form) {
+        pullInProgress = true;
+        document.getElementById('pull-progress-wrap').style.display = '';
+        document.getElementById('pull-status-text').textContent = 'Installing ' + ' ' + modelName + '…';
+        document.getElementById('pull-progress-bar').style.width = '0%';
+        document.getElementById('pull-progress-label').textContent = '';
+        document.getElementById('add-submit-btn').disabled = true;
+        document.getElementById('add-cancel-btn').disabled = true;
+
+        var es = new EventSource('/models/pull-stream/' + encodeURIComponent(modelName));
+
+        es.onmessage = function(event) {
+          var data = JSON.parse(event.data);
+          if (data.error) {
+            es.close();
+            pullInProgress = false;
+            document.getElementById('pull-status-text').textContent = 'Error: ' + data.error;
+            document.getElementById('pull-progress-bar').style.background = 'var(--error)';
+            document.getElementById('add-submit-btn').disabled = false;
+            document.getElementById('add-cancel-btn').disabled = false;
+            return;
+          }
+          if (data.done) {
+            es.close();
+            pullInProgress = false;
+            document.getElementById('pull-status-text').textContent = 'Installed! Adding model…';
+            document.getElementById('pull-progress-bar').style.width = '100%';
+            document.getElementById('add-submit-btn').disabled = false;
+            document.getElementById('add-cancel-btn').disabled = false;
+            form.submit();
+            return;
+          }
+          var status = data.status || '';
+          document.getElementById('pull-status-text').textContent = status;
+          if (data.total && data.completed) {
+            var pct = Math.round((data.completed / data.total) * 100);
+            document.getElementById('pull-progress-bar').style.width = pct + '%';
+            document.getElementById('pull-progress-label').textContent =
+              Math.round(data.completed / 1e6) + ' MB / ' + Math.round(data.total / 1e6) + ' MB';
+          }
+        };
+
+        es.onerror = function() {
+          es.close();
+          pullInProgress = false;
+          document.getElementById('pull-status-text').textContent = 'Connection lost during install.';
+          document.getElementById('pull-progress-bar').style.background = 'var(--error)';
+          document.getElementById('add-submit-btn').disabled = false;
+          document.getElementById('add-cancel-btn').disabled = false;
+        };
+      }
+
+      function openAddModal() {
+        document.getElementById('add-modal-title').textContent = 'Add Model';
+        document.getElementById('add-model-form').action = '/models/add';
+        document.getElementById('add-from-ollama').value = '0';
+        document.getElementById('add-modelName').value = '';
+        document.getElementById('add-name').value = '';
+        document.getElementById('add-baseUrl').value = '';
+        document.getElementById('add-closeAfterUse').checked = true;
+        document.getElementById('add-closeAfterUse-hidden').disabled = true;
+        document.getElementById('add-active').checked = true;
+        document.getElementById('add-provider').value = 'ollama';
+        document.querySelectorAll('.add-role-check').forEach(function(cb) {
+          cb.checked = cb.value === 'translation';
+        });
+        applyProviderUI('add', 'ollama');
+        openModal('add-manual-modal');
+      }
+
+      document.querySelectorAll('[id^="edit-btn-"]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var m = JSON.parse(btn.dataset.model);
+          document.getElementById('edit-form').action = '/models/update/' + m.id;
+          document.getElementById('edit-name').value = m.name;
+          document.getElementById('edit-closeAfterUse').checked = !!m.closeAfterUse;
+          document.getElementById('edit-active').checked = !!m.active;
+          document.getElementById('edit-provider').value = m.provider || 'ollama';
+          document.getElementById('edit-baseUrl').value = m.baseUrl || '';
+          applyProviderUI('edit', m.provider || 'ollama');
+          openModal('edit-modal');
+        });
+      });
+
+      document.querySelectorAll('[id^="role-btn-"]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var m = JSON.parse(btn.dataset.model);
+          document.getElementById('role-modal-name').textContent = m.name;
+          var allRoles = [
+            { key: 'translation', label: 'Translation', cls: 'badge-info' },
+            { key: 'judge', label: 'Judge', cls: 'badge-warning' },
+            { key: 'fallbackJudge', label: 'Fallback Judge', cls: 'badge-warning' },
+            { key: 'nameFormatter', label: 'Name Formatter', cls: 'badge-neutral' }
+          ];
+          var currentRoles = (m.roles || []).map(function(r) { return r.role; });
+          var html = '<div style="display:flex;flex-direction:column;gap:.6rem;padding:.25rem 0">';
+          allRoles.forEach(function(role) {
+            var hasRole = currentRoles.indexOf(role.key) !== -1;
+            var action = hasRole ? 'remove' : 'add';
+            html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border)">';
+            html += '<span class="badge ' + role.cls + '">' + role.label + '</span>';
+            html += '<form method="POST" action="/models/role/' + m.id + '">';
+            html += '<input type="hidden" name="__RequestVerificationToken" value="' + AF_TOKEN + '">';
+            html += '<input type="hidden" name="role" value="' + role.key + '">';
+            html += '<input type="hidden" name="action" value="' + action + '">';
+            html += '<button type="submit" class="btn btn-sm ' + (hasRole ? 'btn-danger' : 'btn-primary') + '">';
+            html += hasRole ? 'Remove' : 'Add';
+            html += '</button></form></div>';
+          });
+          html += '</div>';
+          document.getElementById('role-modal-body').innerHTML = html;
+          openModal('role-modal');
+        });
+      });
+
+      document.querySelectorAll('[data-ollama-model]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var modelName = btn.dataset.ollamaModel;
+          var isCloud = modelName.indexOf('-cloud') !== -1 || modelName.indexOf(':cloud') !== -1;
+          var provider = isCloud ? 'ollama cloud' : 'ollama';
+          document.getElementById('add-modal-title').textContent = 'Add Model from Ollama';
+          document.getElementById('add-model-form').action = '/models/sync';
+          document.getElementById('add-from-ollama').value = '1';
+          document.getElementById('add-modelName').value = modelName;
+          document.getElementById('add-name').value = '';
+          document.getElementById('add-baseUrl').value = '';
+          document.getElementById('add-closeAfterUse').checked = true;
+          document.getElementById('add-closeAfterUse-hidden').disabled = true;
+          document.getElementById('add-active').checked = true;
+          document.getElementById('add-provider').value = provider;
+          var recInput = document.getElementById('add-recommended-id');
+          if (recInput) recInput.remove();
+          document.querySelectorAll('.add-role-check').forEach(function(cb) {
+            cb.checked = cb.value === 'translation';
+          });
+          applyProviderUI('add', provider);
+          var cfg = PROVIDER_HINTS[provider] || PROVIDER_HINTS['ollama'];
+          var buInput = document.getElementById('add-baseUrl');
+          if (buInput) buInput.value = cfg.defaultBaseUrl || '';
+          openModal('add-manual-modal');
+        });
+      });
+
+      document.querySelectorAll('[data-recommended-model]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var rec = JSON.parse(btn.dataset.recommendedModel);
+          var provider = rec.provider || 'ollama';
+          var isOllama = provider === 'ollama' || provider === 'ollama cloud';
+          document.getElementById('add-modal-title').textContent = 'Add Model';
+          document.getElementById('add-model-form').action = isOllama ? '/models/sync' : '/models/add';
+          document.getElementById('add-from-ollama').value = isOllama ? '1' : '0';
+          document.getElementById('add-modelName').value = rec.name || '';
+          document.getElementById('add-name').value = '';
+          document.getElementById('add-baseUrl').value = rec.baseUrl || '';
+          document.getElementById('add-closeAfterUse').checked = true;
+          document.getElementById('add-closeAfterUse-hidden').disabled = true;
+          document.getElementById('add-active').checked = true;
+          document.getElementById('add-provider').value = provider;
+          var recInput = document.getElementById('add-recommended-id');
+          if (isOllama) {
+            if (!recInput) {
+              recInput = document.createElement('input');
+              recInput.type = 'hidden';
+              recInput.name = 'recommendedModelId';
+              recInput.id = 'add-recommended-id';
+              document.getElementById('add-model-form').appendChild(recInput);
+            }
+            recInput.value = rec.id || '';
+          } else if (recInput) {
+            recInput.remove();
+          }
+          var recRoles = (rec.roles || '').split(',').map(function(r) { return r.trim(); });
+          document.querySelectorAll('.add-role-check').forEach(function(cb) {
+            cb.checked = recRoles.indexOf(cb.value) !== -1;
+          });
+          applyProviderUI('add', provider);
+          var cfg = PROVIDER_HINTS[provider] || PROVIDER_HINTS['ollama'];
+          var buInput = document.getElementById('add-baseUrl');
+          if (buInput && cfg.defaultBaseUrl && !rec.baseUrl) buInput.value = cfg.defaultBaseUrl || '';
+          openModal('add-manual-modal');
+        });
+      });
+
+      document.querySelectorAll('.ollama-remove-form').forEach(function(form) {
+        form.addEventListener('submit', function(e) {
+          var btn = form.querySelector('[data-model-name]');
+          var name = btn ? btn.getAttribute('data-model-name') : 'this model';
+          if (!confirm('Remove ' + name + ' from Ollama? This cannot be undone.')) {
+            e.preventDefault();
+          }
+        });
+      });
+</script>
+}
+}
+
+@functions {
+    // Provider names as compared against in page JS.
+    private static string ProviderText(ModelProvider p) => p switch
+    {
+        ModelProvider.OllamaCloud => "ollama cloud",
+        ModelProvider.ChatGpt => "chatgpt",
+        ModelProvider.Claude => "claude",
+        ModelProvider.Custom => "custom",
+        _ => "ollama"
+    };
+
+    private static string RoleKey(ModelRoleKind r) =>
+        JsonNamingPolicy.CamelCase.ConvertName(r.ToString());
+
+    // Confirm text; apostrophes are JS-escaped, Razor then HTML-encodes the attribute value.
+    private static string ConfirmRemove(string name) =>
+        "Remove model " + name.Replace("'", "\\'") + "?";
+
+    private static string ModelJson(Model m) => JsonSerializer.Serialize(new
+    {
+        id = m.Id,
+        name = m.Name,
+        modelName = m.ModelName,
+        provider = ProviderText(m.Provider),
+        baseUrl = m.BaseUrl,
+        closeAfterUse = m.CloseAfterUse,
+        active = m.Active,
+        size = m.Size,
+        parameterSize = m.ParameterSize,
+        roles = m.ModelRoles.Where(r => r.DeletedAt == null)
+            .Select(r => new { role = RoleKey(r.Role) }).ToList()
+    });
+
+    private static string RecommendedJson(RecommendedCatalogEntry r) => JsonSerializer.Serialize(new
+    {
+        id = r.Id,
+        name = r.Name,
+        provider = ProviderText(r.Provider),
+        baseUrl = r.BaseUrl,
+        roles = string.Join(",", r.Roles.Select(RoleKey))
+    });
+
+    // Display format: da-DK locale string with its first "." removed and the rest turned to "-".
+    private static string FormatModifiedAt(string? iso)
+    {
+        if (iso == null || !DateTimeOffset.TryParse(iso, CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var dto))
+        {
+            return iso ?? "—";
+        }
+
+        var s = dto.LocalDateTime.ToString("dd.MM.yyyy HH.mm", CultureInfo.InvariantCulture);
+        var firstDot = s.IndexOf('.');
+        return (firstDot >= 0 ? s.Remove(firstDot, 1) : s).Replace(".", "-");
+    }
+
+    private static string FormatSizeGb(string? size)
+    {
+        if (size == null || !double.TryParse(size, NumberStyles.Any, CultureInfo.InvariantCulture, out var bytes))
+        {
+            return "—";
+        }
+
+        return (bytes / 1e9).ToString("0.0", CultureInfo.InvariantCulture) + " GB";
+    }
+}

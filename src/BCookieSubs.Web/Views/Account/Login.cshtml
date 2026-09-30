@@ -1,0 +1,30 @@
+@model BCookieSubs.Web.Controllers.LoginInput
+@{
+    ViewData["Title"] = "Sign In";
+    Layout = "_AuthLayout";
+}
+<div class="auth-card">
+    <div class="lgn-logo-wrap">
+        <img class="lgn-logo auth-logo" src="~/images/icon.png" alt="BCookieSubs logo">
+    </div>
+    <h1 class="auth-title">BCookieSubs</h1>
+    <p class="auth-subtitle">Sign in to continue</p>
+
+    @if (ViewBag.Error is string error)
+    {
+        <div class="alert alert-error">@error</div>
+    }
+
+    <form method="POST" asp-controller="Account" asp-action="Login" asp-route-next="@ViewBag.Next">
+        @Html.AntiForgeryToken()
+        <div class="field">
+            <label for="username">Username</label>
+            <input type="text" id="username" asp-for="UserName" autocomplete="username" autofocus required>
+        </div>
+        <div class="field">
+            <label for="password">Password</label>
+            <input type="password" id="password" asp-for="Password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+    </form>
+</div>

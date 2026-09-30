@@ -1,0 +1,21 @@
+@model (IReadOnlyList<BCookieSubs.Shared.Security.PermissionCatalog.Definition> Permissions, IReadOnlyList<string> CheckedKeys)
+@{
+    var cats = Model.Permissions.GroupBy(p => p.Category);
+}
+<div class="perm-cb-wrap">
+    @foreach (var cat in cats)
+    {
+        <div>
+            <div class="perm-cat-label">@cat.Key</div>
+            <div class="checkbox-group perm-cb-group">
+                @foreach (var p in cat)
+                {
+                    <label class="checkbox-label" title="@p.Description">
+                        <input type="checkbox" name="permissionKeys" value="@p.Key" @(Model.CheckedKeys.Contains(p.Key) ? "checked" : "")>
+                        @p.Label
+                    </label>
+                }
+            </div>
+        </div>
+    }
+</div>

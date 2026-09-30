@@ -1,0 +1,568 @@
+@using System.Text.Json
+@using BCookieSubs.Shared.Security
+@using BCookieSubs.Shared.Services
+@{
+    ViewData["Title"] = "Users";
+    ViewData["ActiveNav"] = "users";
+    var users = (List<UserListItem>)ViewBag.Users;
+    var roles = (List<RoleListItem>)ViewBag.Roles;
+    var permissions = (IReadOnlyList<PermissionCatalog.Definition>)ViewBag.Permissions;
+    var currentUserId = (long)ViewBag.CurrentUserId;
+    var canAddUser = (bool)ViewBag.CanAddUser;
+    var canManageRoles = (bool)ViewBag.CanManageRoles;
+    var canChangeOtherUsersPassword = (bool)ViewBag.CanChangeOtherUsersPassword;
+    var permDefs = permissions.ToDictionary(p => p.Key);
+    var builtIn = RoleManagementService.BuiltInRoles;
+    var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    var allPermissionsJson = JsonSerializer.Serialize(
+        permissions.Select(p => new { key = p.Key, label = p.Label, description = p.Description, category = p.Category }),
+        jsonOpts);
+    string JsName(string name) => name.Replace("'", "\\'");
+}
+@if (ViewBag.ToastError is string toastError)
+{
+    <div class="toast toast-error" id="page-toast">@toastError</div>
+}
+
+<div class="page-header">
+    <h1>Users</h1>
+    @if (canAddUser)
+    {
+        <button class="btn btn-primary" onclick="openModal('add-modal')">+ Create User</button>
+    }
+</div>
+
+<div class="card">
+    @if (users.Count == 0)
+    {
+        <p class="empty-state">No users found.</p>
+    }
+    else
+    {
+        <div class="table-wrap users-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Roles</th>
+                        <th>Created</th>
+                        <th class="usr-th-actions">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in users)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@u.UserName</strong>
+                                @if (u.Id == currentUserId)
+                                {
+                                    <span class="badge badge-info usr-ml-half">You</span>
+                                }
+                            </td>
+                            <td>
+                                @if (u.Roles.Count == 0)
+                                {
+                                    <span class="text-dim">—</span>
+                                }
+                                else
+                                {
+                                    @foreach (var r in u.Roles)
+                                    {
+                                        <span class="badge badge-neutral usr-mr-tiny">@r.Name</span>
+                                    }
+                                }
+                            </td>
+                            <td class="text-dim">@u.CreatedAt.ToString("yyyy-MM-dd")</td>
+                            <td class="actions usr-actions-end">
+                                @if (canManageRoles && u.Id != currentUserId)
+                                {
+                                    <button class="btn btn-sm btn-secondary user-edit-btn"
+                                            data-user-id="@u.Id"
+                                            data-username="@u.UserName"
+                                            data-role-ids='@Html.Raw(JsonSerializer.Serialize(u.Roles.Select(r => r.Id)))'>
+                                        Edit Roles
+                                    </button>
+                                }
+                                @if (canChangeOtherUsersPassword && u.Id != currentUserId)
+                                {
+                                    <button class="btn btn-sm btn-secondary user-pw-btn"
+                                            data-id="@u.Id"
+                                            data-username="@u.UserName">
+                                        Change Password
+                                    </button>
+                                }
+                                @if (canAddUser && u.Id != currentUserId)
+                                {
+                                    <form method="POST" action="/users/delete/@u.Id" class="usr-inline"
+                                          onsubmit="return confirm('Delete user @(JsName(u.UserName))?')">
+                                        @Html.AntiForgeryToken()
+                                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                                    </form>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="user-cards">
+            @foreach (var u in users)
+            {
+                <div class="user-card">
+                    <div class="user-card-header">
+                        <div>
+                            <strong>@u.UserName</strong>
+                            @if (u.Id == currentUserId)
+                            {
+                                <span class="badge badge-info usr-ml-sm">You</span>
+                            }
+                        </div>
+                        @if (u.Roles.Count > 0)
+                        {
+                            <span class="badge badge-neutral">@u.Roles[0].Name</span>
+                        }
+                        else
+                        {
+                            <span class="badge badge-neutral">No role</span>
+                        }
+                    </div>
+                    <div class="text-dim usr-card-created">Created @u.CreatedAt.ToString("yyyy-MM-dd")</div>
+                    <div class="actions">
+                        @if (canManageRoles && u.Id != currentUserId)
+                        {
+                            <button class="btn btn-sm btn-secondary user-edit-btn"
+                                    data-user-id="@u.Id"
+                                    data-username="@u.UserName"
+                                    data-role-ids='@Html.Raw(JsonSerializer.Serialize(u.Roles.Select(r => r.Id)))'>
+                                Edit Roles
+                            </button>
+                        }
+                        @if (canChangeOtherUsersPassword && u.Id != currentUserId)
+                        {
+                            <button class="btn btn-sm btn-secondary user-pw-btn"
+                                    data-id="@u.Id"
+                                    data-username="@u.UserName">
+                                Change Password
+                            </button>
+                        }
+                        @if (canAddUser && u.Id != currentUserId)
+                        {
+                            <form method="POST" action="/users/delete/@u.Id" class="usr-inline"
+                                  onsubmit="return confirm('Delete user @(JsName(u.UserName))?')">
+                                @Html.AntiForgeryToken()
+                                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                            </form>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<div class="page-header usr-section-mt">
+    <h2 class="usr-roles-heading">Roles</h2>
+    @if (canManageRoles)
+    {
+        <button class="btn btn-primary" onclick="openModal('create-role-modal')">+ Create Role</button>
+    }
+</div>
+
+<div class="card">
+    @if (roles.Count == 0)
+    {
+        <p class="empty-state">No roles defined.</p>
+    }
+    else
+    {
+        <div class="usr-stack-sm">
+            @foreach (var r in roles)
+            {
+                var isBuiltIn = builtIn.Contains(r.Name);
+                <div class="role-row usr-role-box" id="role-row-@r.Id">
+                    <div class="usr-role-head">
+                        <div class="usr-role-meta">
+                            <span class="badge badge-neutral usr-noshrink">@r.Name</span>
+                            <span class="text-dim usr-role-level">Level @r.Level</span>
+                            @if (isBuiltIn)
+                            {
+                                <span class="badge badge-info usr-role-builtin">Built-in</span>
+                            }
+                            @if (r.Description is string desc && desc.Length > 0)
+                            {
+                                <span class="text-dim usr-role-desc">@desc</span>
+                            }
+                        </div>
+                        <div class="usr-role-actions">
+                            <button class="btn btn-sm btn-secondary role-toggle-btn" data-role-id="@r.Id" title="Show/hide permissions">
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                            @if (canManageRoles)
+                            {
+                                <button class="btn btn-sm btn-secondary role-edit-btn"
+                                        data-role='@Html.Raw(JsonSerializer.Serialize(new {
+                                            id = r.Id, name = r.Name, level = r.Level,
+                                            description = r.Description ?? "", permissionKeys = r.Permissions
+                                        }, jsonOpts).Replace("'", "&#39;"))'>
+                                    Edit
+                                </button>
+                                @if (!isBuiltIn)
+                                {
+                                    <form method="POST" action="/users/roles/delete/@r.Id" class="usr-inline"
+                                          onsubmit="return confirm('Delete role @(JsName(r.Name))?')">
+                                        @Html.AntiForgeryToken()
+                                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                                    </form>
+                                }
+                            }
+                        </div>
+                    </div>
+
+                    <div class="role-perms-panel usr-perms-panel" id="role-perms-@r.Id">
+                        @if (r.Permissions.Count == 0)
+                        {
+                            <span class="text-dim usr-fs-82">No permissions assigned.</span>
+                        }
+                        else
+                        {
+                            var cats = r.Permissions
+                                .Select(k => permDefs.GetValueOrDefault(k))
+                                .Where(d => d is not null).Cast<PermissionCatalog.Definition>()
+                                .GroupBy(d => d.Category);
+                            <div class="usr-perms-cats">
+                                @foreach (var cat in cats)
+                                {
+                                    <div class="usr-perms-cat">
+                                        <div class="usr-perms-cat-label">@cat.Key</div>
+                                        <div class="usr-perms-list">
+                                            @foreach (var p in cat)
+                                            {
+                                                <span class="usr-perm-item" title="@p.Description"><i class="fa-solid fa-check usr-perm-check"></i>@p.Label</span>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (canAddUser)
+{
+    <div class="modal-overlay" id="add-modal" onclick="closeModalOnOverlay(event)">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Create User</h2>
+                <button class="btn btn-icon" onclick="closeModal('add-modal')">✕</button>
+            </div>
+            <form method="POST" action="/users/create" id="create-user-form">
+                @Html.AntiForgeryToken()
+                <div id="create-user-error" class="alert alert-error usr-alert-hidden"></div>
+                <div class="field">
+                    <label for="cu-username">Username</label>
+                    <input type="text" id="cu-username" name="UserName" required>
+                </div>
+                <div class="field">
+                    <label for="cu-password">Password <span class="hint">(min 8 chars)</span></label>
+                    <input type="password" id="cu-password" name="Password" required minlength="8">
+                </div>
+                <div class="field">
+                    <label for="cu-password2">Confirm Password</label>
+                    <input type="password" id="cu-password2" name="Password2" required>
+                </div>
+                <div class="field">
+                    <label for="cu-roleId">Role</label>
+                    <select id="cu-roleId" name="RoleId" required>
+                        @foreach (var r in roles)
+                        {
+                            <option value="@r.Id">@r.Name (Level @r.Level)</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="cu-language">Language</label>
+                    <select id="cu-language" name="Language">
+                        <option value="system" selected>System default</option>
+                        <option value="en">🇬🇧 English</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create User</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+
+@if (canManageRoles)
+{
+    <div class="modal-overlay" id="edit-modal" onclick="closeModalOnOverlay(event)">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Edit Roles — <span id="edit-username"></span></h2>
+                <button class="btn btn-icon" onclick="closeModal('edit-modal')">✕</button>
+            </div>
+            <form method="POST" id="edit-form" action="">
+                @Html.AntiForgeryToken()
+                <div class="field">
+                    <label>Roles</label>
+                    <div class="checkbox-group usr-maxh-none">
+                        @foreach (var r in roles)
+                        {
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="roleIds" value="@r.Id" data-role-id="@r.Id">
+                                @r.Name <span class="text-dim usr-fs-80">(Level @r.Level)</span>
+                            </label>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('edit-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Roles</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="create-role-modal" onclick="closeModalOnOverlay(event)">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h2>Create Role</h2>
+                <button class="btn btn-icon" onclick="closeModal('create-role-modal')">✕</button>
+            </div>
+            <form method="POST" action="/users/roles/create">
+                @Html.AntiForgeryToken()
+                <div class="field-row">
+                    <div class="field usr-flex-2">
+                        <label>Role Name</label>
+                        <input type="text" name="Name" required placeholder="e.g. Translator">
+                    </div>
+                    <div class="field usr-flex-1">
+                        <label>Level</label>
+                        <input type="number" name="Level" min="1" required placeholder="e.g. 15">
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Description (optional)</label>
+                    <input type="text" name="Description" placeholder="Short description of this role">
+                </div>
+                <div class="field">
+                    <label>Permissions</label>
+                    <partial name="_PermissionCheckboxes" model="(permissions, (IReadOnlyList<string>)Array.Empty<string>())" />
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('create-role-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Role</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="edit-role-modal" onclick="closeModalOnOverlay(event)">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h2>Edit Role — <span id="edit-role-name"></span></h2>
+                <button class="btn btn-icon" onclick="closeModal('edit-role-modal')">✕</button>
+            </div>
+            <form method="POST" id="edit-role-form" action="">
+                @Html.AntiForgeryToken()
+                <div class="field-row">
+                    <div class="field usr-flex-2">
+                        <label>Role Name</label>
+                        <input type="text" id="er-name" name="Name" required>
+                    </div>
+                    <div class="field usr-flex-1">
+                        <label>Level</label>
+                        <input type="number" id="er-level" name="Level" min="1" required>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Description (optional)</label>
+                    <input type="text" id="er-description" name="Description">
+                </div>
+                <div class="field">
+                    <label>Permissions</label>
+                    <div id="edit-role-perms"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('edit-role-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Role</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+
+<div class="modal-overlay" id="pw-modal" onclick="closeModalOnOverlay(event)">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Change Password — <span id="pw-username"></span></h2>
+            <button class="btn btn-icon" onclick="closeModal('pw-modal')">✕</button>
+        </div>
+        <form method="POST" id="pw-form" action="">
+            @Html.AntiForgeryToken()
+            <div id="pw-error" class="alert alert-error usr-alert-hidden"></div>
+            <div class="field">
+                <label for="pw-password">New Password <span class="hint">(min 8 chars)</span></label>
+                <input type="password" id="pw-password" name="Password" required minlength="8">
+            </div>
+            <div class="field">
+                <label for="pw-password2">Confirm Password</label>
+                <input type="password" id="pw-password2" name="Password2" required>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('pw-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Update Password</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+  var ALL_PERMISSIONS = @Html.Raw(allPermissionsJson);
+
+  document.querySelectorAll('.user-edit-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var userId = btn.dataset.userId;
+      var username = btn.dataset.username;
+      var currentRoleIds = JSON.parse(btn.dataset.roleIds || '[]');
+      document.getElementById('edit-username').textContent = username;
+      document.getElementById('edit-form').action = '/users/update-roles/' + userId;
+      document.querySelectorAll('#edit-form [data-role-id]').forEach(function(el) {
+        el.checked = currentRoleIds.indexOf(parseInt(el.dataset.roleId)) !== -1;
+      });
+      openModal('edit-modal');
+    });
+  });
+
+  document.querySelectorAll('.user-pw-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.getElementById('pw-username').textContent = btn.dataset.username;
+      document.getElementById('pw-form').action = '/users/change-password/' + btn.dataset.id;
+      document.getElementById('pw-password').value = '';
+      document.getElementById('pw-password2').value = '';
+      document.getElementById('pw-error').style.display = 'none';
+      openModal('pw-modal');
+    });
+  });
+
+  document.querySelectorAll('.role-toggle-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var roleId = btn.dataset.roleId;
+      var panel = document.getElementById('role-perms-' + roleId);
+      var icon = btn.querySelector('i');
+      var hidden = panel.style.display === 'none' ||
+        (panel.style.display === '' && getComputedStyle(panel).display === 'none');
+      if (hidden) {
+        panel.style.display = 'block';
+        icon.classList.replace('fa-chevron-down', 'fa-chevron-up');
+      } else {
+        panel.style.display = 'none';
+        icon.classList.replace('fa-chevron-up', 'fa-chevron-down');
+      }
+    });
+  });
+
+  document.querySelectorAll('.role-edit-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var role = JSON.parse(btn.dataset.role);
+      document.getElementById('edit-role-name').textContent = role.name;
+      document.getElementById('edit-role-form').action = '/users/roles/update/' + role.id;
+      document.getElementById('er-name').value = role.name;
+      document.getElementById('er-level').value = role.level;
+      document.getElementById('er-description').value = role.description || '';
+
+      var container = document.getElementById('edit-role-perms');
+      container.innerHTML = buildPermissionCheckboxes(role.permissionKeys || []);
+      openModal('edit-role-modal');
+    });
+  });
+
+  function buildPermissionCheckboxes(checkedKeys) {
+    var cats = {};
+    ALL_PERMISSIONS.forEach(function(p) {
+      if (!cats[p.category]) cats[p.category] = [];
+      cats[p.category].push(p);
+    });
+    var html = '<div style="display:flex;flex-direction:column;gap:.75rem">';
+    Object.keys(cats).forEach(function(cat) {
+      html += '<div>';
+      html += '<div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin-bottom:.35rem">' + esc(cat) + '</div>';
+      html += '<div class="checkbox-group" style="max-height:none">';
+      cats[cat].forEach(function(p) {
+        var checked = checkedKeys.indexOf(p.key) !== -1 ? ' checked' : '';
+        html += '<label class="checkbox-label" title="' + esc(p.description) + '">';
+        html += '<input type="checkbox" name="permissionKeys" value="' + esc(p.key) + '"' + checked + '>';
+        html += ' ' + esc(p.label);
+        html += '</label>';
+      });
+      html += '</div></div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function validatePasswords(form, errorId) {
+    var pw = form.querySelector('[name="Password"]');
+    var pw2 = form.querySelector('[name="Password2"]');
+    var errEl = document.getElementById(errorId);
+    if (!pw || !pw2) return true;
+    var error = '';
+    if (pw.value.length < 8) error = 'Password must be at least 8 characters.';
+    else if (pw.value !== pw2.value) error = 'Passwords do not match.';
+    if (error) {
+      if (errEl) { errEl.textContent = error; errEl.style.display = ''; }
+      return false;
+    }
+    if (errEl) errEl.style.display = 'none';
+    return true;
+  }
+
+  document.getElementById('pw-form').addEventListener('submit', function(e) {
+    if (!validatePasswords(this, 'pw-error')) {
+      e.preventDefault();
+      return;
+    }
+    var submitBtn = this.querySelector('button[type="submit"]');
+    var cancelBtn = this.querySelector('button[type="button"]');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Updating…'; }
+    if (cancelBtn) cancelBtn.disabled = true;
+  });
+
+  var createForm = document.getElementById('create-user-form');
+  if (createForm) {
+    createForm.addEventListener('submit', function(e) {
+      if (!validatePasswords(this, 'create-user-error')) {
+        e.preventDefault();
+        return;
+      }
+      var submitBtn = this.querySelector('button[type="submit"]');
+      var cancelBtn = this.querySelector('button[type="button"]');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Creating…'; }
+      if (cancelBtn) cancelBtn.disabled = true;
+    });
+  }
+
+  var editForm = document.getElementById('edit-form');
+  if (editForm) {
+    editForm.addEventListener('submit', function(e) {
+      var submitBtn = this.querySelector('button[type="submit"]');
+      var cancelBtn = this.querySelector('button[type="button"]');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving…'; }
+      if (cancelBtn) cancelBtn.disabled = true;
+    });
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+}

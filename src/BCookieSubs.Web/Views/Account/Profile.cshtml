@@ -1,0 +1,207 @@
+@{
+    ViewData["Title"] = "My Account";
+    ViewData["ActiveNav"] = "account";
+    var themes = (List<BCookieSubs.Shared.Database.Entities.Theme>)ViewBag.Themes;
+    var languages = (List<BCookieSubs.Shared.Database.Entities.Language>)ViewBag.Languages;
+    var userLanguages = (List<BCookieSubs.Shared.Services.TranslationLanguageRow>)ViewBag.UserLanguages;
+    var languageValue = (string?)ViewBag.Language;
+    var showPosters = (bool)ViewBag.ShowPosters;
+    var selectedThemeId = (long?)ViewBag.SelectedThemeId;
+    var myRoles = (List<(string Name, int Level)>)ViewBag.MyRoles;
+}
+
+@if (TempData["Error"] is string toastError)
+{
+    <div class="toast toast-error" id="page-toast">@toastError</div>
+}
+
+<div class="page-header"><h1>My Account</h1></div>
+
+<div class="account-grid">
+
+    <div class="card card-account-main acc-col">
+
+        <div class="card-header"><h2>Profile</h2></div>
+        <form method="POST" action="/account/username" id="username-form">
+            @Html.AntiForgeryToken()
+            <div class="acc-row-end">
+                <div class="field acc-field-grow">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="UserName" value="@ViewBag.Username" required minlength="1">
+                </div>
+                <button type="submit" class="btn btn-primary acc-no-shrink">Save</button>
+            </div>
+        </form>
+
+        <div class="card-divider"></div>
+        <div class="card-header"><h2>Settings</h2></div>
+        <form method="POST" action="/account/showPosters" class="acc-col-gap6">
+            @Html.AntiForgeryToken()
+            <div class="field field-checkbox acc-m0">
+                <input type="checkbox" id="showPostersToggle" name="showPosters" value="1" @(showPosters ? "checked" : "")>
+                <label for="showPostersToggle">Show media posters <span class="text-dim acc-text-sm">(when available)</span></label>
+            </div>
+            <button type="submit" class="btn btn-primary acc-self-end">Save</button>
+        </form>
+
+        <div class="card-divider"></div>
+        <div class="card-header"><h2>Theme</h2></div>
+        <form method="POST" action="/account/theme" class="acc-row-end">
+            @Html.AntiForgeryToken()
+            <div class="field acc-field-mb0">
+                <label for="themeId">Selected theme</label>
+                <select id="themeId" name="themeId">
+                    @foreach (var t in themes)
+                    {
+                        <option value="@t.Id" selected="@(t.Id == selectedThemeId ? "selected" : null)">@t.Name@(t.IsPublic ? "" : " ✏")</option>
+                    }
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary acc-no-shrink">Apply</button>
+        </form>
+
+        <div class="card-divider"></div>
+        <div class="card-header"><h2>Language</h2></div>
+        <small class="text-dim acc-block-mb">Your interface language. System default follows the global setting.</small>
+        <form method="POST" action="/account/language" class="acc-row-end">
+            @Html.AntiForgeryToken()
+            <div class="field acc-field-mb0">
+                <select name="language">
+                    <option value="system" selected="@(string.IsNullOrEmpty(languageValue) ? "selected" : null)">System default</option>
+                    <option value="en" selected="@(string.Equals(languageValue, "en", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">🇬🇧 English</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary acc-no-shrink">Save</button>
+        </form>
+
+        <div class="card-divider"></div>
+        <div class="card-header">
+            <h2>My Target Languages</h2>
+            <small class="text-dim">Pre-selected on upload <i class="fa-solid fa-circle-info setting-info" data-tip="These languages are pre-selected when you upload an SRT file or choose a movie/episode to translate."></i></small>
+        </div>
+
+        @if (userLanguages.Count == 0)
+        {
+            <p class="empty-state">No defaults set.</p>
+        }
+        else
+        {
+            <div class="acc-lang-list">
+                @for (var idx = 0; idx < userLanguages.Count; idx++)
+                {
+                    var cl = userLanguages[idx];
+                    var lang = languages.FirstOrDefault(l => l.Id == cl.LanguageId);
+                    <div class="acc-lang-row">
+                        <span class="text-dim acc-lang-num">@(idx + 1).</span>
+                        <span class="acc-lang-name">
+                            @if (!string.IsNullOrEmpty(BCookieSubs.Shared.Repositories.FlagCodes.Derive(lang?.Locale)))
+                            {
+                                <span class="fi fi-@BCookieSubs.Shared.Repositories.FlagCodes.Derive(lang?.Locale) acc-no-shrink"></span>
+                            }
+                            @(lang?.Name ?? "Unknown")
+                        </span>
+
+                        <form method="POST" action="/account/translationlangs/move/@cl.LanguageId" class="acc-inline-form">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="direction" value="up">
+                            <button type="submit" class="btn btn-icon btn-sm" @(idx == 0 ? "disabled" : "") title="Move up">↑</button>
+                        </form>
+
+                        <form method="POST" action="/account/translationlangs/move/@cl.LanguageId" class="acc-inline-form">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="direction" value="down">
+                            <button type="submit" class="btn btn-icon btn-sm" @(idx == userLanguages.Count - 1 ? "disabled" : "") title="Move down">↓</button>
+                        </form>
+
+                        <form method="POST" action="/account/translationlangs/remove/@cl.LanguageId" class="acc-inline-form">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="btn btn-sm btn-danger">✕</button>
+                        </form>
+                    </div>
+                }
+            </div>
+        }
+
+        <form method="POST" action="/account/translationlangs/add"
+              style="display:flex;gap:.5rem;align-items:flex-end;margin-top:.75rem;@(userLanguages.Count == 0 ? "border-top:1px solid var(--border);" : "")">
+            @Html.AntiForgeryToken()
+            <div class="field acc-field-flex">
+                <label>Add language</label>
+                <select name="languageId">
+                    @foreach (var l in languages)
+                    {
+                        <option value="@l.Id">@l.Name</option>
+                    }
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Add</button>
+        </form>
+
+        <div class="card-divider"></div>
+        <div class="card-header"><h2>My Roles</h2></div>
+        @if (myRoles.Count == 0)
+        {
+            <p class="empty-state">No roles assigned.</p>
+        }
+        else
+        {
+            <div class="acc-col-gap5">
+                @foreach (var r in myRoles)
+                {
+                    <div class="acc-role-row">
+                        <span class="badge badge-neutral">@r.Name</span>
+                        <span class="text-dim acc-text-sm2">Level @r.Level</span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="card card-password acc-col">
+        <div class="card-header"><h2>Change Password</h2></div>
+        <form method="POST" action="/account/password" id="password-form" class="acc-col-flex">
+            @Html.AntiForgeryToken()
+            <div class="field">
+                <label for="currentPassword">Current Password</label>
+                <input type="password" id="currentPassword" name="CurrentPassword" required autocomplete="current-password">
+            </div>
+            <div class="field">
+                <label for="newPassword">New Password <span class="hint">(min 8 chars)</span></label>
+                <input type="password" id="newPassword" name="NewPassword" required minlength="8" autocomplete="new-password">
+            </div>
+            <div class="field">
+                <label for="newPassword2">Confirm New Password</label>
+                <input type="password" id="newPassword2" name="NewPassword2" required autocomplete="new-password">
+            </div>
+            <div id="password-error" class="alert alert-error acc-error-box"></div>
+            <button type="submit" class="btn btn-primary acc-submit-end">Update Password</button>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+  (function () {
+    var pwForm = document.getElementById('password-form')
+    if (!pwForm) return
+    pwForm.addEventListener('submit', function (e) {
+      var pw = document.getElementById('newPassword').value
+      var pw2 = document.getElementById('newPassword2').value
+      var err = document.getElementById('password-error')
+      if (pw.length < 8) {
+        err.textContent = 'Password must be at least 8 characters.'
+        err.style.display = ''
+        e.preventDefault()
+        return
+      }
+      if (pw !== pw2) {
+        err.textContent = 'Passwords do not match.'
+        err.style.display = ''
+        e.preventDefault()
+        return
+      }
+      err.style.display = 'none'
+    })
+  })()
+</script>
+}

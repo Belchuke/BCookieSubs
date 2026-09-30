@@ -1,0 +1,220 @@
+@using System.Text.Json
+@using BCookieSubs.Shared.Database.Enums
+@using BCookieSubs.Shared.Services
+@using BCookieSubs.Web.Controllers
+@{
+    ViewData["Title"] = "Prompts";
+    ViewData["ActiveNav"] = "prompts";
+    var promptItems = (List<PromptPageItem>)ViewBag.Prompts;
+    var canManage = (bool)ViewBag.CanManage;
+}
+@if (ViewBag.ToastError is string toastError)
+{
+    <div class="toast toast-error" id="page-toast">@toastError</div>
+}
+
+<div class="page-header">
+    <h1>Prompts</h1>
+    @if (canManage)
+    {
+        <button class="btn btn-primary" onclick="openModal('add-modal')">+ New Prompt</button>
+    }
+</div>
+
+<div class="alert alert-warning prm-alert-mb">
+    Modifying prompts may affect translation quality. Use the //variable// placeholders documented below.
+</div>
+
+<div class="card">
+    @if (promptItems.Count == 0)
+    {
+        <p class="empty-state">No prompts configured.</p>
+    }
+    else
+    {
+        <div class="prompt-list">
+            @foreach (var p in promptItems)
+            {
+                var activeVersion = p.Versions.FirstOrDefault(v => v.Active);
+                <div class="prompt-item">
+                    <div class="prompt-item-header" onclick="togglePrompt(@p.Id)">
+                        <div class="prm-header-row">
+                            <strong>@p.Name</strong>
+                            <span class="badge badge-neutral">@KindText(p.Kind)</span>
+                            @if (!p.Active)
+                            {
+                                <span class="badge badge-error">Inactive</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-success">Active</span>
+                            }
+                            @if (activeVersion != null)
+                            {
+                                <span class="badge badge-info">v@(activeVersion.Version)</span>
+                            }
+                            <span class="text-dim prm-text-sm">@p.Versions.Count version@(p.Versions.Count != 1 ? "s" : "")</span>
+                        </div>
+                        @if (canManage)
+                        {
+                            <div class="actions" onclick="event.stopPropagation()">
+                                <button class="btn btn-sm btn-secondary"
+                                        onclick='openAddVersionModal(@p.Id, @Html.Raw(JsonSerializer.Serialize(p.Name)))'>
+                                    + Version
+                                </button>
+                                @if (p.Kind == PromptKind.Translation)
+                                {
+                                    <form method="POST" action="/prompts/toggle/@p.Id" class="prm-inline-form">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="active" value="@(p.Active ? "0" : "1")">
+                                        <button type="submit" class="btn btn-sm @(p.Active ? "btn-secondary" : "btn-primary")">
+                                            @(p.Active ? "Disable" : "Enable")
+                                        </button>
+                                    </form>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <div class="prompt-body" id="prompt-body-@p.Id">
+                        @if (activeVersion != null)
+                        {
+                            <pre class="prompt-text">@activeVersion.PromptText</pre>
+                        }
+                        else
+                        {
+                            <p class="text-dim prm-no-active">No active version.</p>
+                        }
+
+                        @if (p.Versions.Count > 1)
+                        {
+                            <div class="prompt-versions">
+                                <div class="prompt-versions-title">Version History</div>
+                                @foreach (var v in p.Versions.OrderBy(v => v.Version, System.Collections.Generic.Comparer<int>.Create((a, b) => b - a)))
+                                {
+                                    <div class="prompt-version-row">
+                                        <span class="badge badge-neutral prm-ver-badge">v@(v.Version)</span>
+                                        <span class="text-dim prm-ver-date">@v.CreatedAt.ToString("yyyy-MM-dd")</span>
+                                        @if (v.Active)
+                                        {
+                                            <span class="badge badge-success">Active</span>
+                                        }
+                                        else if (canManage)
+                                        {
+                                            <form method="POST" action="/prompts/set-version/@p.Id/@v.Id" class="prm-inline-form">
+                                                @Html.AntiForgeryToken()
+                                                <button type="submit" class="btn btn-sm btn-primary">Set Active</button>
+                                            </form>
+                                        }
+                                        <details class="prm-details">
+                                            <summary class="btn btn-sm btn-secondary prm-summary">Preview</summary>
+                                            <pre class="prompt-text prm-preview-text">@v.PromptText</pre>
+                                        </details>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<div class="card prm-card-mt">
+    <div class="card-header"><h2>Prompt Placeholders</h2></div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Placeholder</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>//sourceLang//</code></td><td>source language replacement rule</td></tr>
+                <tr><td><code>//sourceShortLang//</code></td><td>source language short form replacement rule</td></tr>
+                <tr><td><code>//targetLang//</code></td><td>target language replacement rule</td></tr>
+                <tr><td><code>//targetShortLang//</code></td><td>target language short form replacement rule</td></tr>
+                <tr><td><code>//name//</code></td><td>series or movie name replacement rule</td></tr>
+                <tr><td><code>//mediaType//</code></td><td>media type replacement rule</td></tr>
+                <tr><td><code>//genres//</code></td><td>genres replacement rule</td></tr>
+                <tr><td><code>//isAnime//</code></td><td>anime detection replacement rule</td></tr>
+                <tr><td><code>//sourceText//</code></td><td>source subtitles text replacement rule for judge prompt</td></tr>
+                <tr><td><code>//total//</code></td><td>total candidates count replacement rule for judge prompt</td></tr>
+                <tr><td><code>//totalMinusOne//</code></td><td>total candidates count minus one replacement rule for judge prompt</td></tr>
+                <tr><td><code>//candidateList//</code></td><td>translation candidates list replacement rule for judge prompt</td></tr>
+                <tr><td><code>//filename//</code></td><td>movie or show name replacement rule for name formatter prompt</td></tr>
+                <tr><td><code>//TheMovieDBCandidate//</code></td><td>TMDb candidate list replacement rule for theMovieDBMatchingPrompt</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@if (canManage)
+{
+    <div class="modal-overlay" id="add-modal" onclick="closeModalOnOverlay(event)">
+        <div class="modal modal-wide">
+            <div class="modal-header">
+                <h2>+ New Prompt</h2>
+                <button class="btn btn-icon" onclick="closeModal('add-modal')">✕</button>
+            </div>
+            <form method="POST" action="/prompts/create">
+                @Html.AntiForgeryToken()
+                <div class="field">
+                    <label for="new-name">Name</label>
+                    <input type="text" id="new-name" name="name" required>
+                </div>
+                <div class="field">
+                    <label for="new-promptText">Prompt Text</label>
+                    <textarea id="new-promptText" name="promptText" rows="14" required></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Prompt</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="add-version-modal" onclick="closeModalOnOverlay(event)">
+        <div class="modal modal-wide">
+            <div class="modal-header">
+                <h2>Add Version — <span id="av-prompt-name"></span></h2>
+                <button class="btn btn-icon" onclick="closeModal('add-version-modal')">✕</button>
+            </div>
+            <form method="POST" id="av-form" action="">
+                @Html.AntiForgeryToken()
+                <div class="field">
+                    <label for="av-promptText">Prompt Text</label>
+                    <textarea id="av-promptText" name="promptText" rows="16" required></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('add-version-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">+ Version</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+
+@section Scripts {
+<script>
+  document.querySelectorAll('.prompt-body').forEach(function(el) {
+    el.style.display = 'none';
+  });
+
+  function togglePrompt(id) {
+    var body = document.getElementById('prompt-body-' + id);
+    if (!body) return;
+    body.style.display = body.style.display === 'none' ? '' : 'none';
+  }
+
+  function openAddVersionModal(promptId, name) {
+    document.getElementById('av-prompt-name').textContent = name;
+    document.getElementById('av-form').action = '/prompts/add-version/' + promptId;
+    document.getElementById('av-promptText').value = '';
+    openModal('add-version-modal');
+  }
+</script>
+}
+
+@functions {
+    private static string KindText(PromptKind k) =>
+        System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(k.ToString());
+}
