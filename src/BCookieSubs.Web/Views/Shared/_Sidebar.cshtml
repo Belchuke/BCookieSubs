@@ -1,0 +1,157 @@
+@using BCookieSubs.Shared.Repositories
+@using BCookieSubs.Shared.Security
+@using BCookieSubs.Web.Services
+@inject CurrentUserContext CurrentUser
+@inject ApplicationConfigRepository Configs
+@{
+    var activeNav = ViewData["ActiveNav"] as string ?? "";
+    string Item(string key) => activeNav == key ? "active" : "";
+    var appConfig = await Configs.GetAsync();
+}
+<nav class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <div class="sidebar-brand">
+            <img class="sidebar-logo" src="~/images/icon.png" alt="Logo">
+            <span class="sidebar-label sidebar-title-text">BCookieSubs</span>
+        </div>
+        <button class="sidebar-toggle-btn" id="sidebarToggleBtn" title="Toggle sidebar" type="button">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+    </div>
+
+    <ul class="sidebar-nav">
+        <li class="@Item("dashboard")">
+            <a href="/dashboard" title="Home">
+                <i class="fa-solid fa-house"></i>
+                <span class="sidebar-label">Home</span>
+            </a>
+        </li>
+        @if (CurrentUser.HasPermission(Permissions.CanAddSubtitleToTranslateFromLibrary))
+        {
+            <li class="@Item("library-requests")">
+                <a href="/library-requests" title="Library Request">
+                    <i class="fa-solid fa-clapperboard"></i>
+                    <span class="sidebar-label">Library Request</span>
+                </a>
+            </li>
+        }
+        <li class="@Item("translated")">
+            <a href="/translated" title="Translated">
+                <i class="fa-solid fa-download"></i>
+                <span class="sidebar-label">Translated</span>
+            </a>
+        </li>
+        @if (CurrentUser.HasPermission(Permissions.WorkersView))
+        {
+            <li class="@Item("workers")">
+                <a href="/workers" title="Workers">
+                    <i class="fa-solid fa-microchip"></i>
+                    <span class="sidebar-label">Workers</span>
+                </a>
+            </li>
+        }
+        @if (CurrentUser.HasPermission(Permissions.CanViewModelsPage))
+        {
+            <li class="@Item("models")">
+                <a href="/models" title="Models">
+                    <i class="fa-solid fa-robot"></i>
+                    <span class="sidebar-label">Models</span>
+                </a>
+            </li>
+        }
+        @if (CurrentUser.HasPermission(Permissions.CanViewPromptsPage))
+        {
+            <li class="@Item("prompts")">
+                <a href="/prompts" title="Prompts">
+                    <i class="fa-solid fa-message"></i>
+                    <span class="sidebar-label">Prompts</span>
+                </a>
+            </li>
+        }
+        @if (CurrentUser.HasPermission(Permissions.CanViewStatistics))
+        {
+            <li class="@Item("stats")">
+                <a href="/stats" title="Statistics">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span class="sidebar-label">Statistics</span>
+                </a>
+            </li>
+        }
+        @if (CurrentUser.HasPermission(Permissions.CanViewUsers))
+        {
+            <li class="@Item("users")">
+                <a href="/users" title="Users">
+                    <i class="fa-solid fa-users"></i>
+                    <span class="sidebar-label">Users</span>
+                </a>
+            </li>
+        }
+        @if (appConfig?.ScanLibraryPaths == true && CurrentUser.HasPermission(Permissions.CanViewLibraryPathsPage))
+        {
+            <li class="@Item("library-paths")">
+                <a href="/library-paths" title="Library Scan">
+                    <i class="fa-solid fa-folder-open"></i>
+                    <span class="sidebar-label">Library Scan</span>
+                </a>
+            </li>
+        }
+        @if (appConfig?.ScanLibraryPaths == true && CurrentUser.HasPermission(Permissions.CanViewOffsetPage))
+        {
+            <li class="@Item("offset")">
+                <a href="/offset" title="Offset">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <span class="sidebar-label">Offset</span>
+                </a>
+            </li>
+        }
+        @if (CurrentUser.HasPermission(Permissions.CanViewSettingsPage))
+        {
+            <li class="@Item("config")">
+                <a href="/settings" title="Settings">
+                    <i class="fa-solid fa-gear"></i>
+                    <span class="sidebar-label">Settings</span>
+                </a>
+            </li>
+        }
+        @if (CurrentUser.HasPermission(Permissions.CanViewSchedules) && appConfig?.ScheduleConfigured == true)
+        {
+            <li class="@Item("schedules")">
+                <a href="/schedules" title="Schedules">
+                    <i class="fa-solid fa-calendar-days"></i>
+                    <span class="sidebar-label">Schedules</span>
+                </a>
+            </li>
+        }
+        @if (CurrentUser.HasPermission(Permissions.CanViewLogs))
+        {
+            <li class="@Item("logs")">
+                <a href="/logs" title="Logs">
+                    <i class="fa-solid fa-list"></i>
+                    <span class="sidebar-label">Logs</span>
+                </a>
+            </li>
+        }
+        <li class="@Item("about")">
+            <a href="/about" title="About">
+                <i class="fa-solid fa-circle-info"></i>
+                <span class="sidebar-label">About</span>
+            </a>
+        </li>
+        <li class="@Item("account")">
+            <a href="/account" title="Account">
+                <i class="fa-solid fa-house-user"></i>
+                <span class="sidebar-label">Account</span>
+            </a>
+        </li>
+    </ul>
+
+    <div class="sidebar-footer">
+        <form method="POST" action="/logout">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="sidebar-logout-btn" title="Sign out">
+                <i class="fa-solid fa-right-from-bracket"></i>
+                <span class="sidebar-label">Sign out</span>
+            </button>
+        </form>
+    </div>
+</nav>

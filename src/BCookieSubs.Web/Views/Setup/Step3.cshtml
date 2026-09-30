@@ -1,0 +1,112 @@
+@{
+    ViewData["Title"] = "Setup — Default Languages";
+    Layout = "_SetupLayout";
+    var languages = (List<BCookieSubs.Shared.Database.Entities.Language>)ViewBag.Languages;
+}
+<div class="setup-page s3-page">
+    <partial name="_SetupSteps" />
+    <h1>Default Translation Languages</h1>
+    <p class="page-subtitle">Choose at least one language to translate subtitles into by default. These become the system-wide defaults for all users.</p>
+
+    @if (!ViewData.ModelState.IsValid && ViewData.ModelState.TryGetValue("", out var state) && state.Errors.Count > 0)
+    {
+        <div class="alert alert-error">@state.Errors[0].ErrorMessage</div>
+    }
+
+    <div class="card s3-card">
+        <div class="card-header">
+            <h2>Selected Languages</h2>
+            <small class="text-dim" id="selected-count">0 selected</small>
+        </div>
+
+        <div id="selected-list" class="s3-selected-list"></div>
+
+        <p id="empty-msg" class="empty-state">No languages added yet. Use the picker below.</p>
+
+        <div class="s3-add-row" id="add-row">
+            <div class="field s3-add-field">
+                <label for="lang-select">Add a language</label>
+                <select id="lang-select">
+                    @foreach (var l in languages)
+                    {
+                        <option value="@l.Id" data-name="@l.Name" data-flag-code="@(BCookieSubs.Shared.Repositories.FlagCodes.Derive(l.Locale) ?? "")">@l.Name</option>
+                    }
+                </select>
+            </div>
+            <button type="button" class="btn btn-primary" id="add-lang-btn">Add</button>
+        </div>
+    </div>
+
+    <form method="POST" action="/setup/3/next" id="lang-form">
+        @Html.AntiForgeryToken()
+        <div id="hidden-inputs"></div>
+        <div class="setup-actions">
+            <button type="submit" class="btn btn-primary" id="continue-btn" disabled title="Add at least one language">
+                Continue →
+            </button>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+<script>
+  var selected = [];
+
+  var selectedList = document.getElementById('selected-list');
+  var emptyMsg = document.getElementById('empty-msg');
+  var selectedCount = document.getElementById('selected-count');
+  var hiddenInputs = document.getElementById('hidden-inputs');
+  var continueBtn = document.getElementById('continue-btn');
+  var langSelect = document.getElementById('lang-select');
+
+  function render() {
+    selectedList.innerHTML = '';
+    hiddenInputs.innerHTML = '';
+
+    emptyMsg.style.display = selected.length === 0 ? '' : 'none';
+    selectedCount.textContent = selected.length + ' selected';
+    continueBtn.disabled = selected.length === 0;
+    if (selected.length > 0) continueBtn.removeAttribute('title');
+    else continueBtn.setAttribute('title', 'Add at least one language');
+
+    selected.forEach(function(lang, idx) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border)';
+
+      row.innerHTML =
+        '<span class="text-dim" style="width:1.5rem;text-align:right;font-size:.8rem">' + (idx + 1) + '.</span>' +
+        '<span style="flex:1">' + (lang.flagCode ? '<span class="fi fi-' + lang.flagCode + '"></span> ' : '') + escHtml(lang.name) + '</span>' +
+        '<button type="button" class="btn btn-sm btn-danger" data-idx="' + idx + '">✕</button>';
+
+      selectedList.appendChild(row);
+
+      var inp = document.createElement('input');
+      inp.type = 'hidden';
+      inp.name = 'languageId';
+      inp.value = lang.id;
+      hiddenInputs.appendChild(inp);
+    });
+
+    selectedList.querySelectorAll('[data-idx]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        selected.splice(parseInt(btn.dataset.idx), 1);
+        render();
+      });
+    });
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  document.getElementById('add-lang-btn').addEventListener('click', function() {
+    var opt = langSelect.options[langSelect.selectedIndex];
+    var id = parseInt(opt.value);
+    if (selected.some(function(l){ return l.id === id })) return;
+    selected.push({ id: id, name: opt.dataset.name, flagCode: opt.dataset.flagCode });
+    render();
+  });
+
+  render();
+</script>
+}

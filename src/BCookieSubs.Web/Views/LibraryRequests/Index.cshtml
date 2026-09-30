@@ -1,0 +1,141 @@
+@using BCookieSubs.Web.Services
+@using BCookieSubs.Web.ViewModels
+@model LibraryRequestsPageVm
+@inject CurrentUserContext CurrentUser
+@{
+    ViewData["Title"] = "Library Requests";
+    ViewData["ActiveNav"] = "library-requests";
+    await CurrentUser.EnsureLoadedAsync();
+    var langById = Model.Languages.ToDictionary(
+        l => l.Id,
+        l => new { id = l.Id, name = l.Name, iso639 = l.Iso639, flagCode = BCookieSubs.Shared.Repositories.FlagCodes.Derive(l.Locale) ?? "" });
+    var perms = new
+    {
+        canAddSubtitleToTranslateFromLibrary = CurrentUser.HasPermission("canAddSubtitleToTranslateFromLibrary"),
+        canChangeMatchForLibraryPaths = CurrentUser.HasPermission("canChangeMatchForLibraryPaths"),
+        canCreateSubtitlesWithWhisper = CurrentUser.HasPermission(BCookieSubs.Shared.Security.Permissions.CanCreateSubtitlesWithWhisper),
+    };
+}
+
+@if (!string.IsNullOrEmpty(Model.Toast) && !string.IsNullOrEmpty(Model.Msg))
+{
+    <div class="toast toast-@(Model.Toast == "success" ? "success" : "error")" id="page-toast">@Model.Msg</div>
+}
+
+<div hidden>@Html.AntiForgeryToken()</div>
+
+<div class="page-header">
+    <h1>Library Requests</h1>
+</div>
+
+<div class="lrx-filter-bar">
+    <div class="field lrx-search-field">
+        <input type="search" id="lr-search" placeholder="Search title or file path…">
+    </div>
+    <div class="field lrx-genre-field">
+        <select id="lr-genre-filter">
+            <option value="">All genres</option>
+        </select>
+    </div>
+</div>
+
+<div class="tabs lrx-tabs">
+    <button type="button" id="lr-tab-btn-movie" class="tab-btn active" onclick="lrSwitchTab('movie')">
+        Movies<span class="badge badge-neutral lrx-badge-sm lr-tab-count" data-tab="movie"></span>
+    </button>
+    <button type="button" id="lr-tab-btn-series" class="tab-btn" onclick="lrSwitchTab('series')">
+        Series<span class="badge badge-neutral lrx-badge-sm lr-tab-count" data-tab="series"></span>
+    </button>
+    <button type="button" id="lr-tab-btn-unmatched" class="tab-btn" onclick="lrSwitchTab('unmatched')">
+        Unmatched<span class="badge badge-neutral lrx-badge-sm lr-tab-count" data-tab="unmatched"></span>
+    </button>
+</div>
+
+<div id="lr-tab-movie">
+    <div class="lr-grid" data-lr-root="movie"></div>
+</div>
+
+<div id="lr-tab-series" style="display:none">
+    <div class="lr-grid" data-lr-root="series"></div>
+</div>
+
+<div id="lr-tab-unmatched" style="display:none">
+    <div class="lr-grid" data-lr-root="unmatched"></div>
+</div>
+
+<div class="modal-overlay" id="lr-match-modal" onclick="closeModalOnOverlay(event)">
+    <div class="modal modal-wide">
+        <div class="modal-header">
+            <h2>Change match — <span id="lr-match-name"></span></h2>
+            <button class="btn btn-icon" onclick="closeModal('lr-match-modal')">✕</button>
+        </div>
+        <p class="text-dim lrx-source-hint">Search TheMovieDB and select the correct title for this item.</p>
+        <div class="field">
+            <input type="search" id="lr-match-search" placeholder="Title…" autocomplete="off">
+        </div>
+        <div id="lr-match-results" class="lp-tmdb-results lpx-mt-25"></div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('lr-match-modal')">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="subtitle-source-modal" onclick="closeModalOnOverlay(event)">
+    <div class="modal lrx-source-modal">
+        <div class="modal-header">
+            <h2 id="subtitle-source-title">Select source</h2>
+            <button class="btn btn-icon" onclick="closeModal('subtitle-source-modal')">✕</button>
+        </div>
+        <div class="modal-body" id="subtitle-source-body">
+            <p class="text-dim lrx-source-hint">Choose the subtitle source to translate from.</p>
+            <div id="subtitle-source-list" class="lrx-source-list"></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('subtitle-source-modal')">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="season-translate-modal" onclick="closeModalOnOverlay(event)">
+    <div class="modal modal-wide">
+        <div class="modal-header">
+            <h2>Translate season</h2>
+            <button class="btn btn-icon" onclick="closeModal('season-translate-modal')">✕</button>
+        </div>
+        <div class="modal-body">
+            <p class="text-dim lrx-source-hint">Pick the subtitle track to translate for each episode.</p>
+            <div id="season-translate-list" class="season-tr-list"></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('season-translate-modal')">Cancel</button>
+            <button type="button" class="btn btn-primary" id="season-translate-confirm">Translate</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="lr-extras-picker" onclick="closeModalOnOverlay(event)">
+    <div class="modal lrx-source-modal">
+        <div class="modal-header">
+            <h2>Create subtitles</h2>
+            <button class="btn btn-icon" onclick="closeModal('lr-extras-picker')">✕</button>
+        </div>
+        <div class="modal-body">
+            <p class="text-dim lrx-source-hint">Whisper transcribes the audio into a source-language subtitle.</p>
+            <div id="lr-extras-targets" class="lrx-source-list"></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('lr-extras-picker')">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.LR_PERMS = @Html.Raw(Json.Serialize(perms));
+    window.LR_LANG_BY_ID = @Html.Raw(Json.Serialize(langById));
+    window.LR_SHOW_POSTERS = @Json.Serialize(Model.ShowPosters);
+    window.LR_USER_TARGET_LANG_IDS = @Html.Raw(Json.Serialize(Model.UserTargetLangIds));
+</script>
+
+@section Scripts {
+    <script src="~/js/library-requests.js" asp-append-version="true"></script>
+}

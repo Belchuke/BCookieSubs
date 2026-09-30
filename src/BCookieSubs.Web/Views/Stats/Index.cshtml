@@ -1,0 +1,746 @@
+@using BCookieSubs.Shared.Repositories
+@{
+    ViewData["Title"] = "Statistics";
+    ViewData["ActiveNav"] = "stats";
+    var toast = Context.Request.Query["toast"].FirstOrDefault();
+    var msg = Context.Request.Query["msg"].FirstOrDefault();
+
+    var promptStats = (List<StatsRepository.PromptStatListRow>)ViewBag.PromptStats!;
+    var models = (List<StatsRepository.ModelStatRow>)ViewBag.Models!;
+    var subtitles = (List<StatsRepository.SubtitleWithLangRow>)ViewBag.Subtitles!;
+}
+@if (toast == "error" && !string.IsNullOrEmpty(msg))
+{
+    <div class="toast toast-error" id="page-toast">@msg</div>
+}
+
+<div class="page-header"><h1>Statistics</h1></div>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="prompts">
+    <i class="fa-solid fa-message"></i> Prompts
+  </button>
+  <button class="tab-btn" data-tab="subtitles">
+    <i class="fa-solid fa-closed-captioning"></i> Subtitles
+  </button>
+  <button class="tab-btn" data-tab="models">
+    <i class="fa-solid fa-robot"></i> Models
+  </button>
+  <button class="tab-btn" data-tab="judge">
+    <i class="fa-solid fa-gavel"></i> Judge
+  </button>
+</div>
+
+<div class="tab-pane" id="tab-prompts">
+  <div class="card stats-filter-card">
+    <div class="stats-filter-row">
+      <div class="field">
+        <label for="f-model">Model</label>
+        <select id="f-model">
+          <option value="">All models</option>
+          @foreach (var m in models)
+          {
+            <option value="@m.Name">@m.Name@(m.Active ? "" : " (inactive)")</option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-lang">Language</label>
+        <select id="f-lang">
+          <option value="">All languages</option>
+          @foreach (var ln in promptStats.Select(s => s.LanguageName).Where(n => n != null).Distinct().OrderBy(n => n))
+          {
+            <option value="@ln">@ln</option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-prompt">Prompt</label>
+        <select id="f-prompt">
+          <option value="">All prompts</option>
+          @foreach (var pn in promptStats.Select(s => s.PromptName).Distinct().OrderBy(n => n))
+          {
+            <option value="@pn">@pn</option>
+          }
+        </select>
+      </div>
+      <div class="field stats-filter-check">
+        <label class="checkbox-label sts-check-gap">
+          <input type="checkbox" id="f-active" checked class="sts-check-box">
+          Only active models
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="chart-grid">
+    <div class="card">
+      <div class="card-header"><h2>Selected by Model</h2></div>
+      <div class="chart-wrap"><canvas id="chart-model"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Selected by Prompt</h2></div>
+      <div class="chart-wrap"><canvas id="chart-prompt"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card">
+    @if (promptStats.Count == 0)
+    {
+      <p class="empty-state">No statistics recorded yet.</p>
+    }
+    else
+    {
+      <div class="table-wrap">
+        <table id="stats-table">
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Prompt</th>
+              <th>Ver.</th>
+              <th>Language</th>
+              <th class="num">Requests</th>
+              <th class="num">Success</th>
+              <th class="num">Failed</th>
+              <th class="num">Selected</th>
+              <th>Success %</th>
+              <th>Selection %</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    }
+  </div>
+</div>
+
+<div class="tab-pane sts-hidden" id="tab-subtitles">
+  <div class="card stats-filter-card">
+    <div class="stats-filter-row">
+      <div class="field">
+        <label for="sub-select">Subtitle</label>
+        <select id="sub-select">
+          <option value="">— Select subtitle —</option>
+          @foreach (var s in subtitles)
+          {
+            var subLabel = s.DisplayName;
+            if (s.Season != null && s.Episode != null)
+            {
+              subLabel += " — S" + s.Season.Value.ToString("00") + "E" + s.Episode.Value.ToString("00");
+            }
+            <option value="@s.Id">@subLabel (@s.SourceLangName)</option>
+          }
+        </select>
+      </div>
+      <div class="field sts-hidden" id="job-field">
+        <label for="job-select">Target Language</label>
+        <select id="job-select">
+          <option value="">— Select —</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div id="sub-info-panel" class="sts-hidden">
+    <div class="card sts-mt1">
+      <div class="card-header"><h2>Job Info</h2></div>
+      <div class="stat-grid" id="sub-meta-grid"></div>
+    </div>
+    <div class="card sts-mt1">
+      <div class="card-header"><h2>Selected Candidates by Model</h2></div>
+      <div class="chart-wrap"><canvas id="sub-chart-model"></canvas></div>
+    </div>
+    <div class="card sts-mt1">
+      <div class="card-header"><h2>Chunks</h2></div>
+      <div class="table-wrap sub-chunk-table-wrap">
+        <table id="sub-chunk-table">
+          <thead>
+            <tr>
+              <th class="num">#</th>
+              <th>Status</th>
+              <th class="num">Valid / Total</th>
+              <th class="num">Duration</th>
+              <th>Prompt</th>
+              <th class="num">Ver.</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="chunk-stat-cards" id="sub-chunk-cards"></div>
+    </div>
+  </div>
+</div>
+
+<div class="tab-pane sts-hidden" id="tab-models">
+  <div class="card stats-filter-card">
+    <div class="stats-filter-row">
+      <div class="field">
+        <label for="model-select">Model</label>
+        <select id="model-select">
+          <option value="">— Select model —</option>
+          @foreach (var m in models)
+          {
+            <option value="@m.Id">@m.Name@(m.Active ? "" : " (inactive)")</option>
+          }
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div id="model-info-panel" class="sts-hidden">
+    <div class="card sts-mt1">
+      <div class="stat-grid" id="model-stat-grid"></div>
+    </div>
+    <div class="chart-grid chart-grid-2x2 sts-mt1">
+      <div class="card">
+        <div class="card-header"><h2>Avg Duration by Prompt</h2></div>
+        <div class="chart-wrap"><canvas id="model-chart-prompt-dur"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Selected by Prompt</h2></div>
+        <div class="chart-wrap"><canvas id="model-chart-prompt-sel"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Selected by Language</h2></div>
+        <div class="chart-wrap"><canvas id="model-chart-lang"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Success / Failed</h2></div>
+        <div class="chart-wrap"><canvas id="model-chart-sf"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tab-pane sts-hidden" id="tab-judge">
+  <div class="card stats-filter-card">
+    <div class="stats-filter-row">
+      <div class="field">
+        <label for="judge-model-select">Model</label>
+        <select id="judge-model-select">
+          <option value="">All models</option>
+          @foreach (var m in models)
+          {
+            <option value="@m.Id">@m.Name@(m.Active ? "" : " (inactive)")</option>
+          }
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card sts-mt1">
+    <div id="judge-table-wrap">
+      <p class="empty-state">Loading…</p>
+    </div>
+  </div>
+</div>
+
+@section Scripts {
+<script src="~/lib/chartjs/chart.js"></script>
+<script>
+  var ALL_STATS  = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
+      promptStats, new System.Text.Json.JsonSerializerOptions
+      {
+          PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+      }));
+  var ALL_MODELS = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
+      models, new System.Text.Json.JsonSerializerOptions
+      {
+          PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+      }));
+  var SUBTITLES  = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
+      subtitles, new System.Text.Json.JsonSerializerOptions
+      {
+          PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+      }));
+  var STR_NO_JUDGE_EVALS = 'No judge evaluations recorded yet.';
+  var STR_ALL_MODELS = 'All models';
+  var STR_JUDGE_SUBTITLE  = 'Subtitle';
+  var STR_JUDGE_SEASON    = 'Season';
+  var STR_JUDGE_EPISODE   = 'Episode';
+  var STR_JUDGE_CHUNK     = 'Chunk';
+  var STR_JUDGE_DATE      = 'Date';
+  var STR_JUDGE_TIMESTAMP = 'Time';
+  function pad2(n) { n = Number(n); return n < 10 ? '0' + n : '' + n; }
+  var ACTIVE_NAMES = (function() {
+    var s = {};
+    ALL_MODELS.forEach(function(m) { if (m.active) s[m.name] = true; });
+    return s;
+  })();
+</script>
+<script>
+;(function() {
+
+  window.openStatsTextModal = function(title, text) {
+    document.getElementById('stats-text-modal-title').textContent = title
+    document.getElementById('stats-text-modal-body').textContent = text || '—'
+    openModal('stats-text-modal')
+  }
+
+  function cssv(n) {
+    return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  }
+  function esc(s) {
+    return String(s == null ? '—' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function fmtMs(ms) {
+    if (!ms) return '—';
+    return ms >= 1000 ? (ms/1000).toFixed(1)+'s' : ms+'ms';
+  }
+  function statCard(label, val, cls) {
+    return '<div class="stat-card '+(cls||'')+'"><div class="stat-value">'+esc(val)+'</div><div class="stat-label">'+esc(label)+'</div></div>';
+  }
+
+  function showEl(id) {
+    var el = (typeof id === 'string') ? document.getElementById(id) : id;
+    if (el) { el.classList.remove('sts-hidden'); el.style.display = ''; }
+  }
+  function hideEl(id) {
+    var el = (typeof id === 'string') ? document.getElementById(id) : id;
+    if (el) { el.classList.add('sts-hidden'); el.style.display = 'none'; }
+  }
+
+  function makeBar(id, labels, data) {
+    var el = document.getElementById(id);
+    if (!el) return null;
+    return new Chart(el.getContext('2d'), {
+      type: 'bar',
+      data: { labels: labels, datasets: [{ data: data, backgroundColor: cssv('--accent'), borderRadius: 4 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: cssv('--text-dim'), maxRotation: 40, font: { size: 11 } }, grid: { color: cssv('--border') } },
+          y: { ticks: { color: cssv('--text-dim'), font: { size: 11 } }, grid: { color: cssv('--border') }, beginAtZero: true }
+        }
+      }
+    });
+  }
+  function makePie(id, labels, data, colors) {
+    var el = document.getElementById(id);
+    if (!el) return null;
+    return new Chart(el.getContext('2d'), {
+      type: 'doughnut',
+      data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderWidth: 0 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { color: cssv('--text'), boxWidth: 12, padding: 10 } } }
+      }
+    });
+  }
+  function setBar(chart, labels, data) {
+    if (!chart) return;
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = data;
+    chart.update();
+  }
+  function aggBy(arr, key) {
+    var m = {};
+    arr.forEach(function(s){ var k=s[key]||'Unknown'; m[k]=(m[k]||0)+(s.selectedCount||0); });
+    return m;
+  }
+
+  document.querySelectorAll('.tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+      document.querySelectorAll('.tab-pane').forEach(function(p){ p.style.display='none'; p.classList.add('sts-hidden'); });
+      btn.classList.add('active');
+      var target = document.getElementById('tab-'+btn.dataset.tab);
+      target.classList.remove('sts-hidden');
+      target.style.display='';
+      if (btn.dataset.tab === 'judge') loadJudgeData();
+    });
+  });
+
+  var chartByModel  = makeBar('chart-model',  [], []);
+  var chartByPrompt = makeBar('chart-prompt', [], []);
+
+  function applyPromptFilters() {
+    var model     = document.getElementById('f-model').value;
+    var lang      = document.getElementById('f-lang').value;
+    var prompt    = document.getElementById('f-prompt').value;
+    var activeOnly = document.getElementById('f-active').checked;
+
+    var filtered = ALL_STATS.filter(function(s) {
+      if (model      && s.modelName    !== model)  return false;
+      if (lang       && s.languageName !== lang)   return false;
+      if (prompt     && s.promptName   !== prompt) return false;
+      if (activeOnly && !ACTIVE_NAMES[s.modelName]) return false;
+      return true;
+    });
+
+    var bm = aggBy(filtered, 'modelName');
+    var bp = aggBy(filtered, 'promptName');
+    setBar(chartByModel,  Object.keys(bm), Object.values(bm));
+    setBar(chartByPrompt, Object.keys(bp), Object.values(bp));
+
+    var tbody = document.querySelector('#stats-table tbody');
+    if (!tbody) return;
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No matching stats.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = filtered.map(function(s) {
+      var sr  = s.requestCount > 0 ? Math.round(s.successCount  / s.requestCount  * 100) : 0;
+      var sel = s.successCount > 0 ? Math.round(s.selectedCount / s.successCount * 100)  : 0;
+      return '<tr>'+
+        '<td><strong>'+esc(s.modelName)+'</strong></td>'+
+        '<td>'+esc(s.promptName)+'</td>'+
+        '<td class="num">'+esc(s.promptVersionId)+'</td>'+
+        '<td class="text-dim">'+esc(s.languageName)+'</td>'+
+        '<td class="num">'+s.requestCount+'</td>'+
+        '<td class="num text-success">'+s.successCount+'</td>'+
+        '<td class="num text-error">'+s.failedCount+'</td>'+
+        '<td class="num text-accent">'+s.selectedCount+'</td>'+
+        '<td><div class="mini-bar"><div class="mini-fill" style="width:'+sr+'%"></div></div> <span class="num">'+sr+'%</span></td>'+
+        '<td><div class="mini-bar"><div class="mini-fill mini-fill-accent" style="width:'+sel+'%"></div></div> <span class="num">'+sel+'%</span></td>'+
+        '</tr>';
+    }).join('');
+  }
+
+  ['f-model','f-lang','f-prompt','f-active'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('change', applyPromptFilters);
+  });
+  applyPromptFilters();
+
+  var subChartModel = null;
+
+  document.getElementById('sub-select').addEventListener('change', function() {
+    var sid = this.value;
+    if (!sid) {
+      hideEl('job-field');
+      hideEl('sub-info-panel');
+      return;
+    }
+    fetch('/stats/subtitle-data?subtitleId='+sid)
+      .then(function(r){ return r.json(); })
+      .then(function(data) {
+        var jobSel = document.getElementById('job-select');
+        jobSel.innerHTML = '<option value="">— Select —</option>';
+        (data.jobs||[]).forEach(function(j) {
+          jobSel.innerHTML += '<option value="'+j.id+'">'+esc(j.targetLangName)+'</option>';
+        });
+        if (data.jobs && data.jobs.length === 1) {
+          jobSel.value = data.jobs[0].id;
+          loadJobData(data.jobs[0].id);
+          hideEl('job-field');
+        } else {
+          showEl('job-field');
+          hideEl('sub-info-panel');
+        }
+      });
+  });
+
+  document.getElementById('job-select').addEventListener('change', function() {
+    if (this.value) loadJobData(parseInt(this.value));
+  });
+
+  function loadJobData(jobId) {
+    fetch('/stats/job-data?jobId='+jobId)
+      .then(function(r){ return r.json(); })
+      .then(function(d) {
+        showEl('sub-info-panel');
+
+        document.getElementById('sub-meta-grid').innerHTML = [
+          statCard('Title',       d.subtitle ? d.subtitle.name : '—', ''),
+          statCard('Chunk Size',  d.job.chunkSetting,  'stat-processing'),
+          statCard('Source Lang', d.sourceLangName,    ''),
+          statCard('Target Lang', d.targetLangName,    ''),
+          statCard('Chunks',      d.chunks.length,     ''),
+          statCard('Status',      d.job.status,        d.job.status==='completed'?'stat-success':'stat-processing'),
+        ].join('');
+
+        var bm = {};
+        (d.chunks||[]).forEach(function(c) {
+          if (c.selectedModelName) bm[c.selectedModelName] = (bm[c.selectedModelName]||0)+1;
+        });
+        if (subChartModel) subChartModel.destroy();
+        subChartModel = makeBar('sub-chart-model', Object.keys(bm), Object.values(bm));
+
+        window._statReasonData = [];
+        var tbody = document.querySelector('#sub-chunk-table tbody');
+        tbody.innerHTML = (d.chunks||[]).map(function(c, i) {
+          window._statReasonData.push(c.judgeReason || '');
+          var statusCls = c.status==='completed'?'text-success':c.status==='failed'?'text-error':'text-dim';
+          var reasonCell = c.judgeReason
+            ? '<td><button class="btn btn-xs btn-secondary" onclick="openStatsTextModal(\'Judge Reason\',_statReasonData['+i+'])">View</button></td>'
+            : '<td class="text-dim">—</td>';
+          return '<tr>'+
+            '<td class="num">'+(c.chunkIndex+1)+'</td>'+
+            '<td class="'+statusCls+'">'+esc(c.status)+'</td>'+
+            '<td class="num">'+c.validCandidateCount+' / '+c.totalCandidateCount+'</td>'+
+            '<td class="num">'+fmtMs(c.durationMs)+'</td>'+
+            '<td>'+esc(c.selectedPromptName)+'</td>'+
+            '<td class="num">'+esc(c.selectedPromptVersion)+'</td>'+
+            reasonCell+
+            '</tr>';
+        }).join('');
+
+        document.getElementById('sub-chunk-cards').innerHTML = (d.chunks||[]).map(function(c, i) {
+          var bdge = c.status==='completed'?'badge-success':c.status==='failed'?'badge-error':'badge-neutral';
+          return '<div class="chunk-stat-card">'+
+            '<div class="chunk-stat-header">'+
+              '<span class="chunk-stat-num">#'+(c.chunkIndex+1)+'</span>'+
+              '<span class="badge '+bdge+'">'+esc(c.status)+'</span>'+
+            '</div>'+
+            '<div class="chunk-stat-row"><span>Valid / Total</span><span>'+c.validCandidateCount+' / '+c.totalCandidateCount+'</span></div>'+
+            '<div class="chunk-stat-row"><span>Duration</span><span>'+fmtMs(c.durationMs)+'</span></div>'+
+            '<div class="chunk-stat-row"><span>Prompt</span><span>'+esc(c.selectedPromptName)+(c.selectedPromptVersion?' v'+c.selectedPromptVersion:'')+'</span></div>'+
+            (c.judgeReason?'<div class="chunk-stat-row"><span>Reason</span><span><button class="btn btn-xs btn-secondary" onclick="openStatsTextModal(\'Judge Reason\',_statReasonData['+i+'])">View</button></span></div>':'')+
+            '</div>';
+        }).join('');
+      });
+  }
+
+  var mCharts = {};
+
+  document.getElementById('model-select').addEventListener('change', function() {
+    var mid = this.value;
+    if (!mid) { hideEl('model-info-panel'); return; }
+    fetch('/stats/model-data?modelId='+mid)
+      .then(function(r){ return r.json(); })
+      .then(function(d) {
+        showEl('model-info-panel');
+        var o = d.overall || {};
+        var sr   = o.totalCandidates > 0 ? Math.round(o.successCount  / o.totalCandidates * 100) : 0;
+        var selR = o.successCount    > 0 ? Math.round(o.selectedCount / o.successCount    * 100) : 0;
+
+        document.getElementById('model-stat-grid').innerHTML = [
+          statCard('Total',      o.totalCandidates||0,                  ''),
+          statCard('Success',    o.successCount||0,                     'stat-success'),
+          statCard('Failed',     o.failedCount||0,                      'stat-error'),
+          statCard('Selected',   o.selectedCount||0,                    'stat-processing'),
+          statCard('Success %',  sr+'%',                                ''),
+          statCard('Selection %',selR+'%',                              ''),
+          statCard('Avg Duration', fmtMs(o.avgDurationMs ? Math.round(o.avgDurationMs) : null), ''),
+        ].join('');
+
+        Object.values(mCharts).forEach(function(c){ if(c) c.destroy(); });
+        mCharts = {};
+
+        var bp = d.byPrompt   || [];
+        var bl = d.byLanguage || [];
+        mCharts.pd = makeBar('model-chart-prompt-dur',
+          bp.map(function(p){ return p.promptName; }),
+          bp.map(function(p){ return p.avgDurationMs ? Math.round(p.avgDurationMs) : 0; }));
+        mCharts.ps = makeBar('model-chart-prompt-sel',
+          bp.map(function(p){ return p.promptName; }),
+          bp.map(function(p){ return p.selectedCount||0; }));
+        mCharts.la = makeBar('model-chart-lang',
+          bl.map(function(l){ return l.languageName; }),
+          bl.map(function(l){ return l.selectedCount||0; }));
+        mCharts.sf = makePie('model-chart-sf',
+          ['Success','Failed'],
+          [o.successCount||0, o.failedCount||0],
+          [cssv('--success'), cssv('--error')]);
+      });
+  });
+
+  var judgeLoaded = false;
+  var _judgePage = 0;
+  var JUDGE_PAGE_SIZE = 30;
+
+  function loadJudgeData(page) {
+    _judgePage = page != null ? page : _judgePage;
+    var modelId = document.getElementById('judge-model-select').value;
+    var url = '/stats/judge-data?page=' + _judgePage + (modelId ? '&modelId=' + modelId : '');
+    fetch(url)
+      .then(function(r){ return r.json(); })
+      .then(function(data) {
+        judgeLoaded = true;
+        var rows = data.rows || [];
+        var total = data.total || 0;
+        var totalPages = Math.ceil(total / JUDGE_PAGE_SIZE);
+        var wrap = document.getElementById('judge-table-wrap');
+        if (!rows.length && _judgePage === 0) {
+          wrap.innerHTML = '<p class="empty-state">' + STR_NO_JUDGE_EVALS + '</p>';
+          return;
+        }
+        window._judgeReasonData = [];
+        window._judgePromptData = [];
+        var cardHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.75rem;padding:.25rem 0">';
+        rows.forEach(function(r, i) {
+          window._judgeReasonData.push(r.judgeReason || '');
+          window._judgePromptData.push(r.judgeInput || '');
+          cardHtml += '<div class="chunk-stat-card">'+
+            '<div class="chunk-stat-header">'+
+              '<strong>'+esc(r.modelName||'—')+'</strong>'+
+            '</div>'+
+            '<div class="chunk-stat-row"><span>'+esc(STR_JUDGE_SUBTITLE)+'</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px">'+esc(r.subtitleName||'—')+'</span></div>'+
+            '<div class="chunk-stat-row"><span>'+esc(STR_JUDGE_SEASON)+'</span><span>'+(r.season != null ? 'S'+pad2(r.season) : '')+'</span></div>'+
+            '<div class="chunk-stat-row"><span>'+esc(STR_JUDGE_EPISODE)+'</span><span>'+(r.episode != null ? 'E'+pad2(r.episode) : '')+'</span></div>'+
+            '<div class="chunk-stat-row"><span>'+esc(STR_JUDGE_CHUNK)+'</span><span>'+(r.chunkIndex != null ? '#'+(r.chunkIndex+1) : '—')+'</span></div>'+
+            '<div class="chunk-stat-row"><span>'+esc(STR_JUDGE_DATE)+'</span><span>'+esc(r.createdAt ? r.createdAt.split(' ')[0] : '—')+'</span></div>'+
+            '<div class="chunk-stat-row"><span>'+esc(STR_JUDGE_TIMESTAMP)+'</span><span>'+esc(r.createdAt ? r.createdAt.split(' ')[1] : '—')+'</span></div>'+
+            '<div class="chunk-stat-row chunk-stat-actions">'+
+              (r.judgeReason ? '<button class="btn btn-xs btn-secondary" onclick="openStatsTextModal(\'Reason\',_judgeReasonData['+i+'])">Reason</button>' : '')+
+              '<button class="btn btn-xs btn-secondary" onclick="openStatsTextModal(\'Prompt\',_judgePromptData['+i+'])">Prompt</button>'+
+            '</div>'+
+            '</div>';
+        });
+        cardHtml += '</div>';
+        var paginationHtml = '';
+        if (totalPages > 1) {
+          paginationHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem .25rem 0;gap:.5rem;flex-wrap:wrap">';
+          paginationHtml += '<span class="text-dim" style="font-size:.82rem">' +
+            'Showing ' + (_judgePage * JUDGE_PAGE_SIZE + 1) + '–' + Math.min((_judgePage + 1) * JUDGE_PAGE_SIZE, total) +
+            ' of ' + total + '</span>';
+          paginationHtml += '<div style="display:flex;gap:.35rem;flex-wrap:wrap">';
+          paginationHtml += '<button class="btn btn-sm btn-secondary" ' + (_judgePage === 0 ? 'disabled' : '') +
+            ' onclick="loadJudgeData(' + (_judgePage - 1) + ')">← Prev</button>';
+          for (var p = 0; p < totalPages; p++) {
+            paginationHtml += '<button class="btn btn-sm ' + (p === _judgePage ? 'btn-primary' : 'btn-secondary') + '"' +
+              ' onclick="loadJudgeData(' + p + ')">' + (p + 1) + '</button>';
+          }
+          paginationHtml += '<button class="btn btn-sm btn-secondary" ' + (_judgePage >= totalPages - 1 ? 'disabled' : '') +
+            ' onclick="loadJudgeData(' + (_judgePage + 1) + ')">Next →</button>';
+          paginationHtml += '</div></div>';
+        }
+        wrap.innerHTML = cardHtml + paginationHtml;
+      });
+  }
+
+  window.loadJudgeData = loadJudgeData;
+
+  document.getElementById('judge-model-select').addEventListener('change', function() {
+    loadJudgeData(0);
+  });
+
+  var STORAGE_KEY = 'stats_state';
+
+  function saveState() {
+    var activeBtn = document.querySelector('.tab-btn.active');
+    var state = {
+      tab:        activeBtn ? activeBtn.dataset.tab : 'prompts',
+      fModel:     document.getElementById('f-model')         ? document.getElementById('f-model').value         : '',
+      fLang:      document.getElementById('f-lang')          ? document.getElementById('f-lang').value          : '',
+      fPrompt:    document.getElementById('f-prompt')        ? document.getElementById('f-prompt').value        : '',
+      fActive:    document.getElementById('f-active')        ? document.getElementById('f-active').checked      : true,
+      subSelect:  document.getElementById('sub-select')      ? document.getElementById('sub-select').value      : '',
+      jobSelect:  document.getElementById('job-select')      ? document.getElementById('job-select').value      : '',
+      modelSel:   document.getElementById('model-select')    ? document.getElementById('model-select').value    : '',
+      judgeSel:   document.getElementById('judge-model-select') ? document.getElementById('judge-model-select').value : '',
+    };
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function restoreState() {
+    var raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    var state;
+    try { state = JSON.parse(raw); } catch(e) { return; }
+
+    if (state.tab) {
+      var targetBtn = document.querySelector('.tab-btn[data-tab="' + state.tab + '"]');
+      if (targetBtn) {
+        document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+        document.querySelectorAll('.tab-pane').forEach(function(p){ p.style.display='none'; p.classList.add('sts-hidden'); });
+        targetBtn.classList.add('active');
+        var pane = document.getElementById('tab-' + state.tab);
+        if (pane) { pane.classList.remove('sts-hidden'); pane.style.display = ''; }
+        if (state.tab === 'judge') loadJudgeData();
+      }
+    }
+
+    if (state.fModel !== undefined) { var el = document.getElementById('f-model'); if(el) el.value = state.fModel; }
+    if (state.fLang  !== undefined) { var el = document.getElementById('f-lang');  if(el) el.value = state.fLang; }
+    if (state.fPrompt!== undefined) { var el = document.getElementById('f-prompt');if(el) el.value = state.fPrompt; }
+    if (state.fActive!== undefined) { var el = document.getElementById('f-active'); if(el) el.checked = state.fActive; }
+    if (state.fModel !== undefined || state.fLang !== undefined) applyPromptFilters();
+
+    if (state.subSelect) {
+      var subEl = document.getElementById('sub-select');
+      if (subEl) {
+        subEl.value = state.subSelect;
+        if (subEl.value) {
+          fetch('/stats/subtitle-data?subtitleId=' + subEl.value)
+            .then(function(r){ return r.json(); })
+            .then(function(data) {
+              var jobSel = document.getElementById('job-select');
+              jobSel.innerHTML = '<option value="">— Select —</option>';
+              (data.jobs||[]).forEach(function(j) {
+                jobSel.innerHTML += '<option value="'+j.id+'">'+esc(j.targetLangName)+'</option>';
+              });
+              if (state.jobSelect) {
+                jobSel.value = state.jobSelect;
+                if (jobSel.value) loadJobData(parseInt(jobSel.value));
+              }
+              if ((data.jobs||[]).length > 1) showEl('job-field'); else hideEl('job-field');
+            });
+        }
+      }
+    }
+
+    if (state.modelSel) {
+      var modelEl = document.getElementById('model-select');
+      if (modelEl) {
+        modelEl.value = state.modelSel;
+        if (modelEl.value) {
+          var evt = new Event('change');
+          modelEl.dispatchEvent(evt);
+        }
+      }
+    }
+
+    if (state.judgeSel) {
+      var judgeEl = document.getElementById('judge-model-select');
+      if (judgeEl) { judgeEl.value = state.judgeSel; }
+    }
+  }
+
+  window.addEventListener('beforeunload', saveState);
+  document.querySelectorAll('#f-model,#f-lang,#f-prompt,#f-active,#sub-select,#job-select,#model-select,#judge-model-select').forEach(function(el) {
+    el.addEventListener('change', saveState);
+  });
+
+  restoreState();
+
+  var STATS_POLL_INTERVAL = 30000;
+
+  function pollStats() {
+    return fetch('/stats/poll')
+      .then(function(r){ if (redirectIfUnauthorized(r)) return null; return r.json(); })
+      .then(function(data) {
+        if (!data) return;
+        if (data.stats && data.stats.length) {
+          ALL_STATS = data.stats;
+          applyPromptFilters();
+        }
+        var activeTab = (document.querySelector('.tab-btn.active') || {}).dataset && document.querySelector('.tab-btn.active').dataset.tab;
+        if (activeTab === 'judge' && judgeLoaded) loadJudgeData();
+        if (activeTab === 'subtitles') {
+          var jobSel = document.getElementById('job-select');
+          if (jobSel && jobSel.value) loadJobData(parseInt(jobSel.value));
+        }
+      })
+      .catch(function(){});
+  }
+
+  function scheduleNextStatsPoll() {
+    setTimeout(function () {
+      pollStats().finally(scheduleNextStatsPoll);
+    }, STATS_POLL_INTERVAL);
+  }
+
+  scheduleNextStatsPoll();
+
+})();
+</script>
+
+<div class="modal-overlay" id="stats-text-modal" onclick="if(event.target===this)closeModal('stats-text-modal')">
+  <div class="modal sts-modal-narrow">
+    <div class="modal-header">
+      <h2 id="stats-text-modal-title"></h2>
+      <button class="btn btn-icon" onclick="closeModal('stats-text-modal')">✕</button>
+    </div>
+    <div id="stats-text-modal-body" class="sts-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('stats-text-modal')">Close</button>
+    </div>
+  </div>
+</div>
+}

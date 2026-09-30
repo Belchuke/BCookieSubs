@@ -1,0 +1,166 @@
+@using BCookieSubs.Shared.Database.Enums
+@{
+    ViewData["Title"] = "Setup — Configure Models";
+    Layout = "_SetupLayout";
+    var ollamaModels = (List<BCookieSubs.Shared.Services.OllamaCatalogEntry>)ViewBag.OllamaModels;
+    var dbModels = (List<BCookieSubs.Shared.Database.Entities.Model>)ViewBag.Models;
+
+    var roleDefs = new (ModelRoleKind Kind, string Label, string Cls)[]
+    {
+        (ModelRoleKind.Translation, "Translation", "badge-info"),
+        (ModelRoleKind.Judge, "Judge", "badge-warning"),
+        (ModelRoleKind.NameFormatter, "Name", "badge-success")
+    };
+}
+<div class="setup-page">
+    <partial name="_SetupSteps" />
+    <h1>Configure Model Roles</h1>
+    <p class="page-subtitle">Assign roles to your installed models. At least one model must have the Translation role to continue.</p>
+
+    @if (ViewBag.Error is string err)
+    {
+        <div class="alert alert-error">@err</div>
+    }
+    @if (ViewBag.Toast is string toast && toast == "success" && ViewBag.Msg is string msg)
+    {
+        <div class="alert alert-success">@msg</div>
+    }
+    @if (ViewBag.OllamaError is string ollamaError)
+    {
+        <div class="alert alert-warning">@ollamaError</div>
+    }
+
+    <div class="two-col">
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Available in Ollama</h2>
+                <small class="text-dim">@ollamaModels.Count model(s)</small>
+            </div>
+            @if (ollamaModels.Count == 0)
+            {
+                <p class="empty-state">No models found in Ollama.</p>
+            }
+            else
+            {
+                <div class="model-list">
+                    @foreach (var m in ollamaModels)
+                    {
+                        @if (m.AlreadyAdded)
+                        {
+                            <div class="model-row">
+                                <code class="model-name">@m.Name</code>
+                                <span class="badge badge-success">Added</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <form method="POST" action="/setup/5/add" class="model-row s5-model-form">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="provider" value="ollama">
+                                <code class="model-name s5-model-name">@m.Name</code>
+                                <div class="s5-roles-row">
+                                    <label class="checkbox-label s5-check-label">
+                                        <input type="checkbox" name="roles" value="translation" checked> Translation
+                                    </label>
+                                    <label class="checkbox-label s5-check-label">
+                                        <input type="checkbox" name="roles" value="judge"> Judge
+                                    </label>
+                                    <label class="checkbox-label s5-check-label">
+                                        <input type="checkbox" name="roles" value="nameFormatter"> Name Fmt
+                                    </label>
+                                    <input type="hidden" name="modelName" value="@m.Name">
+                                    <button type="submit" class="btn btn-sm btn-primary">+ Add</button>
+                                </div>
+                            </form>
+                        }
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Configured Models</h2>
+                <small class="text-dim">@dbModels.Count model(s)</small>
+            </div>
+            @if (dbModels.Count == 0)
+            {
+                <p class="empty-state">No models added yet. Install models from the left panel or add manually below.</p>
+            }
+            else
+            {
+                <div class="model-list">
+                    @foreach (var m in dbModels)
+                    {
+                        <div class="model-row s5-config-row">
+                            <div class="model-info s5-model-info">
+                                <span class="model-display-name">@m.Name</span>
+                                <code class="model-name text-dim">@m.ModelName</code>
+                            </div>
+                            <div class="s5-role-badges">
+                                @foreach (var rd in roleDefs)
+                                {
+                                    var hasRole = m.ModelRoles.Any(r => r.Role == rd.Kind);
+                                    <form method="POST" action="/setup/5/role/@m.Id" class="s5-inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="role" value="@rd.Kind">
+                                        <input type="hidden" name="action" value="@(hasRole ? "remove" : "add")">
+                                        <button type="submit" class="btn btn-sm @(hasRole ? "btn-primary" : "btn-secondary") s5-role-btn">
+                                            @if (hasRole)
+                                            {
+                                                <span>✓ </span>
+                                            }@rd.Label
+                                        </button>
+                                    </form>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="card s5-card-mt">
+        <div class="card-header"><h2>Add Model Manually</h2></div>
+        <form method="POST" action="/setup/5/add" class="s5-add-form">
+            @Html.AntiForgeryToken()
+            <div class="s5-add-grid">
+                <div class="field s5-field">
+                    <label>Provider</label>
+                    <select name="provider">
+                        <option value="ollama">Ollama (local)</option>
+                        <option value="ollama cloud">Ollama Cloud</option>
+                        <option value="chatgpt">ChatGPT</option>
+                        <option value="claude">Claude</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                <div class="field s5-field">
+                    <label>Model Name</label>
+                    <input type="text" name="modelName" placeholder="e.g. llama3.1:8b" required>
+                </div>
+                <div class="field s5-field">
+                    <label>Display Name <span class="hint">(optional)</span></label>
+                    <input type="text" name="name" placeholder="My Model">
+                </div>
+            </div>
+            <div class="s5-roles-row-mt">
+                <div class="s5-roles-checks">
+                    <label class="checkbox-label s5-check-label-lg"><input type="checkbox" name="roles" value="translation" checked> Translation</label>
+                    <label class="checkbox-label s5-check-label-lg"><input type="checkbox" name="roles" value="judge"> Judge</label>
+                    <label class="checkbox-label s5-check-label-lg"><input type="checkbox" name="roles" value="nameFormatter"> Name Formatter</label>
+                </div>
+                <button type="submit" class="btn btn-primary s5-add-btn">+ Add</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="setup-actions">
+        <form method="POST" action="/setup/5/next">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-primary">Finish Setup →</button>
+        </form>
+    </div>
+</div>

@@ -1,0 +1,238 @@
+@using BCookieSubs.Shared.Database.Entities
+@using BCookieSubs.Shared.Database.Enums
+@using BCookieSubs.Shared.Repositories
+@using BCookieSubs.Shared.Security
+@using BCookieSubs.Web.Services
+@inject CurrentUserContext CurrentUser
+@{
+    ViewData["Title"] = "Translated";
+    ViewData["ActiveNav"] = "translated";
+    var toast = Context.Request.Query["toast"].FirstOrDefault();
+    var msg = Context.Request.Query["msg"].FirstOrDefault();
+
+    var rows = (List<SubtitleRepository.FinishedSubtitleRow>)Model;
+    var config = (ApplicationConfig?)ViewBag.Config;
+    var pagination = ((int page, int limit, int total, int totalPages, bool hasPrev, bool hasNext))ViewBag.Pagination!;
+    var showPosters = (config?.ShowPosters == true) &&
+                      (CurrentUser.User == null || CurrentUser.User.ShowPosters);
+    var canDelete = CurrentUser.HasPermission(Permissions.CanDeleteTranslation);
+}
+@if (toast == "error" && !string.IsNullOrEmpty(msg))
+{
+    <div class="toast toast-error" id="page-toast">@msg</div>
+}
+
+<div class="page-header">
+  <h1>Translated</h1>
+</div>
+
+@if (rows.Count == 0)
+{
+  <div class="card">
+    <p class="empty-state">No finished subtitles yet. Completed translations will appear here.</p>
+  </div>
+}
+else
+{
+  <div class="card">
+    @if (pagination.total > 0)
+    {
+      <div class="pagination-container trn-top">
+        <span class="pagination-info">
+          Showing @(pagination.page * pagination.limit + 1)-@Math.Min((pagination.page + 1) * pagination.limit, pagination.total) of @pagination.total translations
+        </span>
+        <div class="pagination-controls">
+          <a href="/translated?page=@(pagination.page - 1)" class="btn btn-sm@(pagination.hasPrev ? "" : " btn-disabled")"@(pagination.hasPrev ? "" : @" style=""pointer-events:none;""")>Previous</a>
+          <span class="page-indicator">Page @(pagination.page + 1) / @pagination.totalPages</span>
+          <a href="/translated?page=@(pagination.page + 1)" class="btn btn-sm@(pagination.hasNext ? "" : " btn-disabled")"@(pagination.hasNext ? "" : @" style=""pointer-events:none;""")>Next</a>
+        </div>
+      </div>
+    }
+
+    <div class="table-wrap translated-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            @if (showPosters)
+            {
+              <th class="trn-w-50"></th>
+            }
+            <th>Title</th>
+            <th>Source</th>
+            <th>Target</th>
+            <th class="num">Episode</th>
+            <th class="num">Year</th>
+            <th>Finished</th>
+            <th>Duration</th>
+            <th class="trn-w-1"></th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var sub in rows)
+          {
+            var finishedText = sub.FinishedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "";
+            var startedText = sub.EarliestChunkStartedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "";
+            <tr>
+              @if (showPosters)
+              {
+                <td class="trn-poster-cell">
+                  @if (sub.MediaItemPhotoPath != null)
+                  {
+                    <img src="/media-photos/@sub.MediaItemPhotoPath" alt="" class="translated-poster">
+                  }
+                  else
+                  {
+                    <div class="translated-poster-placeholder"></div>
+                  }
+                </td>
+              }
+              <td class="job-name">@sub.SubtitleName</td>
+              <td><span class="badge badge-neutral">@sub.SourceLang</span></td>
+              <td><span class="badge badge-success">@sub.TargetLang</span></td>
+              <td class="num">
+                @if (sub.Season != null && sub.Episode != null)
+                {
+                  @:S@sub.Season.Value.ToString("00")E@sub.Episode.Value.ToString("00")
+                }
+                else
+                {
+                  <span class="text-dim">—</span>
+                }
+              </td>
+              <td class="num">@(sub.Year != null ? sub.Year.ToString() : Html.Raw("<span class=\"text-dim\">—</span>"))</td>
+              <td class="text-dim trn-nowrap">
+                <span data-utc="@finishedText">—</span>
+              </td>
+              <td class="text-dim trn-nowrap">
+                <span data-duration-start="@startedText" data-duration-end="@finishedText">—</span>
+              </td>
+              <td class="trn-actions">
+                @if (sub.Status == SubtitleJobStatus.Completed)
+                {
+                  <a href="/dashboard/download/@sub.JobId" class="btn btn-primary btn-sm">
+                    <i class="fa-solid fa-download"></i> Export
+                  </a>
+                }
+                else
+                {
+                  <span class="badge badge-error">Failed</span>
+                }
+                @if (canDelete)
+                {
+                  <form method="POST" action="/translated/delete/@sub.JobId?page=@pagination.page" style="display:inline"
+                        onsubmit="return confirm('Remove this translation from the list?')">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="btn btn-icon btn-danger" title="Remove">🗑</button>
+                  </form>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="translated-cards">
+      @foreach (var sub in rows)
+      {
+        var finishedText = sub.FinishedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "";
+        var startedText = sub.EarliestChunkStartedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "";
+        <div class="translated-card">
+          @if (showPosters && sub.MediaItemPhotoPath != null)
+          {
+            <img src="/media-photos/@sub.MediaItemPhotoPath" alt="" class="translated-card-poster">
+          }
+          <div class="translated-card-body">
+            <div class="translated-card-title">@sub.SubtitleName</div>
+            <div class="translated-card-meta">
+              <span class="badge badge-neutral">@sub.SourceLang</span>
+              <i class="fa-solid fa-arrow-right trn-arrow"></i>
+              <span class="badge badge-success">@sub.TargetLang</span>
+              @if (sub.Season != null && sub.Episode != null)
+              {
+                <span class="badge badge-info">S@sub.Season.Value.ToString("00")E@sub.Episode.Value.ToString("00")</span>
+              }
+              @if (sub.Year != null)
+              {
+                <span class="text-dim trn-fs-82">@sub.Year</span>
+              }
+              @if (sub.FinishedAt != null)
+              {
+                <span class="text-dim trn-fs-78">Finished: <span data-utc="@finishedText">—</span></span>
+              }
+              @if (sub.EarliestChunkStartedAt != null && sub.FinishedAt != null)
+              {
+                <span class="text-dim trn-fs-78">Duration: <span data-duration-start="@startedText" data-duration-end="@finishedText">—</span></span>
+              }
+            </div>
+            <div class="trn-card-actions">
+              @if (sub.Status == SubtitleJobStatus.Completed)
+              {
+                <a href="/dashboard/download/@sub.JobId" class="btn btn-primary btn-sm trn-export-btn">
+                  <i class="fa-solid fa-download"></i> Export
+                </a>
+              }
+              else
+              {
+                <span class="badge badge-error">Failed</span>
+              }
+              @if (canDelete)
+              {
+                <form method="POST" action="/translated/delete/@sub.JobId?page=@pagination.page" style="display:inline"
+                      onsubmit="return confirm('Remove this translation from the list?')">
+                  @Html.AntiForgeryToken()
+                  <button type="submit" class="btn btn-icon btn-danger" title="Remove">🗑</button>
+                </form>
+              }
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+
+    @if (pagination.total > 0)
+    {
+      <div class="pagination-container">
+        <span class="pagination-info">
+          Showing @(pagination.page * pagination.limit + 1)-@Math.Min((pagination.page + 1) * pagination.limit, pagination.total) of @pagination.total translations
+        </span>
+        <div class="pagination-controls">
+          <a href="/translated?page=@(pagination.page - 1)" class="btn btn-sm@(pagination.hasPrev ? "" : " btn-disabled")"@(pagination.hasPrev ? "" : @" style=""pointer-events:none;""")>Previous</a>
+          <span class="page-indicator">Page @(pagination.page + 1) / @pagination.totalPages</span>
+          <a href="/translated?page=@(pagination.page + 1)" class="btn btn-sm@(pagination.hasNext ? "" : " btn-disabled")"@(pagination.hasNext ? "" : @" style=""pointer-events:none;""")>Next</a>
+        </div>
+      </div>
+    }
+  </div>
+}
+
+@section Scripts {
+<script>
+  (function () {
+    function parseUtc(s) {
+      if (!s) return null
+      var d = new Date(s.replace(' ', 'T') + 'Z')
+      return isNaN(d.getTime()) ? null : d
+    }
+    document.querySelectorAll('[data-utc]').forEach(function (el) {
+      var d = parseUtc(el.getAttribute('data-utc'))
+      el.textContent = d ? d.toLocaleString() : '—'
+    })
+    document.querySelectorAll('[data-duration-start]').forEach(function (el) {
+      var start = parseUtc(el.getAttribute('data-duration-start'))
+      var end = parseUtc(el.getAttribute('data-duration-end'))
+      if (!start || !end) { el.textContent = '—'; return }
+      var sec = Math.round((end - start) / 1000)
+      if (sec < 0) { el.textContent = '—'; return }
+      var h = Math.floor(sec / 3600)
+      var m = Math.floor((sec % 3600) / 60)
+      var s = sec % 60
+      var parts = []
+      if (h > 0) parts.push(h + 'h')
+      if (m > 0) parts.push(m + 'm')
+      parts.push(s + 's')
+      el.textContent = parts.join(' ')
+    })
+  })()
+</script>
+}

@@ -1,0 +1,327 @@
+@using BCookieSubs.Shared.Database.Enums
+@{
+    ViewData["Title"] = "Setup — Install Models";
+    Layout = "_SetupLayout";
+    var recommended = (List<BCookieSubs.Shared.Services.RecommendedCatalogEntry>)ViewBag.Recommended;
+    var ollamaNames = (List<string>)ViewBag.OllamaNames;
+    var dbModels = (List<BCookieSubs.Shared.Database.Entities.Model>)ViewBag.Models;
+}
+<div class="setup-page">
+    <partial name="_SetupSteps" />
+    <h1>Install a Model</h1>
+    <p class="page-subtitle">Install at least one model. Roles (Translation, Judge, Name Formatter) are assigned in the next step.</p>
+
+    @if (ViewBag.Error is string err)
+    {
+        <div class="alert alert-error">@err</div>
+    }
+    @if (ViewBag.Toast is string toast && toast == "success" && ViewBag.Msg is string msg)
+    {
+        <div class="alert alert-success">@msg</div>
+    }
+    @if (ViewBag.OllamaError is string ollamaError)
+    {
+        <div class="alert alert-warning">@ollamaError</div>
+    }
+
+    @functions {
+        static string ProviderText(ModelProvider p) => p switch
+        {
+            ModelProvider.Ollama => "ollama",
+            ModelProvider.OllamaCloud => "ollama cloud",
+            ModelProvider.ChatGpt => "chatgpt",
+            ModelProvider.Claude => "claude",
+            ModelProvider.Copilot => "copilot",
+            _ => "custom"
+        };
+
+        static string RoleText(ModelRoleKind r) => r switch
+        {
+            ModelRoleKind.Translation => "translation",
+            ModelRoleKind.Judge => "judge",
+            ModelRoleKind.FallbackJudge => "fallbackJudge",
+            _ => "nameFormatter"
+        };
+    }
+
+    <div class="card s4-card-mb">
+        <div class="card-header">
+            <h2>Recommended Models</h2>
+            <small class="text-dim">@recommended.Count available</small>
+        </div>
+        @if (recommended.Count == 0)
+        {
+            <p class="empty-state">All recommended models are already installed.</p>
+        }
+        else
+        {
+            <div class="model-list">
+                @foreach (var r in recommended)
+                {
+                    var alreadyAdded = dbModels.Any(d => d.ModelName == r.Name);
+                    var isInstalled = ollamaNames.Contains(r.Name);
+                    var isCloud = r.Provider is ModelProvider.OllamaCloud or ModelProvider.ChatGpt or ModelProvider.Claude;
+                    <div class="model-row s4-model-row">
+                        <div class="s4-model-main">
+                            <code class="model-name">@r.Name</code>
+                            @if (r.RequireSubscription)
+                            {
+                                <span class="badge badge-warning s4-sub-badge">Subscription</span>
+                            }
+                            <div class="text-dim s4-model-meta">
+                                @ProviderText(r.Provider) · @r.Score
+                                @if (r.Roles.Count > 0)
+                                {
+                                    <span> · @string.Join(", ", r.Roles.Select(RoleText))</span>
+                                }
+                            </div>
+                        </div>
+                        <div>
+                            @if (alreadyAdded)
+                            {
+                                <span class="badge badge-success">Installed</span>
+                            }
+                            else if (isCloud || isInstalled)
+                            {
+                                <button type="button" class="btn btn-sm btn-primary setup-add-btn"
+                                        data-rec-id="@r.Id"
+                                        data-model-name="@r.Name">+ Add</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm btn-secondary setup-pull-btn"
+                                        data-model="@r.Name"
+                                        data-rec-id="@r.Id">
+                                    Install
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div id="pull-container" class="card s4-card-mb s4-pull-hidden">
+        <div class="card-header"><h2>Installing models</h2></div>
+        <div id="pull-rows" class="s4-pull-rows"></div>
+    </div>
+
+    <div class="card" id="installed-card" style="margin-bottom:1.5rem@(dbModels.Count == 0 ? ";display:none" : "")">
+        <div class="card-header">
+            <h2>Installed Models</h2>
+            <small class="text-dim" id="installed-count">@dbModels.Count model(s)</small>
+        </div>
+        <div class="model-list" id="installed-list">
+            @foreach (var m in dbModels)
+            {
+                <div class="model-row">
+                    <div class="model-info">
+                        <span class="model-display-name">@m.Name</span>
+                        <code class="model-name text-dim">@m.ModelName</code>
+                    </div>
+                    <span class="badge badge-neutral text-dim s4-roles-badge">Roles configured in step 5</span>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="card s4-card-mb">
+        <div class="card-header"><h2>Add Custom / Cloud Model</h2></div>
+        <form method="POST" action="/setup/4/add" class="s4-add-form">
+            @Html.AntiForgeryToken()
+            <div class="s4-add-grid">
+                <div class="field s4-field">
+                    <label>Provider</label>
+                    <select name="provider">
+                        <option value="ollama">Ollama (local)</option>
+                        <option value="ollama cloud">Ollama Cloud</option>
+                        <option value="chatgpt">ChatGPT</option>
+                        <option value="claude">Claude</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                <div class="field s4-field">
+                    <label>Model Name</label>
+                    <input type="text" name="modelName" placeholder="e.g. gpt-4o or llama3.1:8b" required>
+                </div>
+                <div class="field s4-field">
+                    <label>Display Name <span class="hint">(optional)</span></label>
+                    <input type="text" name="name" placeholder="My Model">
+                </div>
+            </div>
+            <p class="s4-roles-hint text-dim">Roles are assigned in step 5. You can also set them here as a starting point.</p>
+            <div class="s4-roles-row">
+                <div class="s4-roles-checks">
+                    <label class="checkbox-label s4-check-label"><input type="checkbox" name="roles" value="translation" checked> Translation</label>
+                    <label class="checkbox-label s4-check-label"><input type="checkbox" name="roles" value="judge"> Judge</label>
+                    <label class="checkbox-label s4-check-label"><input type="checkbox" name="roles" value="nameFormatter"> Name Formatter</label>
+                </div>
+                <button type="submit" class="btn btn-primary s4-add-btn">+ Add</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="setup-actions">
+        <form method="POST" action="/setup/4/next">
+            @Html.AntiForgeryToken()
+            <button type="submit" id="continue-btn" class="btn btn-primary" @(dbModels.Count == 0 ? "disabled title=\"Install at least one model first\"" : "")>
+                Continue →
+            </button>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+@Html.AntiForgeryToken()
+<script>
+  function redirectIfUnauthorized(response) {
+    if (response && response.status === 401) {
+      location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search);
+      return true;
+    }
+    return false;
+  }
+
+  var activePulls = 0;
+  var container = document.getElementById('pull-container');
+  var rowsEl = document.getElementById('pull-rows');
+  var installedCard = document.getElementById('installed-card');
+  var installedList = document.getElementById('installed-list');
+  var installedCount = document.getElementById('installed-count');
+  var continueBtn = document.getElementById('continue-btn');
+  var _installedTotal = @dbModels.Count;
+  var afToken = (document.querySelector('input[name="__RequestVerificationToken"]') || {}).value || '';
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function addInstalledModel(name, modelName) {
+    _installedTotal++;
+    installedCard.style.display = '';
+    installedCount.textContent = _installedTotal + ' model(s)';
+    var row = document.createElement('div');
+    row.className = 'model-row';
+    row.innerHTML =
+      '<div class="model-info">' +
+        '<span class="model-display-name">' + escHtml(name) + '</span>' +
+        '<code class="model-name text-dim">' + escHtml(modelName) + '</code>' +
+      '</div>' +
+      '<span class="badge badge-neutral text-dim" style="font-size:.75rem">Roles configured in step 5</span>';
+    installedList.appendChild(row);
+    continueBtn.disabled = false;
+    continueBtn.removeAttribute('title');
+  }
+
+  function createRow(modelName) {
+    container.classList.remove('s4-pull-hidden');
+    var row = document.createElement('div');
+    row.className = 'pull-row';
+    row.style.cssText = 'border:1px solid var(--border);border-radius:var(--radius-sm);padding:.65rem .75rem;background:var(--surface-2)';
+    row.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;flex-wrap:wrap">' +
+        '<code class="model-name">' + escHtml(modelName) + '</code>' +
+        '<span class="pull-status text-dim" style="font-size:.82rem">Connecting…</span>' +
+      '</div>' +
+      '<div style="background:var(--surface-3);border-radius:var(--radius-sm);height:8px;overflow:hidden;border:1px solid var(--border);margin-top:.4rem">' +
+        '<div class="pull-bar" style="height:100%;width:0%;background:var(--accent);transition:width .3s"></div>' +
+      '</div>' +
+      '<small class="pull-label text-dim" style="display:block;margin-top:.25rem"></small>';
+    rowsEl.appendChild(row);
+    return {
+      status: row.querySelector('.pull-status'),
+      bar: row.querySelector('.pull-bar'),
+      label: row.querySelector('.pull-label'),
+    };
+  }
+
+  function registerModel(recId, modelName, ui, onDone) {
+    fetch('/setup/4/install-recommended/' + recId + '?json=1', {
+      method: 'POST',
+      headers: afToken ? { 'RequestVerificationToken': afToken } : {}
+    })
+      .then(function(r) {
+        if (redirectIfUnauthorized(r)) return;
+        return r.json();
+      })
+      .then(function(data) {
+        if (!data) return;
+        if (data.success) {
+          addInstalledModel(data.name || modelName, modelName);
+          if (ui) ui.status.textContent = 'Done';
+        } else {
+          if (ui) ui.status.textContent = 'Error: ' + (data.msg || 'Failed');
+        }
+        if (onDone) onDone();
+      })
+      .catch(function() {
+        if (ui) ui.status.textContent = 'Error registering model.';
+        if (onDone) onDone();
+      });
+  }
+
+  document.querySelectorAll('.setup-add-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var recId = btn.dataset.recId;
+      var modelName = btn.dataset.modelName;
+      btn.disabled = true;
+      btn.textContent = 'Adding…';
+      registerModel(recId, modelName, null, function() {
+        btn.textContent = 'Added';
+      });
+    });
+  });
+
+  document.querySelectorAll('.setup-pull-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var modelName = btn.dataset.model;
+      var recId = btn.dataset.recId;
+      btn.disabled = true;
+      btn.textContent = 'Installing…';
+
+      var ui = createRow(modelName);
+      activePulls++;
+
+      var es = new EventSource('/models/pull-stream/' + encodeURIComponent(modelName));
+      es.onmessage = function(ev) {
+        var d = JSON.parse(ev.data);
+        if (d.error) {
+          es.close();
+          ui.status.textContent = 'Error: ' + d.error;
+          ui.bar.style.background = 'var(--error)';
+          btn.disabled = false; btn.textContent = 'Retry';
+          activePulls--;
+          return;
+        }
+        if (d.done) {
+          es.close();
+          ui.status.textContent = 'Installed — registering…';
+          ui.bar.style.width = '100%';
+          registerModel(recId, modelName, ui, function() {
+            activePulls--;
+            btn.textContent = 'Installed';
+          });
+          return;
+        }
+        ui.status.textContent = d.status || '';
+        if (d.total && d.completed) {
+          var pct = Math.round(d.completed / d.total * 100);
+          ui.bar.style.width = pct + '%';
+          ui.label.textContent =
+            Math.round(d.completed / 1e6) + ' MB / ' + Math.round(d.total / 1e6) + ' MB';
+        }
+      };
+      es.onerror = function() {
+        es.close();
+        ui.status.textContent = 'Connection lost.';
+        ui.bar.style.background = 'var(--error)';
+        btn.disabled = false; btn.textContent = 'Retry';
+        activePulls--;
+      };
+    });
+  });
+</script>
+}

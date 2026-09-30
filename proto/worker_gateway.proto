@@ -1,0 +1,139 @@
+syntax = "proto3";
+
+package bcookiesubs.worker.v1;
+
+option csharp_namespace = "BCookieSubs.Shared.Grpc";
+
+service WorkerGateway {
+  rpc Connect(stream ClientMessage) returns (stream ServerMessage);
+}
+
+message WorkerHardware {
+  string os = 1;
+  string architecture = 2;
+  string cpu_model = 3;
+  int32 cpu_cores = 4;
+  int64 ram_bytes = 5;
+  string gpu_vendor = 6;
+  string gpu_model = 7;
+  int64 gpu_vram_bytes = 8;
+  bool cuda_available = 9;
+  string python_version = 10;
+}
+
+message ClientMessage {
+  oneof payload {
+    EnrollRequest enroll = 1;
+    AuthRequest auth = 2;
+    Heartbeat heartbeat = 3;
+    Disconnect disconnect = 4;
+    JobProgress job_progress = 5;
+    JobResult job_result = 6;
+  }
+}
+
+message EnrollRequest {
+  string enrollment_token = 1;
+  string worker_name = 2;
+  string machine_identifier = 3;
+  string worker_version = 4;
+  repeated string capabilities = 5;
+  int32 max_concurrency = 6;
+  WorkerHardware hardware = 7;
+}
+
+message AuthRequest {
+  int64 worker_id = 1;
+  string worker_secret = 2;
+  string machine_identifier = 3;
+  string worker_version = 4;
+  repeated string capabilities = 5;
+  int32 max_concurrency = 6;
+  WorkerHardware hardware = 7;
+}
+
+message Heartbeat {
+  bool ready = 1;
+  int32 active_jobs = 2;
+  int64 sent_at_unix = 3;
+  double cpu_utilization = 4;
+  double memory_utilization = 5;
+}
+
+message Disconnect {
+  string reason = 1;
+}
+
+message ServerMessage {
+  oneof payload {
+    EnrollResult enroll_result = 1;
+    AuthResult auth_result = 2;
+    Ack ack = 3;
+    ConfigUpdate config_update = 4;
+    DrainCommand drain = 5;
+    ResumeCommand resume = 6;
+    ServerDisconnect disconnect = 7;
+    JobAssignment job = 8;
+    JobCancel job_cancel = 9;
+  }
+}
+
+message JobAssignment {
+  int64 job_id = 1;
+  string job_type = 2;
+  string payload = 3;
+}
+
+message JobCancel {
+  int64 job_id = 1;
+  string reason = 2;
+}
+
+message JobProgress {
+  int64 job_id = 1;
+  int32 progress = 2;
+  string status = 3;
+}
+
+message JobResult {
+  int64 job_id = 1;
+  bool success = 2;
+  string result = 3;
+  string error_code = 4;
+  string error_message = 5;
+}
+
+message EnrollResult {
+  bool success = 1;
+  string message = 2;
+  int64 worker_id = 3;
+  string worker_secret = 4;
+  string assigned_name = 5;
+  string token = 6;
+}
+
+message AuthResult {
+  bool success = 1;
+  string message = 2;
+  string token = 3;
+}
+
+message Ack {
+  string message = 1;
+}
+
+message ConfigUpdate {
+  repeated string allowed_capabilities = 1;
+  int32 heartbeat_interval_seconds = 2;
+  bool draining = 3;
+}
+
+message DrainCommand {
+  string reason = 1;
+}
+
+message ResumeCommand {}
+
+message ServerDisconnect {
+  string reason = 1;
+}

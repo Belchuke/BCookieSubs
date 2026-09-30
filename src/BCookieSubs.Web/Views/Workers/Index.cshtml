@@ -1,0 +1,47 @@
+@model WorkersIndexViewModel
+@{
+    ViewData["Title"] = "Workers";
+    ViewData["ActiveNav"] = "workers";
+    var toast = Context.Request.Query["toast"].FirstOrDefault();
+    var msg = Context.Request.Query["msg"].FirstOrDefault();
+}
+@if (toast == "success" && !string.IsNullOrEmpty(msg))
+{
+    <div class="toast toast-success" id="page-toast">@msg</div>
+}
+@if (toast == "error" && !string.IsNullOrEmpty(msg))
+{
+    <div class="toast toast-error" id="page-toast">@msg</div>
+}
+
+<div class="page-header">
+    <h1>Workers</h1>
+    @if (Model.CanManage)
+    {
+        <form method="post" action="/workers/enrollments">
+            @Html.AntiForgeryToken()
+            <input type="text" name="label" placeholder="Label (optional)" maxlength="100">
+            <button type="submit" class="btn btn-primary">+ Add Worker</button>
+        </form>
+    }
+</div>
+
+@if (Model.NewEnrollmentToken is not null)
+{
+    <div class="alert alert-info" id="enrollment-token-box">
+        <div>
+            <strong>Enrollment token (shown once):</strong>
+            <code class="token">@Model.NewEnrollmentToken</code>
+        </div>
+        <div class="text-dim">Run <code>scripts/setup-worker.sh</code> on the worker machine with this token. It expires in 24 hours and can be used once.</div>
+        <button type="button" class="btn btn-sm" onclick="copyToken()">Copy</button>
+    </div>
+}
+
+<div id="workers-table" data-partial-url="/workers/list-partial">
+    <partial name="_WorkerList" model="Model" />
+</div>
+
+@section Scripts {
+    <script src="~/js/workers.js" asp-append-version="true"></script>
+}

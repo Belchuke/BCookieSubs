@@ -1,0 +1,448 @@
+@using BCookieSubs.Web.Services
+@using BCookieSubs.Web.ViewModels
+@model LibraryPathsPageVm
+@inject CurrentUserContext CurrentUser
+@{
+    ViewData["Title"] = "Library Paths";
+    ViewData["ActiveNav"] = "library-paths";
+    await CurrentUser.EnsureLoadedAsync();
+    bool Can(string p) => CurrentUser.HasPermission(p);
+    var perms = new
+    {
+        canEditLibraryPath = Can("canEditLibraryPath"),
+        canBlackListALibraryPathItem = Can("canBlackListALibraryPathItem"),
+        canChangeMatchForLibraryPaths = Can("canChangeMatchForLibraryPaths"),
+        canAddSubtitleToTranslateFromLibrary = Can("canAddSubtitleToTranslateFromLibrary"),
+    };
+    var dayNames = new[] { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+    var addEnglishFound = false;
+}
+
+@if (!string.IsNullOrEmpty(Model.Toast) && !string.IsNullOrEmpty(Model.Msg))
+{
+    <div class="toast toast-@(Model.Toast == "success" ? "success" : "error")" id="page-toast">@Model.Msg</div>
+}
+
+<div hidden>@Html.AntiForgeryToken()</div>
+
+<div class="page-header">
+    <h1>Library Paths</h1>
+    <button class="btn btn-primary" onclick="openModal('add-modal')">Add Path</button>
+</div>
+
+<div class="tabs lpx-tabs">
+    <button type="button" id="lp-tab-btn-movie" class="tab-btn active" onclick="lpSwitchTab('movie')">Movies</button>
+    <button type="button" id="lp-tab-btn-series" class="tab-btn" onclick="lpSwitchTab('series')">Series</button>
+    <button type="button" id="lp-tab-btn-blacklist" class="tab-btn" onclick="lpSwitchTab('blacklist')">Blacklisted</button>
+</div>
+
+<div id="lp-tab-movie">
+    <div class="lpx-filter-row">
+        <div class="field lpx-search-field">
+            <input type="search" class="lp-search" placeholder="Search title or file path…">
+        </div>
+        <div class="field lpx-genre-field">
+            <select class="lp-genre-filter">
+                <option value="">All genres</option>
+            </select>
+        </div>
+    </div>
+    <div class="lp-list-root" data-tab="movie"></div>
+</div>
+
+<div id="lp-tab-series" style="display:none">
+    <div class="lpx-filter-row">
+        <div class="field lpx-search-field">
+            <input type="search" class="lp-search" placeholder="Search title or file path…">
+        </div>
+        <div class="field lpx-genre-field">
+            <select class="lp-genre-filter">
+                <option value="">All genres</option>
+            </select>
+        </div>
+    </div>
+    <div class="lp-list-root" data-tab="series"></div>
+</div>
+
+<div id="lp-tab-blacklist" style="display:none">
+    <div class="card">
+        <div class="lp-blacklist-root"></div>
+    </div>
+</div>
+
+<div id="lp-config" data-show-posters="@(Model.ShowPosters ? "1" : "0")" hidden></div>
+
+<script>
+    window.LP_PERMS = @Html.Raw(Json.Serialize(perms));
+    window.LP_SHOW_POSTERS = @Json.Serialize(Model.ShowPosters);
+    window.LP_ROOT_PATH = @Html.Raw(Json.Serialize(Model.RootLibraryPath));
+</script>
+
+<div id="dir-browser-panel" style="display:none;margin-top:.5rem">
+    <div class="lpx-dir-box">
+        <div class="lpx-dir-header">
+            <button type="button" id="dir-up-btn" class="btn btn-icon btn-sm lpx-dir-up-btn" title="Go up">↑</button>
+            <span id="dir-current-path" class="text-dim lpx-dir-current"></span>
+        </div>
+        <div id="dir-list" class="lpx-dir-list">
+            <div class="text-dim lpx-dir-loading">Loading…</div>
+        </div>
+        <div class="lpx-dir-footer">
+            <button type="button" id="dir-select-btn" class="btn btn-sm btn-primary">Select this folder</button>
+        </div>
+    </div>
+</div>
+
+<div id="lp-bulk-bar" class="lp-bulk-bar" style="display:none">
+    <span id="lp-bulk-count" class="lpx-bulk-count">0 files selected</span>
+    <button type="button" class="btn btn-primary btn-sm" id="lp-bulk-change-match-btn">
+        <i class="fa-solid fa-link"></i> Bulk change match
+    </button>
+    <button type="button" class="btn btn-secondary btn-sm" id="lp-bulk-clear-btn">Clear selection</button>
+</div>
+
+<div class="modal-overlay" id="bulk-match-modal">
+    <div class="modal modal-wide">
+        <div class="modal-header">
+            <h2>Change match — <span id="bulk-modal-count">0</span> files</h2>
+            <button class="btn btn-icon" onclick="closeModal('bulk-match-modal')">✕</button>
+        </div>
+        <p class="text-dim lpx-modal-hint">Search TheMovieDB and select the correct title. All selected files will be re-matched.</p>
+        <div class="field">
+            <label for="bulk-tmdb-search">Search</label>
+            <input type="search" id="bulk-tmdb-search" placeholder="Title…" autocomplete="off">
+        </div>
+        <div id="bulk-tmdb-results" class="lpx-mt-25"></div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('bulk-match-modal')">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="add-modal" onclick="closeModalOnOverlay(event)">
+    <div class="modal lpx-modal-480">
+        <div class="modal-header">
+            <h2>Add Library Path</h2>
+            <button class="btn btn-icon" onclick="closeModal('add-modal')">✕</button>
+        </div>
+        <form method="POST" action="/library-paths/create">
+            @Html.AntiForgeryToken()
+            <div class="field">
+                <label for="add-name">Name</label>
+                <input type="text" id="add-name" name="name" required placeholder="e.g. My Movies">
+            </div>
+            <div class="field">
+                <label>Storage</label>
+                <div class="lpx-scan-radios">
+                    <label class="lpx-radio"><input type="radio" name="storage" value="local" checked data-storage="add">Local folder</label>
+                    <label class="lpx-radio"><input type="radio" name="storage" value="sftp" data-storage="add">SFTP server</label>
+                </div>
+            </div>
+            <div class="field">
+                <label for="add-path" data-lp-path-label="add">Filesystem path</label>
+                <div class="lpx-path-input-row">
+                    <input type="text" id="add-path" name="path" required class="lpx-flex1">
+                    <button type="button" class="btn btn-secondary lpx-flex-shrink0" data-lp-browse="add" onclick="openDirBrowser('add-path')">Browse</button>
+                </div>
+                <div id="add-path-browser-anchor"></div>
+            </div>
+            <div id="add-sftp-fields" class="lpx-sftp-fields" style="display:none">
+                <div class="field-row">
+                    <div class="field lpx-flex2">
+                        <label for="add-sftp-host">Host</label>
+                        <input type="text" id="add-sftp-host" name="sftpHost" placeholder="sftp.example.com">
+                    </div>
+                    <div class="field lpx-flex1">
+                        <label for="add-sftp-port">Port</label>
+                        <input type="number" id="add-sftp-port" name="sftpPort" value="22" min="1" max="65535">
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="add-sftp-username">Username</label>
+                    <input type="text" id="add-sftp-username" name="sftpUsername" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label>Authentication</label>
+                    <div class="lpx-scan-radios">
+                        <label class="lpx-radio"><input type="radio" name="sftpAuthMode" value="password" checked data-sftp-auth="add">Password</label>
+                        <label class="lpx-radio"><input type="radio" name="sftpAuthMode" value="key" data-sftp-auth="add">SSH key</label>
+                    </div>
+                </div>
+                <div class="field" data-sftp-password-row="add">
+                    <label for="add-sftp-password">Password</label>
+                    <input type="password" id="add-sftp-password" name="sftpPassword" autocomplete="new-password">
+                </div>
+                <div data-sftp-key-row="add" style="display:none">
+                    <div class="field">
+                        <label for="add-sftp-key">Private key (PEM)</label>
+                        <textarea id="add-sftp-key" name="sftpPrivateKey" rows="4" autocomplete="off" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+                    </div>
+                    <div class="field">
+                        <label for="add-sftp-key-pass">Key passphrase (optional)</label>
+                        <input type="password" id="add-sftp-key-pass" name="sftpKeyPassphrase" autocomplete="new-password">
+                    </div>
+                </div>
+                <div class="field">
+                    <button type="button" class="btn btn-secondary" onclick="lpTestSftpConnection('add')">Test Connection</button>
+                    <div id="add-sftp-test-result" class="lpx-sftp-test-result"></div>
+                </div>
+                <input type="hidden" name="sftpHostKeyFingerprint" data-sftp-fingerprint="add" value="">
+                <p class="text-dim lpx-fs-75">The remote path is scanned over SFTP. Media is downloaded temporarily for embedded-subtitle work, so SFTP libraries are slower than local folders.</p>
+            </div>
+            <div class="field">
+                <label for="add-type">Type</label>
+                <select id="add-type" name="type" required>
+                    <option value="movie">Movie</option>
+                    <option value="series">Series</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="add-sourceLangId">Source language</label>
+                <select id="add-sourceLangId" name="sourceLangId" required>
+                    @foreach (var l in Model.Languages)
+                    {
+                        var selected = !addEnglishFound && l.Iso639 == "en";
+                        if (selected) { addEnglishFound = true; }
+                        <option value="@l.Id" selected="@selected">@(l.Flag != null ? l.Flag + " " : "")@l.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="field field-checkbox">
+                <input type="checkbox" id="add-enabled" name="enabled" value="1" checked>
+                <label for="add-enabled">Enabled (actively scanned)</label>
+            </div>
+            <div class="field field-checkbox" style="display:none">
+                <input type="checkbox" id="add-autoTranslate" name="autoTranslate" value="1">
+                <label for="add-autoTranslate">Auto-translate</label>
+            </div>
+            <div class="field field-checkbox">
+                <input type="checkbox" id="add-autoExtract" name="autoExtract" value="1">
+                <label for="add-autoExtract">Auto-extract translated subtitles</label>
+            </div>
+            <div class="field">
+                <label>Scan frequency</label>
+                <div class="lpx-scan-radios">
+                    <label class="lpx-radio"><input type="radio" name="scanMode" value="hourly" checked data-scan-mode="add">Hourly</label>
+                    <label class="lpx-radio"><input type="radio" name="scanMode" value="custom" data-scan-mode="add">Custom schedule</label>
+                    <label class="lpx-radio"><input type="radio" name="scanMode" value="never" data-scan-mode="add">Never (manual rescan only)</label>
+                </div>
+                <p class="text-dim lpx-scan-never-hint" style="display:none">The library will not be scanned automatically. Use "Rescan" to scan manually.</p>
+            </div>
+            <div id="add-scan-custom" class="lpx-scan-custom" style="display:none">
+                <div class="field-row">
+                    <div class="field">
+                        <label>Repeat every</label>
+                        <input type="number" name="scanRepeatInterval" value="1" min="1" required>
+                    </div>
+                    <div class="field">
+                        <label>Unit</label>
+                        <select name="scanRepeatUnit">
+                            <option value="day">Day(s)</option>
+                            <option value="week">Week(s)</option>
+                            <option value="month">Month(s)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label>Day of week</label>
+                        <select name="scanDayOfWeek">
+                            @for (var i = 0; i < dayNames.Length; i++)
+                            {
+                                <option value="@i">@dayNames[i]</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Hour</label>
+                        <input type="number" name="scanStartTimeHour" value="0" min="0" max="23" required>
+                    </div>
+                    <div class="field">
+                        <label>Minute</label>
+                        <input type="number" name="scanStartTimeMinute" value="0" min="0" max="59" required>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Scan duration (minutes)</label>
+                    <input type="number" name="scanDurationMinutes" value="60" min="1" required>
+                </div>
+                <div class="field">
+                    <label>First start date (optional)</label>
+                    <input type="date" name="scanFirstStartAt">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('add-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Path</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-overlay" id="edit-modal" onclick="closeModalOnOverlay(event)">
+    <div class="modal lpx-modal-480">
+        <div class="modal-header">
+            <h2>Edit Library Path</h2>
+            <button class="btn btn-icon" onclick="closeModal('edit-modal')">✕</button>
+        </div>
+        <form method="POST" id="edit-form" action="">
+            @Html.AntiForgeryToken()
+            <div class="field">
+                <label for="edit-name">Name</label>
+                <input type="text" id="edit-name" name="name" required>
+            </div>
+            <div class="field">
+                <label>Storage</label>
+                <div class="lpx-scan-radios">
+                    <label class="lpx-radio"><input type="radio" name="storage" value="local" data-storage="edit">Local folder</label>
+                    <label class="lpx-radio"><input type="radio" name="storage" value="sftp" data-storage="edit">SFTP server</label>
+                </div>
+            </div>
+            <div class="field">
+                <label for="edit-path" data-lp-path-label="edit">Filesystem path</label>
+                <div class="lpx-path-input-row">
+                    <input type="text" id="edit-path" name="path" required class="lpx-flex1">
+                    <button type="button" class="btn btn-secondary lpx-flex-shrink0" data-lp-browse="edit" onclick="openDirBrowser('edit-path')">Browse</button>
+                </div>
+                <div id="edit-path-browser-anchor"></div>
+            </div>
+            <div id="edit-sftp-fields" class="lpx-sftp-fields" style="display:none">
+                <div class="field-row">
+                    <div class="field lpx-flex2">
+                        <label for="edit-sftp-host">Host</label>
+                        <input type="text" id="edit-sftp-host" name="sftpHost">
+                    </div>
+                    <div class="field lpx-flex1">
+                        <label for="edit-sftp-port">Port</label>
+                        <input type="number" id="edit-sftp-port" name="sftpPort" value="22" min="1" max="65535">
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="edit-sftp-username">Username</label>
+                    <input type="text" id="edit-sftp-username" name="sftpUsername" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label>Authentication</label>
+                    <div class="lpx-scan-radios">
+                        <label class="lpx-radio"><input type="radio" name="sftpAuthMode" value="password" data-sftp-auth="edit">Password</label>
+                        <label class="lpx-radio"><input type="radio" name="sftpAuthMode" value="key" data-sftp-auth="edit">SSH key</label>
+                    </div>
+                </div>
+                <div class="field" data-sftp-password-row="edit">
+                    <label for="edit-sftp-password">Password</label>
+                    <input type="password" id="edit-sftp-password" name="sftpPassword" autocomplete="new-password" placeholder="Leave empty to keep the stored password">
+                    <div class="field field-checkbox" data-sftp-clear-row="edit-password" style="display:none">
+                        <input type="checkbox" id="edit-sftp-clear-pass" name="clearSftpPassword" value="1">
+                        <label for="edit-sftp-clear-pass">Remove stored password</label>
+                    </div>
+                </div>
+                <div data-sftp-key-row="edit" style="display:none">
+                    <div class="field">
+                        <label for="edit-sftp-key">Private key (PEM)</label>
+                        <textarea id="edit-sftp-key" name="sftpPrivateKey" rows="4" autocomplete="off" placeholder="Leave empty to keep the stored key"></textarea>
+                    </div>
+                    <div class="field">
+                        <label for="edit-sftp-key-pass">Key passphrase (optional)</label>
+                        <input type="password" id="edit-sftp-key-pass" name="sftpKeyPassphrase" autocomplete="new-password" placeholder="Leave empty to keep the stored passphrase">
+                    </div>
+                    <div class="field field-checkbox" data-sftp-clear-row="edit-key" style="display:none">
+                        <input type="checkbox" id="edit-sftp-clear-key" name="clearSftpPrivateKey" value="1">
+                        <label for="edit-sftp-clear-key">Remove stored key</label>
+                    </div>
+                </div>
+                <div class="field">
+                    <button type="button" class="btn btn-secondary" onclick="lpTestSftpConnection('edit')">Test Connection</button>
+                    <div id="edit-sftp-test-result" class="lpx-sftp-test-result"></div>
+                </div>
+                <input type="hidden" name="sftpHostKeyFingerprint" data-sftp-fingerprint="edit" value="">
+                <p class="text-dim lpx-fs-75">The remote path is scanned over SFTP. Media is downloaded temporarily for embedded-subtitle work, so SFTP libraries are slower than local folders.</p>
+            </div>
+            <div class="field">
+                <label for="edit-type">Type</label>
+                <select id="edit-type" name="type" required>
+                    <option value="movie">Movie</option>
+                    <option value="series">Series</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="edit-sourceLangId">Source language</label>
+                <select id="edit-sourceLangId" name="sourceLangId" required>
+                    @foreach (var l in Model.Languages)
+                    {
+                        <option value="@l.Id">@(l.Flag != null ? l.Flag + " " : "")@l.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="field field-checkbox">
+                <input type="checkbox" id="edit-enabled" name="enabled" value="1">
+                <label for="edit-enabled">Enabled</label>
+            </div>
+            <div class="field field-checkbox" style="display:none">
+                <input type="checkbox" id="edit-autoTranslate" name="autoTranslate" value="1">
+                <label for="edit-autoTranslate">Auto-translate</label>
+            </div>
+            <div class="field field-checkbox">
+                <input type="checkbox" id="edit-autoExtract" name="autoExtract" value="1">
+                <label for="edit-autoExtract">Auto-extract translated subtitles</label>
+            </div>
+            <div class="field">
+                <label>Scan frequency</label>
+                <div class="lpx-scan-radios">
+                    <label class="lpx-radio"><input type="radio" name="scanMode" value="hourly" data-scan-mode="edit">Hourly</label>
+                    <label class="lpx-radio"><input type="radio" name="scanMode" value="custom" data-scan-mode="edit">Custom schedule</label>
+                    <label class="lpx-radio"><input type="radio" name="scanMode" value="never" data-scan-mode="edit">Never (manual rescan only)</label>
+                </div>
+                <p class="text-dim lpx-scan-never-hint" style="display:none">The library will not be scanned automatically. Use "Rescan" to scan manually.</p>
+            </div>
+            <div id="edit-scan-custom" class="lpx-scan-custom" style="display:none"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('edit-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-overlay" id="blacklist-modal" onclick="closeModalOnOverlay(event)">
+    <div class="modal lpx-modal-480">
+        <div class="modal-header">
+            <h2>Blacklist Item</h2>
+            <button class="btn btn-icon" onclick="closeModal('blacklist-modal')">✕</button>
+        </div>
+        <form method="POST" id="blacklist-form" action="">
+            <p class="text-dim lpx-warn-note">
+                This will blacklist <strong id="blacklist-target-name"></strong> and hide it from the library and translation requests.
+            </p>
+            <div class="field">
+                <label for="blacklist-reason">Reason (optional)</label>
+                <input type="text" id="blacklist-reason" name="reason" maxlength="500" placeholder="e.g. wrong language, duplicate, etc.">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('blacklist-modal')">Cancel</button>
+                <button type="submit" class="btn btn-danger">Blacklist</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-overlay" id="item-match-modal">
+    <div class="modal modal-wide">
+        <div class="modal-header">
+            <h2>Change match — <span id="item-match-name"></span></h2>
+            <button class="btn btn-icon" onclick="closeModal('item-match-modal')">✕</button>
+        </div>
+        <p class="text-dim lpx-modal-hint">Pick one of the previously matched titles below, or search TheMovieDB for the correct one.</p>
+        <div id="item-match-candidates" class="lp-candidate-grid lpx-grid-mb" style="display:none"></div>
+        <div class="field">
+            <input type="search" id="item-match-search" class="lp-tmdb-search" placeholder="Title…" autocomplete="off">
+        </div>
+        <div class="lp-tmdb-results lpx-mt-25" id="item-match-results"></div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('item-match-modal')">Cancel</button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/library-paths.js" asp-append-version="true"></script>
+}

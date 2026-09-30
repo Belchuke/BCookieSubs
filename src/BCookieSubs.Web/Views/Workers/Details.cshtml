@@ -1,0 +1,119 @@
+@using BCookieSubs.Shared.Common
+@model WorkerDetailsViewModel
+@{
+    ViewData["Title"] = Model.Summary.Name;
+    ViewData["ActiveNav"] = "workers";
+    var hw = Model.Hardware;
+    var state = Model.Summary.EffectiveState;
+}
+
+<div class="page-header">
+    <h1>@Model.Summary.Name</h1>
+    <span class="badge @StateBadge(state)">@state</span>
+    <a href="/workers" class="text-dim wk-back-link">← All workers</a>
+</div>
+
+<div class="card">
+    <div class="card-header"><h2>Status</h2></div>
+    <div class="table-wrap">
+        <table>
+            <tbody>
+                <tr><th>Effective status</th><td><span class="badge @StateBadge(state)">@state</span></td></tr>
+                <tr><th>Enabled</th><td>@(Model.Summary.Enabled ? "yes" : "no")</td></tr>
+                <tr><th>Draining</th><td>@(Model.Summary.Draining ? "yes" : "no")</td></tr>
+                <tr><th>Connected</th><td class="text-dim">@(Model.Summary.Connected ? $"yes, since {Model.Summary.ConnectedSince:yyyy-MM-dd HH:mm:ss}" : "no")</td></tr>
+                <tr><th>Last seen</th><td class="text-dim">@(Model.Summary.LastSeenAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "never")</td></tr>
+                <tr><th>Worker version</th><td>@(Model.Summary.WorkerVersion ?? "—")</td></tr>
+                <tr><th>Machine identifier</th><td class="text-dim"><code>@(Model.MachineIdentifier ?? "—")</code></td></tr>
+                <tr><th>Created</th><td class="text-dim">@Model.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td></tr>
+                <tr><th>Updated</th><td class="text-dim">@Model.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card wk-card-mt">
+    <div class="card-header"><h2>Hardware</h2></div>
+    <div class="table-wrap">
+        <table>
+            <tbody>
+                <tr><th>OS</th><td>@(hw?.OperatingSystem ?? "—")</td></tr>
+                <tr><th>Architecture</th><td>@(hw?.Architecture ?? "—")</td></tr>
+                <tr><th>CPU</th><td>@(Model.Summary.Cpu ?? "—")</td></tr>
+                <tr><th>RAM</th><td>@(Model.Summary.Ram ?? "—")</td></tr>
+                <tr><th>GPU</th><td>@(Model.Summary.Gpu ?? "—")</td></tr>
+                <tr><th>VRAM</th><td>@(Model.Summary.Vram ?? "—")</td></tr>
+                <tr><th>CUDA available</th><td>@(hw is { CudaAvailable: true } ? "yes" : "no")</td></tr>
+                <tr><th>Python</th><td>@(hw?.PythonVersion ?? "—")</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card wk-card-mt">
+    <div class="card-header"><h2>Capabilities</h2></div>
+    <div class="table-wrap">
+        <table>
+            <tbody>
+                <tr>
+                    <th>Reported</th>
+                    <td>@(Model.Summary.ReportedCapabilities.Count == 0 ? "—" : string.Join(", ", Model.Summary.ReportedCapabilities))</td>
+                </tr>
+                <tr>
+                    <th>Allowed</th>
+                    <td>@(Model.Summary.AllowedCapabilities.Count == 0 ? "—" : string.Join(", ", Model.Summary.AllowedCapabilities))</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    @if (Model.CanManage && Model.Summary.ReportedCapabilities.Count > 0)
+    {
+        <form method="post" action="/workers/@Model.Summary.Id/allowed-capabilities" class="wk-caps-form">
+            @Html.AntiForgeryToken()
+            <h3 class="wk-caps-title">Allowed capabilities (what BCookieSubs may use)</h3>
+            <div class="wk-cap-checks">
+                @foreach (var cap in Model.Summary.ReportedCapabilities)
+                {
+                    <label class="field-checkbox wk-cap-check">
+                        <input type="checkbox" name="capabilities" value="@cap"
+                               checked="@(Model.Summary.AllowedCapabilities.Contains(cap) ? "checked" : null)">
+                        @cap
+                    </label>
+                }
+            </div>
+            <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+    }
+</div>
+
+@if (Model.CanManage)
+{
+    <div class="actions wk-actions-mt">
+        <form method="post" action="/workers/@Model.Summary.Id/set-enabled">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="enabled" value="@(Model.Summary.Enabled ? "false" : "true")">
+            <button type="submit" class="btn">@(Model.Summary.Enabled ? "Disable" : "Enable")</button>
+        </form>
+        <form method="post" action="/workers/@Model.Summary.Id/set-draining">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="draining" value="@(Model.Summary.Draining ? "false" : "true")">
+            <button type="submit" class="btn">@(Model.Summary.Draining ? "Resume" : "Drain")</button>
+        </form>
+        <form method="post" action="/workers/@Model.Summary.Id/remove" class="confirm-remove">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-danger">Remove worker</button>
+        </form>
+    </div>
+}
+
+@functions {
+    private static string StateBadge(WorkerEffectiveState s) => s switch
+    {
+        WorkerEffectiveState.Online => "badge-success",
+        WorkerEffectiveState.Busy => "badge-processing",
+        WorkerEffectiveState.Draining => "badge-warning",
+        WorkerEffectiveState.Disabled => "badge-error",
+        _ => "badge-neutral"
+    };
+}

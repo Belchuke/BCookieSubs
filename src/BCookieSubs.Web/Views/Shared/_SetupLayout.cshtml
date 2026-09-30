@@ -1,0 +1,46 @@
+@using BCookieSubs.Web.Services
+@inject CurrentUserContext CurrentUser
+@inject BCookieSubs.Shared.Services.ThemeService Themes
+@{
+    var theme = await Themes.ResolveAsync(CurrentUser.User?.SelectedThemeId);
+    var title = ViewData["Title"] as string;
+    var activeStep = (int)(ViewData["SetupStep"] ?? 0);
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>@(string.IsNullOrEmpty(title) ? "" : title + " — ")BCookieSubs</title>
+    <style>
+        :root {
+            --bg: @theme.Bg;
+            --surface: @theme.Surface;
+            --surface-2: @theme.Surface2;
+            --surface-3: @theme.Surface3;
+            --border: @theme.BorderColor;
+            --text: @theme.TextColor;
+            --text-dim: @theme.TextDim;
+            --text-hint: @theme.TextHint;
+            --accent: @theme.Accent;
+            --accent-dim: @theme.AccentDim;
+            --success: @theme.Success;
+            --success-dim: @theme.SuccessDim;
+            --warning: @theme.Warning;
+            --warning-dim: @theme.WarningDim;
+            --error: @theme.Error;
+            --error-dim: @theme.ErrorDim;
+            --info-dim: @theme.InfoDim;
+        }
+</style>
+    <link rel="icon" type="image/png" href="~/images/icon.png">
+    <link rel="stylesheet" href="~/lib/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="~/lib/flag-icons/css/flag-icons.min.css">
+    <link rel="stylesheet" href="~/css/style.css" asp-append-version="true">
+</head>
+<body>
+    @RenderBody()
+    <script src="~/js/app.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

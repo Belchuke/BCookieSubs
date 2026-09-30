@@ -1,0 +1,63 @@
+@{
+    ViewData["Title"] = "Setup — How It Works";
+    Layout = "_SetupLayout";
+}
+<div class="setup-page">
+    <partial name="_SetupSteps" />
+    <h1>How BCookieSubs Works</h1>
+    <p class="page-subtitle">A quick overview before you configure the system.</p>
+
+    <div class="s2-cards">
+        <div class="card">
+            <div class="card-header"><h2>Model Roles</h2></div>
+            <div class="s2-role-list">
+                <div class="s2-role-row">
+                    <span class="badge badge-info s2-role-badge">Translation</span>
+                    <div class="s2-role-desc">The core role. The model receives subtitle lines broken into chunks and returns translated text. At least one Translation model is required. When multiple Translation models are active they each produce a candidate translation, and the Judge picks the best one.</div>
+                </div>
+                <div class="s2-role-row">
+                    <span class="badge badge-warning s2-role-badge">Judge</span>
+                    <div class="s2-role-desc">BCookieSubs ships with 5 translation prompt variants by default. Each chunk is translated once per active prompt, producing multiple candidates. The Judge evaluates all candidates and selects the most accurate translation. Without a Judge model, the first candidate is used directly.</div>
+                </div>
+                <div class="s2-role-row">
+                    <span class="badge badge-success s2-role-badge">Name Formatter</span>
+                    <div class="s2-role-desc">Identifies the movie or TV show from a filename or folder name. Used when uploading subtitles and during library scanning so that translations are tagged with the correct media. Requires the TheMovieDB integration to be configured for best results.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h2>Prompts</h2></div>
+            <div class="s2-prompts">
+                <p class="s2-prompts-p1">Each role uses a prompt template that is sent to the model. Multiple prompt versions can exist. BCookieSubs tracks which version performs best for each model and language combination and promotes it automatically.</p>
+                <p class="s2-prompts-p2">Placeholder tokens in prompt text are replaced at runtime:</p>
+                <div class="s2-placeholders"></div>
+                <p class="s2-prompts-hint text-dim">Prompts can be edited and extended on the Prompts page at any time.</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h2>Settings Overview</h2></div>
+            <div class="s2-setting-row"><span class="s2-setting-label">Default Chunk Size</span><small>Number of subtitle lines sent to the model per request. Smaller chunks give more context per call; larger chunks are faster overall.</small></div>
+            <div class="s2-setting-row"><span class="s2-setting-label">Finish One Subtitle First</span><small>When enabled, all chunks for one target language complete before the next language starts. Useful for watching progress in real time.</small></div>
+            <div class="s2-setting-row"><span class="s2-setting-label">Name Detection</span><small>Enables the Name Formatter to automatically identify media from filenames during upload and library scanning.</small></div>
+            <div class="s2-setting-row"><span class="s2-setting-label">TheMovieDB Integration</span><small>Connects to TheMovieDB API to fetch posters, genres, and release years for matched media. Requires an API key.</small></div>
+            <div class="s2-setting-row"><span class="s2-setting-label">Show Posters</span><small>Display media artwork in the subtitle list and library views. Requires TheMovieDB to be configured.</small></div>
+            <div class="s2-setting-row"><span class="s2-setting-label">Library Scanning</span><small>Automatically scans configured library paths for new video and subtitle files on a schedule, creating translation jobs as needed.</small></div>
+            <div class="s2-setting-row"><span class="s2-setting-label">Auto-clear Logs</span><small>Deletes log entries older than a configured number of days to keep the log table manageable.</small></div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h2>Translation Languages</h2></div>
+            <div class="s2-setting-row"><span class="s2-setting-label">Default Target Languages <small class="text-dim">(system-wide)</small></span><small>The ordered list of languages that subtitles are translated into by default. Pre-selected for every user when they upload a subtitle file or trigger a library translation.</small></div>
+            <div class="s2-setting-row"><span class="s2-setting-label">Per-User Languages <small class="text-dim">(account override)</small></span><small>Each user can replace the system defaults with their own language list via their Account settings. New users start with the system defaults. You will set the system defaults in the next step.</small></div>
+        </div>
+    </div>
+
+    <div class="setup-actions">
+        <form method="POST" action="/setup/2/next">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-primary">Got it — Continue →</button>
+        </form>
+    </div>
+</div>

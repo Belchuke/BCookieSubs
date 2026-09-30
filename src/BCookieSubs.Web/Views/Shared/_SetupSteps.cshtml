@@ -1,0 +1,14 @@
+@{
+    var active = (int)(ViewData["SetupStep"] ?? 1);
+}
+<div class="setup-steps">
+    @for (var i = 1; i <= 5; i++)
+    {
+        @if (i > 1)
+        {
+            <span class="step-line@(i < active ? " done" : "")"></span>
+        }
+        var cls = i < active ? "step done" : i == active ? "step active" : "step";
+        <span class="@cls">@(i < active ? "✓" : i.ToString())</span>
+    }
+</div>

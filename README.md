@@ -1,11 +1,48 @@
 # BCookieSubs
 
-A self hosted app that translates subtitle files (`.srt`) using local or cloud LLMs, with a focus on watch along quality rather than literal word by word translation.
-Supports a built-in scanner for media libraries (movies / series), automatic embedded-subtitle extraction (MKV / MP4), and a judge-model voting flow that picks the best candidate translation per chunk.
+A self hosted app that translates subtitle files using local or cloud LLMs, with a focus on
+watch-along quality rather than literal word by word translation.
 
-> **Status: alpha.** Things will move around, schemas will change, and there is no upgrade path yet. **Always back up your SQLite database before updating** — breaking changes can happen at any time.
+```
+Browser ──> BCookieSubs.Web ──EF Core──> PostgreSQL
+                 │ gRPC
+                 ▼
+           BCookieSubs.Worker <──outbound gRPC── Python Worker(s)
+```
 
----
+## What does this program do?
+
+- **Scans your media library** — point it at movie and series folders; it matches titles against
+  [TheMovieDB](https://www.themoviedb.org) (posters, year, genres), tracks seasons/episodes and
+  extras, and can rescan on a schedule.
+- **Finds subtitle sources for each item** — companion subtitle files next to the video, subtitle
+  tracks embedded in MKV/MP4 containers, and image-based tracks.
+- **Translates subtitles with LLMs** — a subtitle is split into chunks; every configured
+  translation model × prompt produces a candidate per chunk, and a judge model votes on the best
+  one (with a fallback judge). Supported providers: **local Ollama**, **Ollama Cloud**,
+  **OpenAI (ChatGPT)** and **Anthropic (Claude)**. You can manage models, prompts (versioned),
+  translation schedules and per-user target languages.
+- **Creates source subtitles from audio** — Whisper transcription on remote Python compute
+  workers, including resumable runs and automatic translation-job creation afterwards.
+- **Reads image-based subtitles via OCR** — PGS (`.sup`) and VobSub (`.sub` + `.idx`) are burned
+  frame-by-frame and OCR'd (Tesseract) on a Python worker, then enter the normal translation flow.
+- **An offset editor** — shift the timings of a text subtitle file by up to ±5 minutes, with
+  preview and save back into the library.
+- **A live dashboard** — queue control (pause/resume, reorder, retry, bulk actions), statistics,
+  logs and live updates over SignalR.
+- **Multi-user with roles and permissions** — ASP.NET Core Identity, per-role permission claims,
+  audit logging, encrypted secret storage.
+- **Remote compute workers** — Python workers (Whisper / OCR / vision) enroll once and connect
+  outbound over gRPC; no inbound ports, per-worker capability and concurrency control.
+
+### Subtitle formats
+
+- **Text subtitles**: `.srt`, `.ass`/`.ssa` are handled directly. A text `.sub`
+  (MicroDVD/SubViewer frame-based format) is converted to SRT, using the FPS from the media file
+  (or a supplied value) for frame↔time conversion.
+- **Image subtitles**: VobSub (`.sub` + `.idx`) and PGS (`.sup`) go through the OCR pipeline.
+- Note that `.sub` files are **not** all the same: a text `.sub` parses directly, a VobSub `.sub`
+  is a bitmap container that only works together with its `.idx` sidecar.
 
 ## Why did I build this project?
 
@@ -16,149 +53,113 @@ So I wrote a little script to translate `.srt` files from English to Thai so we 
 
 **Use it on subtitles for media you legally own.** I do not endorse or support piracy in any form. This project was built for couples and families like mine where partners speak different languages and struggle to find subtitles in the right language for their media collection. It doesn't download, host, or distribute any copyrighted content; it only operates on subtitle files you provide, on your own machine. Translate subtitles for movies and shows you legitimately own so your loved ones don't miss out on the dialogue.
 
----
-
-## How it works
-
-At a high level:
-
-1. You give it an `.srt` file (or point it at a folder of media it'll find / extract subtitles itself).
-2. It splits the subtitle into chunks of N lines (configurable).
-3. For each chunk, every active translation **model × prompt** combination produces a candidate translation in parallel.
-4. A **judge** model is shown all candidates and picks the best one (with a fallback judge if the primary fails or rejects them all).
-5. The winners are stitched back together into a translated `.srt`, optionally written next to the original media file.
-
-Models can be:
-
-- **Local Ollama** models — runs on your hardware, no API costs, fully private.
-- **Ollama Cloud** models — large models you couldn't run locally; needs an API key.
-- **OpenAI** / **Anthropic** — supported if you'd rather use ChatGPT / Claude (but not tested).
-
-The app uses [TheMovieDB](https://www.themoviedb.org) to detect what movie / show a filename refers to (so prompts get accurate title, year, and genre context), which noticeably improves translation quality for proper nouns and idioms.
-
----
-
 ## Prerequisites
 
-Hard requirements:
+- **Docker + Docker Compose v2** (Docker Desktop on macOS / Windows, or `docker.io` + the compose
+  plugin on Linux). This is the supported way to host BCookieSubs.
+- Disk space for the database (small) and any Ollama models you choose to install (large — many
+  GBs each).
+- A **TheMovieDB API key** (recommended) for media name detection. It's free: create an account at
+  <https://www.themoviedb.org>, go to _Settings → API_, request a developer key. v3 auth (the
+  simple API key string) is all you need.
+- Optional: an **NVIDIA GPU** on Linux/Windows hosts accelerates Whisper/OCR in the bundled
+  workers; on macOS the host Ollama uses Metal.
 
-- **Docker + Docker Compose v2** (Docker Desktop on macOS / Windows, or `docker.io` + the compose plugin on Linux).
-- Disk space for the database (small) and any Ollama models you choose to install (large — many GBs each).
-- A **TheMovieDB API key** for media name detection. It's free: create an account at <https://www.themoviedb.org>, go to _Settings → API_, request a developer key. v3 auth (the simple API key string) is all you need.
+Running from source instead (development): .NET 10 SDK, a PostgreSQL instance and Python 3.11+ —
+see `docs/architecture.md` for the layout and `scripts/` for the proto/worker helpers.
 
-Recommended:
+## Hosting / Installation
 
-- An **Ollama account** if you don't have hardware to run large local models. Get one at <https://ollama.com>, then create an API key in your account settings. The **Pro plan** is more than enough for personal use — you don't need anything higher unless you're translating at industrial scale.
-
-Optional:
-
-- An **OpenAI** key from <https://platform.openai.com/api-keys> if you want to use GPT models.
-- An **Anthropic** key from <https://console.anthropic.com> if you want to use Claude.
-- An **NVIDIA GPU** with the [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) installed if you want to run local Ollama models with GPU acceleration.
-- Or an **AMD GPU** with [ROCm](https://rocm.docs.amd.com/) installed (provides `/dev/kfd` and `/dev/dri`) — Ollama then runs the `ollama/ollama:rocm` image. Whisper stays CPU-only on AMD (whisper.cpp has no ROCm backend); only Ollama inference uses the GPU.
-
-> **Note on `.sub` (VobSub) OCR:** image-based `.sub` + `.idx` subtitles are OCR'd to text with Tesseract before translation. Tesseract and the common language packs (`eng`, `dan`, `tha`, `jpn`, `deu`, `fra`, `spa`) are already installed inside the Docker image, so this works out of the box. To OCR other languages, add the matching `tesseract-ocr-<lang>` package in the `Dockerfile` and rebuild. If you run the app natively on macOS instead of in Docker, install Tesseract with `brew install tesseract tesseract-lang`.
-
----
-
-## Setup
-
-`./setup.sh` is the consolidated entry point. It walks you through deployment mode (Docker or local Node), detects your OS and GPU (macOS Metal, Linux NVIDIA, Linux AMD/ROCm, or CPU), writes `.env`, and **generates the `docker-compose*.yml` files** for your machine (`docker-compose.yml`, `docker-compose.macos.yml`, and `docker-compose.gpu.yml` — these are gitignored and regenerated each run, so don't hand-edit them; the `docker-compose.dev.yml` overlay stays tracked). It creates `.env` from `.env.example` if missing and fills in a random `AES_KEY` for you.
-
-### Linux (CPU or GPU)
+The canonical install is the setup script. It asks about ports, GPU usage, Ollama placement
+(local / cloud / both), optional API keys, your library folder and the default UI language,
+generates strong secrets into `.env` (existing values are kept and never printed), then builds
+and starts everything and health-checks the stack:
 
 ```bash
 ./setup.sh
 ```
 
-Detects a GPU automatically: NVIDIA → Ollama gets `nvidia` device passthrough; AMD → Ollama runs `ollama/ollama:rocm` with `/dev/kfd` + `/dev/dri`; otherwise CPU-only.
+Default host ports (all overridable in `.env`): Web **4850**, PostgreSQL **4851**, Ollama **4852**
+(only when the Ollama Compose service is used), C# worker gateway **4853**. Port **4854** is
+reserved for the Python worker but stays unused — Python workers connect outbound only and expose
+no listener. PostgreSQL is published on the host loopback only (`POSTGRES_BIND_ADDRESS=127.0.0.1`
+default), so local administration and DBeaver over an SSH tunnel work but the database is not
+reachable from outside. Setting `POSTGRES_BIND_ADDRESS=0.0.0.0` (or a LAN IP) in `.env` deliberately
+exposes it on that interface — see `.env.example` for the security implications.
 
-### macOS (Apple Silicon or Intel)
+Ollama placement is platform-specific and handled by `setup.sh`: on macOS it uses the host Ollama
+via `host.docker.internal`; on Linux/Windows Docker hosts it runs Ollama as a Compose service
+(profile `ollama`, models persisted in the `ollama` volume, CPU by default — layer
+`docker-compose.gpu.yml` for NVIDIA GPUs); with `OLLAMA_API_KEY` set and no `OLLAMA_BASE_URL` it
+uses Ollama Cloud and never starts the local service. A custom `OLLAMA_BASE_URL` in `.env` is
+always respected.
+
+On first open, create the owner account, then manage workers at **/workers**.
+
+The setup flow only appears while no user exists. PostgreSQL data lives in the `bcookiesubs_pgdata`
+volume, which survives container recreation and `setup.sh` re-runs. To wipe the database and get the
+setup flow back: `docker compose --env-file .env down -v` (removes all project
+volumes, including the Python worker's identity and the media/work/models volumes), then re-run the
+setup script. To reset only the database: `docker compose --env-file .env down`, then
+`docker volume rm bcookiesubs_pgdata`.
+
+For GPU-enabled Python workers (NVIDIA runtime required):
 
 ```bash
-./setup.sh
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml --env-file .env up -d
 ```
 
-Detects macOS and uses a native Ollama on the host (Metal GPU acceleration — Docker Desktop on macOS can't pass through the GPU). If Ollama isn't already running, `setup.sh` installs it via Homebrew and starts it as a background service, then brings up the app container pointed at the native Ollama.
+Development overrides: `docker-compose.dev.yml` (exposes PostgreSQL on the host, Development env).
 
-### Manual setup
+### Remote worker setup
 
-If you'd rather not use the scripts:
+1. In the web UI: **Workers → Add Worker**, copy the one-time enrollment token.
+2. On the worker machine: `./scripts/setup-worker.sh` — it asks for the server URL, the token, a
+   worker name, capabilities and max concurrency, detects hardware, and starts only the Python
+   worker (Docker if available, otherwise a venv). The worker connects outbound to the central
+   server; no inbound ports are required.
 
-1. Copy `.env.example` to `.env` and fill in:
-   - `AES_KEY` — 64 hex chars (`openssl rand -hex 32`). Required for the encrypted secrets table.
-   - `TRANSLATION_ROOT_DIR` — host path to your media library. The container mounts this at the same path.
-   - `THEMOVIEDB_API_KEY`, `OLLAMA_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` — whichever services you want to use. All optional; missing keys just disable that provider.
-2. Generate the compose files (they are gitignored): run `./setup.sh` (recommended), or source `scripts/_common.sh` and call `write_compose_base .` / `write_compose_gpu . nvidia|amd`.
-3. `docker compose up -d --build` (Linux) or `docker compose -f docker-compose.macos.yml up -d --build` (macOS, with native Ollama already running).
-4. Browse <http://localhost:4850>. The first-run wizard walks you through admin account creation, model install, and role assignment.
+### Documentation
 
-### Updating
+- `docs/architecture.md` — full architecture
+- `docs/workers.md` — enrollment, credentials, heartbeat, drain/disable/remove, eligibility
+- `docs/update.md` — update procedure
+- `docs/backup.md` — backup and restore
+- `docs/database.md` — the PostgreSQL schema and design decisions
+
+## Updating
+
+Before updating, back up the database (see `docs/backup.md`):
+
+```bash
+docker compose --env-file .env exec -T postgres \
+  pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backups/$(date +%F)-pre-update.sql
+```
+
+Then update the application (migrations apply automatically on startup):
 
 ```bash
 git pull
-docker compose up -d --build
+docker compose --env-file .env up -d --build
 ```
 
-The `docker-compose*.yml` files are gitignored (generated by `setup.sh`), so `git pull` leaves your local copies untouched — this still works. If you ever deleted them or are on a fresh clone, run `./setup.sh` once to regenerate before `docker compose up`.
+Never use `docker compose down -v` as part of an update — it deletes volumes, including the
+database, worker identities and Ollama models. The full procedure, verification steps and rollback
+are in `docs/update.md`.
 
-The schema is allowed to change in alpha. If something refuses to start after an update, blow away the volumes and start fresh:
+To update Ollama itself (native install on macOS, the Compose service elsewhere, or nothing at all
+when you use Ollama Cloud), run:
 
 ```bash
-docker compose down -v
-./setup.sh
+./update-ollama.sh
 ```
 
-## Planned future features
-
-This project is built in my free time, so updates depend on how busy I am. That said, here's what's on the roadmap:
-
-### Rewrite to use Bun
-
-Planning to rewrite the entire codebase to use **Bun** instead of Node.js for faster startup, better performance, and simplified tooling.
-
-### Additional subtitle format support
-
-Currently `.srt`, `.ass` / `.ssa`, and text / image-based `.sub` (MicroDVD, SubViewer, and VobSub `.idx` — the last OCR'd via Tesseract) are supported. Planning to add:
-
-- `.sup` (Blu-ray PGS subtitles — surfaced as unsupported for now; OCR pipeline not yet wired)
-- Other common subtitle formats
-
-### Manual subtitle creation
-
-For media files that have no existing subtitles, I'm planning to add the ability to generate subtitles from scratch based on speech-to-text transcription. This would let you create subtitles for content that has none available.
-
-### API access
-
-Right now all interaction happens through the web dashboard. A future update will add API key support so you can automate subtitle translation without touching the UI — useful for scripting or integrating with other tools.
-
----
-
-## Configuration notes
-
-### App language (`APP_DEFAULT_LANGUAGE`)
-
-The application supports running the UI in multiple languages. Set `APP_DEFAULT_LANGUAGE` in your `.env` file to change the default interface language (defaults to `en` for English).
-
-All translations were created with **Gemma 4**. You can also change the language per user from within the app settings after logging in.
-
-The environment variable is already configured in `.env.example` and is read by `setup.sh` during initialization.
-
----
-
-## Recommended setup for best performance
-
-For the best balance of translation quality and speed, I recommend:
-
-1. **Get an Ollama Pro subscription** — just for the cloud models; more than enough for personal use
-2. Use **`gemma4:31b-cloud`** for translation and judge tasks
-3. Run **`granite4.1:3b`** locally for name formatting (`ollama pull granite4.1:3b`)
-
-This setup gives you high-quality translations from the large cloud model while keeping lightweight tasks like name formatting fast and free by running them locally.
+It snapshots your pulled models to `ollama-models.txt`, upgrades the runtime without touching the
+models volume, optionally re-pulls the tracked models and prints a health summary.
 
 ## Support me
 
-If this saves you from hand-translating subtitles for your partner / family / film club, and you'd like to chip in toward keeping it maintained, [details coming soon — sponsor link / Ko-fi / etc to be added here].
+If this saves you from hand-translating subtitles for your partner / family / film club, and you'd like to chip in toward keeping it maintained, [details coming soon].
 
 In the meantime the best support is:
 

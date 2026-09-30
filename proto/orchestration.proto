@@ -1,0 +1,155 @@
+syntax = "proto3";
+
+package bcookiesubs.orchestration.v1;
+
+option csharp_namespace = "BCookieSubs.Shared.Grpc";
+
+service Orchestration {
+  rpc GetSnapshot(GetSnapshotRequest) returns (OrchestrationSnapshot);
+  rpc WatchEvents(WatchEventsRequest) returns (stream OrchestrationEvent);
+  rpc NotifyWorkerChanged(NotifyWorkerChangedRequest) returns (NotifyWorkerChangedResponse);
+  rpc PrepareTranslation(PrepareTranslationRequest) returns (PrepareTranslationResponse);
+  rpc PrepareTranslationBatch(PrepareTranslationBatchRequest) returns (PrepareTranslationBatchResponse);
+  rpc ListSubtitleSources(ListSubtitleSourcesRequest) returns (ListSubtitleSourcesResponse);
+  rpc SetTranslationRunnerPaused(SetTranslationRunnerPausedRequest) returns (SetTranslationRunnerPausedResponse);
+  rpc SetComputeRunnerPaused(SetComputeRunnerPausedRequest) returns (SetComputeRunnerPausedResponse);
+  rpc GetComputeRunnerStates(GetComputeRunnerStatesRequest) returns (GetComputeRunnerStatesResponse);
+}
+
+message GetSnapshotRequest {}
+
+message OrchestrationWorker {
+  int64 worker_id = 1;
+  bool connected = 2;
+  string connection_id = 3;
+  int64 connected_at_unix = 4;
+  int64 last_heartbeat_at_unix = 5;
+  bool ready = 6;
+  int32 active_jobs = 7;
+  repeated string reported_capabilities = 8;
+  int32 max_concurrency = 9;
+}
+
+message OrchestrationSnapshot {
+  repeated OrchestrationWorker workers = 1;
+  int64 generated_at_unix = 2;
+}
+
+message WatchEventsRequest {}
+
+enum OrchestrationEventType {
+  ORCHESTRATION_EVENT_TYPE_UNSPECIFIED = 0;
+  ORCHESTRATION_EVENT_TYPE_CONNECTED = 1;
+  ORCHESTRATION_EVENT_TYPE_DISCONNECTED = 2;
+  ORCHESTRATION_EVENT_TYPE_HEARTBEAT = 3;
+  ORCHESTRATION_EVENT_TYPE_STATE_CHANGED = 4;
+  ORCHESTRATION_EVENT_TYPE_ENROLLED = 5;
+  ORCHESTRATION_EVENT_TYPE_CONFIG_CHANGED = 6;
+  ORCHESTRATION_EVENT_TYPE_LIBRARY_SCAN = 7;
+  ORCHESTRATION_EVENT_TYPE_TRANSLATION_CHANGED = 8;
+  ORCHESTRATION_EVENT_TYPE_TRANSLATION_REMOVED = 9;
+  ORCHESTRATION_EVENT_TYPE_WHISPER_QUEUE_CHANGED = 10;
+  ORCHESTRATION_EVENT_TYPE_OCR_QUEUE_CHANGED = 11;
+  ORCHESTRATION_EVENT_TYPE_LOG_ADDED = 12;
+  ORCHESTRATION_EVENT_TYPE_LOG_UPDATED = 13;
+  ORCHESTRATION_EVENT_TYPE_DASHBOARD_COUNTS_CHANGED = 14;
+  ORCHESTRATION_EVENT_TYPE_LIBRARY_REQUESTS_CHANGED = 15;
+}
+
+message OrchestrationEvent {
+  OrchestrationEventType type = 1;
+  int64 worker_id = 2;
+  int64 occurred_at_unix = 3;
+  string detail = 4;
+}
+
+message NotifyWorkerChangedRequest {
+  int64 worker_id = 1;
+}
+
+message NotifyWorkerChangedResponse {
+  bool delivered = 1;
+  string detail = 2;
+}
+
+message PrepareTranslationRequest {
+  int64 item_id = 1;
+  bool reset_status = 2;
+  int64 user_id = 3;
+  string source_override_json = 4;
+  string source_language_hint = 5;
+}
+
+message PrepareTranslationResponse {
+  bool success = 1;
+  string msg = 2;
+}
+
+message PrepareTranslationBatchItem {
+  int64 item_id = 1;
+  bool reset_status = 2;
+  string source_override_json = 3;
+  string source_language_hint = 4;
+}
+
+message PrepareTranslationBatchRequest {
+  int64 user_id = 1;
+  repeated PrepareTranslationBatchItem items = 2;
+}
+
+message PrepareTranslationBatchResult {
+  int64 item_id = 1;
+  bool success = 2;
+  string msg = 3;
+}
+
+message PrepareTranslationBatchResponse {
+  repeated PrepareTranslationBatchResult results = 1;
+}
+
+message ListSubtitleSourcesRequest {
+  int64 item_id = 1;
+}
+
+message ListSubtitleSourcesResponse {
+  bool success = 1;
+  string msg = 2;
+  string sources_json = 3;
+}
+
+message SetTranslationRunnerPausedRequest {
+  bool paused = 1;
+  string acting_username = 2;
+}
+
+message SetTranslationRunnerPausedResponse {
+  bool success = 1;
+  bool paused = 2;
+  string msg = 3;
+}
+
+enum ComputeRunnerKind {
+  COMPUTE_RUNNER_KIND_UNSPECIFIED = 0;
+  COMPUTE_RUNNER_KIND_WHISPER = 1;
+  COMPUTE_RUNNER_KIND_OCR = 2;
+}
+
+message SetComputeRunnerPausedRequest {
+  ComputeRunnerKind kind = 1;
+  bool paused = 2;
+  string acting_username = 3;
+}
+
+message SetComputeRunnerPausedResponse {
+  bool success = 1;
+  bool paused = 2;
+  string msg = 3;
+}
+
+message GetComputeRunnerStatesRequest {}
+
+message GetComputeRunnerStatesResponse {
+  bool translation_paused = 1;
+  bool whisper_paused = 2;
+  bool ocr_paused = 3;
+}
