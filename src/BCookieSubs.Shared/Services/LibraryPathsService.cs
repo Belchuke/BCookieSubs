@@ -166,7 +166,7 @@ public class LibraryPathsService(
         var lp = new LibraryPath
         {
             Name = form.Name.Trim(),
-            Path = form.Path.Trim(),
+            Path = TrimRootPath(form.Path),
             SourceLanguageId = form.SourceLanguageId,
             Type = form.Type == "series" ? LibraryPathType.Series : LibraryPathType.Movie,
             Enabled = form.Enabled,
@@ -223,7 +223,7 @@ public class LibraryPathsService(
         if (error != null) return new(false, error);
 
         lp.Name = form.Name.Trim();
-        lp.Path = form.Path.Trim();
+        lp.Path = TrimRootPath(form.Path);
         lp.SourceLanguageId = form.SourceLanguageId;
         lp.Type = form.Type == "series" ? LibraryPathType.Series : LibraryPathType.Movie;
         lp.Enabled = form.Enabled;
@@ -729,6 +729,9 @@ public class LibraryPathsService(
 
     private static string? TrimOrNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    // Stored roots are prefix-compared elsewhere; drop a typed trailing separator.
+    private static string TrimRootPath(string path) => Path.TrimEndingDirectorySeparator(path.Trim());
+
     private static LibraryStorageKind ParseStorage(string? storage) =>
         string.Equals(storage, "sftp", StringComparison.OrdinalIgnoreCase)
             ? LibraryStorageKind.Sftp : LibraryStorageKind.Local;
@@ -829,8 +832,12 @@ public class LibraryPathsService(
         return resolved;
     }
 
-    private static bool IsInsideRoot(string candidate, string root) =>
-        candidate == root || candidate.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+    private static bool IsInsideRoot(string candidate, string root)
+    {
+        root = Path.TrimEndingDirectorySeparator(root);
+        candidate = Path.TrimEndingDirectorySeparator(candidate);
+        return candidate == root || candidate.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+    }
 
     // Public gate for user-supplied file paths: the target must resolve inside
     // root, including through intermediate symlinks.
@@ -847,6 +854,7 @@ public class LibraryPathsService(
     // the target outside either.
     private static bool EscapesRootViaSymlink(string resolved, string root)
     {
+        root = Path.TrimEndingDirectorySeparator(root);
         var relative = resolved.Length > root.Length
             ? resolved[(root.Length + 1)..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries)
             : [];
