@@ -24,9 +24,11 @@ public class SystemInfoService(
     public SystemInfo GetInfo()
     {
         var assembly = typeof(SystemInfoService).Assembly;
+        // InformationalVersion carries a "+<commit>" suffix from source-link metadata.
         var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
                       ?? assembly.GetName().Version?.ToString()
                       ?? "unknown";
+        version = version.Split('+')[0];
         var ollamaBaseUrl = OllamaService.GetBaseUrl();
 
         return new SystemInfo(

@@ -2,6 +2,12 @@
 
 The standard update flow: backup → pull → build → restart (migrations apply automatically) → verify.
 
+The About page automates this flow for you: it checks GitHub for the newest release and,
+on Owner accounts, shows an **Update** button that runs the same backup → checkout →
+rebuild steps through `scripts/self-update.sh`. It needs a git checkout and Docker on the
+machine running the app; container installs without those update from the host with the
+steps below.
+
 ## 1. Back up
 
 ```bash

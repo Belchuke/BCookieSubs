@@ -38,9 +38,18 @@ builder.Services.AddSignalR();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient(ReleaseCheckService.HttpClientName, client =>
+{
+    client.BaseAddress = new Uri("https://api.github.com/");
+    client.Timeout = TimeSpan.FromSeconds(6);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BCookieSubs");
+    client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+});
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<BCookieSubsDbContext>("database");
 
+builder.Services.AddSingleton<ReleaseCheckService>();
+builder.Services.AddSingleton<SelfUpdateService>();
 builder.Services.AddSingleton<OrchestrationClient>();
 builder.Services.AddSingleton<WorkersStatusBroadcaster>();
 builder.Services.AddSingleton<LibraryStatusBroadcaster>();

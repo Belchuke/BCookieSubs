@@ -2070,3 +2070,19 @@ details.series-ep-accordion[open] .series-ep-chevron { transform: rotate(90deg);
 .ab-check-label { font-weight: 600; }
 .ab-check-hint { font-size: .82rem; }
 .ab-actions { padding: 0 1rem 1rem; }
+.ab-update-status-row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.ab-update-log {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: .75rem;
+  line-height: 1.5;
+  margin: 0 1rem 1rem;
+  max-height: 320px;
+  overflow: auto;
+  padding: .75rem .9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

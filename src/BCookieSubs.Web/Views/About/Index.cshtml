@@ -1,10 +1,15 @@
 @using BCookieSubs.Shared.Services
+@using BCookieSubs.Web.Services
 @model SystemInfo
 @{
     ViewData["Title"] = "About";
     ViewData["ActiveNav"] = "about";
     var checklist = (List<SetupChecklistItem>)ViewBag.Checklist;
     var canViewSettings = (bool)ViewBag.CanViewSettings;
+    var canManageSettings = (bool)ViewBag.CanManageSettings;
+    var release = (ReleaseStatus)ViewBag.Release!;
+    var updateRunning = (bool)ViewBag.UpdateRunning;
+    var selfUpdateSupported = (bool)ViewBag.SelfUpdateSupported;
 }
 <div class="page-header"><h1>About</h1></div>
 
@@ -21,6 +26,66 @@
                 <tr><th>Workers</th><td>@Model.EnabledWorkers enabled / @Model.TotalWorkers enrolled</td></tr>
             </tbody>
         </table>
+    </div>
+</div>
+
+<div class="card ab-card-mt">
+    <div class="card-header"><h2>Updates</h2></div>
+    <div class="table-wrap">
+        <table>
+            <tbody>
+                <tr><th>Installed version</th><td>@release.CurrentVersion</td></tr>
+                <tr><th>Newest GitHub release</th>
+                    <td>
+                        @if (release.Latest != null)
+                        {
+                            <a href="@release.Latest.HtmlUrl" target="_blank" rel="noopener noreferrer">@release.Latest.Version</a>
+                            @if (release.Latest.PublishedAt is { } published)
+                            {
+                                <span class="text-dim"> — @published.ToString("yyyy-MM-dd")</span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="badge badge-neutral">@(release.Error ?? "Check unavailable")</span>
+                        }
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="ab-actions ab-update-status-row">
+        @if (release.Upgradeable)
+        {
+            if (canManageSettings && selfUpdateSupported)
+            {
+                <button type="button" id="ab-update-btn" class="btn btn-primary" data-tag="@release.Latest!.Tag">
+                    Update to @release.Latest.Version
+                </button>
+            }
+            else if (canManageSettings)
+            {
+                <span class="badge badge-warning">New version available</span>
+                <span class="text-dim">This deployment has no git checkout here — update from the host with
+                    <code>git pull</code> and <code>docker compose --env-file .env up -d --build</code> (see docs/update.md).</span>
+            }
+            else
+            {
+                <span class="badge badge-warning">New version available</span>
+            }
+        }
+        else if (release.Latest != null)
+        {
+            <span class="badge badge-success">Up to date</span>
+        }
+    </div>
+    @if (release.Upgradeable && canManageSettings && selfUpdateSupported)
+    {
+        <p class="text-dim ab-desc">Runs the documented update flow: database backup, checkout of the release tag,
+            rebuild and restart. During a container rebuild the log below stops refreshing — reload the page afterwards.</p>
+    }
+    <div id="ab-update-block" style="display:none">
+        <pre id="ab-update-log" class="ab-update-log"></pre>
     </div>
 </div>
 
@@ -74,3 +139,121 @@
         </div>
     }
 </div>
+
+<script>
+    (function () {
+        var canManage = @Json.Serialize(canManageSettings);
+        var initialRunning = @Json.Serialize(updateRunning);
+        var btn = document.getElementById("ab-update-btn");
+        var block = document.getElementById("ab-update-block");
+        var logEl = document.getElementById("ab-update-log");
+        var timer = null;
+        var updateStarted = false;
+
+        function showToast(message, type) {
+            var existing = document.getElementById("page-toast");
+            if (existing) existing.remove();
+            var t = document.createElement("div");
+            t.className = "toast toast-" + (type || "success");
+            t.id = "page-toast";
+            t.innerHTML =
+                '<span class="toast-msg"></span><button type="button" class="toast-close" aria-label="Close">✕</button>';
+            t.querySelector(".toast-msg").textContent = message;
+            var main = document.querySelector(".main-content");
+            (main || document.body).prepend(t);
+            t.querySelector(".toast-close").addEventListener("click", function () { t.remove() });
+            setTimeout(function () { if (t.parentNode) t.remove() }, 5000)
+        }
+
+        function render(data) {
+            var lines = data.lines || [];
+            logEl.textContent = lines.length ? lines.join("\n") : "Waiting for update output…";
+            logEl.scrollTop = logEl.scrollHeight;
+            return lines.length > 0 && (data.finished || (!data.running && updateStarted));
+        }
+
+        var failures = 0;
+
+        function tick() {
+            fetch("/about/update-status", { headers: { "Cache-Control": "no-cache" } })
+                .then(function (r) {
+                    if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? "forbidden" : "http")
+                    return r.json()
+                })
+                .then(function (data) {
+                    failures = 0;
+                    if (render(data)) {
+                        timer = null;
+                        if (btn) btn.disabled = false;
+                        showToast(data.ok ? "Update finished — reload the page to see the new version"
+                                           : "Update failed — see the log above", data.ok ? "success" : "error");
+                        return;
+                    }
+                    timer = setTimeout(tick, 2000)
+                })
+                .catch(function (e) {
+                    var forbidden = e && e.message === "forbidden";
+                    var listening = updateStarted || initialRunning;
+                    if (forbidden || !listening) {
+                        // The update script rebuilds the app itself; tolerate a few minutes of
+                        // connection errors before giving up.
+                        timer = null;
+                        if (btn) btn.disabled = false;
+                        showToast(forbidden ? "Owner permission required" : "Update status request failed", "error");
+                        return;
+                    }
+                    failures += 1;
+                    if (failures > 150) {
+                        timer = null;
+                        if (btn) btn.disabled = false;
+                        showToast("The app is restarting — reload the page to check the result", "info");
+                        return;
+                    }
+                    timer = setTimeout(tick, 3000)
+                })
+        }
+
+        if (btn) {
+            btn.addEventListener("click", function () {
+                var tag = btn.dataset.tag || "";
+                if (!window.confirm("This backs up the database, checks out " + tag + " and rebuilds the app. Continue?")) return;
+                btn.disabled = true;
+                block.style.display = "";
+                logEl.textContent = "Starting update…";
+                fetch("/about/update", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "RequestVerificationToken": csrfToken(),
+                    },
+                    body: JSON.stringify({ tag: tag }),
+                })
+                    .then(function (r) { return r.json() })
+                    .then(function (data) {
+                        if (!data || !data.success) {
+                            showToast(data && data.msg ? data.msg : "Update could not start", "error");
+                            btn.disabled = false;
+                            block.style.display = "none";
+                            return;
+                        }
+                        updateStarted = true;
+                        showToast("Update running — this can take several minutes", "success");
+                        failures = 0;
+                        timer = setTimeout(tick, 1500);
+                    })
+                    .catch(function () {
+                        showToast("Request failed", "error");
+                        btn.disabled = false;
+                        block.style.display = "none";
+                    })
+            })
+        }
+
+        // An update started before this page load: resume listening if allowed to.
+        if (initialRunning && canManage) {
+            block.style.display = "";
+            updateStarted = true;
+            timer = setTimeout(tick, 1000)
+        }
+    })();
+</script>
