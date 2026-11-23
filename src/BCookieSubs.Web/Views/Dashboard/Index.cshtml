@@ -21,6 +21,7 @@
     bool Can(string permission) => CurrentUser.HasPermission(permission);
     var canStop = Can(Permissions.CanCancelTranslationJob);
     var canDelete = Can(Permissions.CanDeleteTranslation);
+    var canRestartChunks = Can(Permissions.CanRestartTranslationChunk);
     var canManageWorker = Can("canManageWorker");
     var canAdd = Can(Permissions.CanAddSubtitleToTranslateDashboard);
 }
@@ -286,6 +287,7 @@
       }));
   var CAN_STOP = @Html.Raw(canStop ? "true" : "false");
   var CAN_DELETE = @Html.Raw(canDelete ? "true" : "false");
+  var CAN_RETRY_CHUNKS = @Html.Raw(canRestartChunks ? "true" : "false");
   var SHOW_POSTERS = @Html.Raw(showPosters ? "true" : "false");
   var DELETE_NOT_CANCEL = @Html.Raw(deleteNotCancel ? "true" : "false");
   var APP_STRINGS = {

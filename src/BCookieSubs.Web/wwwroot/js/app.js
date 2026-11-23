@@ -18,6 +18,16 @@ function csrfHeaders(extra) {
   return headers
 }
 
+// JS-rendered post forms carry no antiforgery field; supply it at submit
+// time so these (retry/delete/move buttons) pass ValidateAntiForgeryToken.
+document.addEventListener("formdata", function (ev) {
+  var fd = ev.formData
+  if (fd && !fd.has("__RequestVerificationToken")) {
+    var token = csrfToken()
+    if (token) fd.append("__RequestVerificationToken", token)
+  }
+})
+
 function openModal(id) {
   var el = document.getElementById(id)
   if (el) el.classList.add("open")
@@ -426,6 +436,9 @@ function closeModalOnOverlay(event) {
 
   function subtitleBodyActions(s, langMap) {
     var isActive = s.status !== "completed" && s.status !== "cancelled"
+    var failedChunks = (s.targets || []).reduce(function (n, t) { return n + (t.failed || 0) }, 0)
+    var canRestartFailed =
+      failedChunks > 0 && (typeof CAN_RETRY_CHUNKS === "undefined" || CAN_RETRY_CHUNKS)
     var html = '<div class="accordion-actions">'
     if (isActive && (typeof CAN_STOP === "undefined" || CAN_STOP)) {
       html += '<form method="POST" action="/dashboard/cancel/' + s.id + '" style="display:inline"'
@@ -455,6 +468,12 @@ function closeModalOnOverlay(event) {
           "</a>"
       }
     })
+    if (canRestartFailed) {
+      html +=
+        '<form id="retry-failed-chunks-' + s.id + '" data-sub-id="' + s.id + '" data-count="' + failedChunks + '">' +
+        '<button type="submit" class="btn btn-secondary btn-sm" title="Re-queue the failed chunks of this translation">↻ Restart failed chunks' +
+        " (" + failedChunks + ")</button></form>"
+    }
     html += '<button type="button" class="btn btn-secondary btn-sm" onclick="inspectJob(' + s.id + ')">Inspect</button>'
     html += "</div>"
     return html
@@ -1831,6 +1850,24 @@ function retryChunk(chunkId, subtitleId) {
     })
     .catch(function (e) { alert("Retry failed: " + e.message) })
 }
+
+// The "Restart failed chunks" form in the accordion actions strip.
+document.addEventListener("submit", function (ev) {
+  var f = ev.target
+  if (f && f.id && f.id.indexOf("retry-failed-chunks-") === 0) {
+    ev.preventDefault()
+    var subId = parseInt(f.getAttribute("data-sub-id"), 10)
+    var count = parseInt(f.getAttribute("data-count"), 10) || 0
+    if (!confirm("Re-queue " + count + " failed chunk(s) for translation?")) return
+    fetch("/dashboard/retry-chunks/" + subId, { method: "POST", headers: csrfHeaders() })
+      .then(function (r) { return r.json() })
+      .then(function (data) {
+        if (data.error) { alert("Restart failed: " + data.error); return }
+        alert(data.msg || "Failed chunks re-queued")
+      })
+      .catch(function (e) { alert("Restart failed: " + e.message) })
+  }
+})
 
 function resetChunk(chunkId, subtitleId) {
   fetch("/dashboard/reset-chunk/" + chunkId, { method: "POST", headers: csrfHeaders() })

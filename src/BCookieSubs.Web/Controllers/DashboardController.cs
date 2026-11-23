@@ -621,6 +621,15 @@ public partial class DashboardController(
         return Json(new { success = retried, msg = retried ? null : "Chunk is no longer failed" });
     }
 
+    [HttpPost("retry-chunks/{subtitleId:long}")]
+    [Authorize(Policy = Policies.Prefix + Permissions.CanRestartTranslationChunk)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RetryFailedChunks(long subtitleId)
+    {
+        var count = await pipeline.RetryFailedChunksForSubtitleAsync(subtitleId);
+        return Json(new { success = true, msg = count > 0 ? $"{count} failed chunk(s) re-queued" : "No failed chunks" });
+    }
+
     [HttpPost("reset-chunk/{chunkId:long}")]
     [Authorize(Policy = Policies.Prefix + Permissions.CanRestartTranslationChunk)]
     [ValidateAntiForgeryToken]

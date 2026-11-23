@@ -419,6 +419,70 @@ public class SubtitlePipelineRepository(BCookieSubsDbContext db)
         await tx.CommitAsync(ct);
     }
 
+    // Requeues every failed chunk of a subtitle in one go (the "restart
+    // failed chunks" button on the dashboard).
+    public async Task<int> RetryFailedChunksForSubtitleAsync(long subtitleId, CancellationToken ct = default)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        var chunkIds = await db.SubtitleChunks
+            .Where(c => c.SubtitleId == subtitleId && c.Status == SubtitleChunkStatus.Failed)
+            .Select(c => c.Id)
+            .ToListAsync(ct);
+        if (chunkIds.Count == 0)
+        {
+            await tx.RollbackAsync(ct);
+            return 0;
+        }
+        var jobIds = await db.SubtitleChunks
+            .Where(c => c.SubtitleId == subtitleId && chunkIds.Contains(c.Id))
+            .Select(c => c.SubtitleJobId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var now = DateTime.UtcNow;
+        await db.SubtitleChunkCandidates
+            .Where(c => chunkIds.Contains(c.SubtitleChunkId))
+            .ExecuteDeleteAsync(ct);
+        await db.SubtitleChunks.Where(c => chunkIds.Contains(c.Id)).ExecuteUpdateAsync(u => u
+            .SetProperty(c => c.Status, SubtitleChunkStatus.Queued)
+            .SetProperty(c => c.RetryCount, 0)
+            .SetProperty(c => c.StartedAt, (DateTime?)null)
+            .SetProperty(c => c.FinishedAt, (DateTime?)null)
+            .SetProperty(c => c.ErrorMessage, (string?)null)
+            .SetProperty(c => c.SelectedCandidateId, (long?)null)
+            .SetProperty(c => c.UpdatedAt, now), ct);
+
+        foreach (var jobId in jobIds)
+        {
+            var job = await db.SubtitleJobs.FirstOrDefaultAsync(j => j.Id == jobId, ct);
+            if (job is { Status: SubtitleJobStatus.Completed or SubtitleJobStatus.Failed or SubtitleJobStatus.Cancelled })
+            {
+                var completedChunks = await db.SubtitleChunks
+                    .CountAsync(c => c.SubtitleJobId == job.Id && c.Status == SubtitleChunkStatus.Completed, ct);
+                await db.SubtitleJobs.Where(j => j.Id == job.Id).ExecuteUpdateAsync(u => u
+                    .SetProperty(x => x.Status, SubtitleJobStatus.Queued)
+                    .SetProperty(x => x.CurrentChunk, completedChunks)
+                    .SetProperty(x => x.TranslatedText, (string?)null)
+                    .SetProperty(x => x.OutputHash, (string?)null)
+                    .SetProperty(x => x.FinishedAt, (DateTime?)null)
+                    .SetProperty(x => x.UpdatedAt, now), ct);
+            }
+        }
+
+        var sub = await db.Subtitles.FirstOrDefaultAsync(s => s.Id == subtitleId, ct);
+        if (sub is { Status: SubtitleStatus.Completed or SubtitleStatus.Failed or SubtitleStatus.Cancelled })
+        {
+            await db.Subtitles.Where(s => s.Id == sub.Id).ExecuteUpdateAsync(u => u
+                .SetProperty(x => x.Status, SubtitleStatus.Queued)
+                .SetProperty(x => x.FinishedAt, (DateTime?)null)
+                .SetProperty(x => x.UpdatedAt, now), ct);
+        }
+
+        await tx.CommitAsync(ct);
+        return chunkIds.Count;
+    }
+
     public async Task<bool> RetryFailedChunkAsync(long chunkId, CancellationToken ct = default)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);

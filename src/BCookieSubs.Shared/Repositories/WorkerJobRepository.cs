@@ -245,6 +245,7 @@ public class WorkerJobRepository(BCookieSubsDbContext db)
             .Where(j => j.Id == id && j.Status == WorkerJobStatus.Failed)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(j => j.Status, WorkerJobStatus.Queued)
+                .SetProperty(j => j.RetryCount, 0)
                 .SetProperty(j => j.ErrorMessage, (string?)null)
                 .SetProperty(j => j.ErrorCode, (string?)null)
                 .SetProperty(j => j.Progress, 0)
