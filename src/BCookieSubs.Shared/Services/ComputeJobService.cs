@@ -391,11 +391,52 @@ public class ComputeJobService(
         var job = await jobs.GetAsync(jobId, ct);
         if (job == null) return;
 
+        // A reported (non-abort) OCR failure gets a bounded retry with backoff
+        // instead of dying on the first engine error.
+        if (!success && errorCode != "aborted" && job.JobType == OcrJobType && job.RetryCount < job.MaxRetries)
+        {
+            if (await jobs.RequeueFailedClaimAsync(jobId, workerId, errorCode,
+                    (errorMessage ?? "unknown error").Truncate(200),
+                    DateTime.UtcNow + TimeSpan.FromMinutes(2), ct))
+            {
+                await LogAsync(LogLevelKind.Warning, "workerState", job.SubjectId ?? 0,
+                    $"OCR job {jobId} reported failure; retry {job.RetryCount + 1}/{job.MaxRetries}: {errorMessage}",
+                    new { jobId, workerId, error = errorMessage }, ct);
+                dashboardEvents.OcrQueueChanged(jobId);
+                return;
+            }
+        }
+
+        if (!success && errorCode != "aborted")
+        {
+            // Terminal: keep the row as Failed with the error recorded.
+            if (!await jobs.FailClaimedByWorkerAsync(jobId, workerId, errorCode, errorMessage, ct))
+            {
+                await LogIgnoredStaleResultAsync(jobId, workerId, job, errorMessage, ct);
+                return;
+            }
+            if (job.JobType == OcrJobType)
+            {
+                await HandleOcrResultAsync(job, false, null, errorMessage, ct);
+                dashboardEvents.OcrQueueChanged(jobId);
+                if (job.SubjectType == "libraryPathItem" && job.SubjectId != null)
+                    await MarkOcrItemFailedAsync(job.SubjectId.Value, ct);
+            }
+            else if (job.JobType == WhisperJobType)
+            {
+                await HandleWhisperResultAsync(job, false, null, errorCode, errorMessage, ct);
+                if (job.SubjectId != null)
+                {
+                    dashboardEvents.WhisperQueueChanged(job.SubjectId.Value);
+                    dashboardEvents.TranslationChanged(job.SubjectId.Value);
+                }
+            }
+            return;
+        }
+
         if (!await jobs.DeleteClaimedByWorkerAsync(jobId, workerId, ct))
         {
-            await LogAsync(LogLevelKind.Warning, "workerState", job.SubjectId ?? 0,
-                $"Ignored stale result for job {jobId} (claim no longer held)",
-                new { jobId, workerId }, ct);
+            await LogIgnoredStaleResultAsync(jobId, workerId, job, errorMessage, ct);
             return;
         }
 
@@ -413,6 +454,21 @@ public class ComputeJobService(
                 dashboardEvents.TranslationChanged(job.SubjectId.Value);
             }
         }
+    }
+
+    private async Task LogIgnoredStaleResultAsync(
+        long jobId, long workerId, WorkerJob job, string? errorMessage, CancellationToken ct)
+    {
+        await LogAsync(LogLevelKind.Warning, "workerState", job.SubjectId ?? 0,
+            $"Ignored stale result for job {jobId} (claim no longer held): {errorMessage ?? "success"}",
+            new { jobId, workerId, error = errorMessage }, ct);
+    }
+
+    private async Task MarkOcrItemFailedAsync(long itemId, CancellationToken ct)
+    {
+        await db.LibraryPathItems.Where(i => i.Id == itemId).ExecuteUpdateAsync(u => u
+            .SetProperty(x => x.Status, LibraryPathItemStatus.Failed)
+            .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
     }
 
     private async Task HandleOcrResultAsync(

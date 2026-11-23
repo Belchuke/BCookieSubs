@@ -26,7 +26,7 @@ public class ComputeJobDispatcher(
 {
     private static readonly TimeSpan Tick = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan WhisperLease = TimeSpan.FromMinutes(10);
-    private static readonly TimeSpan OcrLease = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan OcrLease = TimeSpan.FromMinutes(10);
 
     private long? _currentScheduleId;
 

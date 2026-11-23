@@ -8,6 +8,8 @@ public static partial class AssTextExtractor
 {
     private static readonly Regex PlaceholderRestoreRegex = new("⟨AS(\\d+)⟩", RegexOptions.Compiled);
     private static readonly Regex PlaceholderGlobalRegex = new("⟨AS\\d+⟩", RegexOptions.Compiled);
+    private static readonly Regex PlaceholderVariantRegex = new(
+        "[<\\[({〈《〔][\\s]*AS\\s*(\\d{1,3})[\\s]*[>\\])}〉》〕]", RegexOptions.Compiled);
     private static readonly Regex DrawingTagRegex = new(@"\\p(?![a-zA-Z])\s*(\d*)", RegexOptions.Compiled);
     private static readonly Regex EscapeStripRegex = new(@"\\[NnhH]", RegexOptions.Compiled);
 
@@ -86,4 +88,10 @@ public static partial class AssTextExtractor
         var dst = PlaceholderGlobalRegex.Matches(translated).Select(m => m.Value).ToList();
         return src.Count == dst.Count && !src.Where((t, idx) => t != dst[idx]).Any();
     }
+
+    // Models often echo the ⟨ASn⟩ tokens with ordinary brackets or stray
+    // whitespace (<AS1>, [AS 2]). Canonicalize those variants before
+    // validation so good translations are not discarded over typography.
+    public static string CanonicalizePlaceholderTokens(string text) =>
+        PlaceholderVariantRegex.Replace(text, m => $"⟨AS{m.Groups[1].Value}⟩");
 }

@@ -57,8 +57,12 @@ Scheduling (compute jobs) uses the intersection of reported ∩ allowed.
   timestamps-length option, CUDA flag and resume-checkpoint semantics. Models download to
   `WORKER_MODELS_DIR`
   (`/models` volume) on first use, driven by the `WhisperModel` setting.
-- **ocr** — PGS (`.sup`) and VobSub (`.sub`/`.idx`) via ffmpeg burn + Tesseract (psm 6).
-  Language packs must cover the requested OCR language (`tesseract-ocr-<lang>` in the image).
+- **ocr** — PGS (`.sup`) is rasterized directly in Python: the worker walks PCS/WDS/PDS/ODS
+  segments, decodes the RLE run-length bitmaps and feeds one inverted PPM per display event to
+  Tesseract (psm 6) — no intermediate video, so progress (and the job lease) is renewed per event.
+  VobSub (`.sub`/`.idx`) burns the track to per-event PNGs with ffmpeg; the burn streams ffmpeg
+  `-progress` output as job progress. Language packs must cover the requested OCR language
+  (`tesseract-ocr-<lang>` in the image).
 - **vision** — reserved for future ML workloads; no engine yet.
 
 ## Concurrency

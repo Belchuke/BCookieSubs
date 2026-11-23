@@ -126,11 +126,52 @@ public class WorkerJobRepository(BCookieSubsDbContext db)
                     ? WorkerJobStatus.Failed
                     : WorkerJobStatus.Queued)
                 .SetProperty(j => j.RetryCount, j => j.RetryCount + 1)
+                // The lease-expiry path is otherwise silent; record why the job died.
+                .SetProperty(j => j.ErrorCode, j => j.RetryCount + 1 > j.MaxRetries ? "lease_expired" : j.ErrorCode)
+                .SetProperty(j => j.ErrorMessage, j => j.RetryCount + 1 > j.MaxRetries
+                    ? $"Lease expired without any progress or result (attempt {j.RetryCount + 1})"
+                    : j.ErrorMessage)
                 .SetProperty(j => j.ClaimedByWorkerId, (long?)null)
                 .SetProperty(j => j.ClaimedAt, (DateTime?)null)
                 .SetProperty(j => j.HeartbeatAt, (DateTime?)null)
                 .SetProperty(j => j.LeaseExpiresAt, (DateTime?)null)
                 .SetProperty(j => j.UpdatedAt, DateTime.UtcNow), ct);
+
+    // Reported (non-abort) failure: retries remain → back to Queued with the
+    // error recorded for the dashboard; otherwise Failed with the error kept.
+    public async Task<bool> RequeueFailedClaimAsync(
+        long id, long workerId, string? errorCode, string? errorMessage,
+        DateTime nextRetryAt, CancellationToken ct = default)
+    {
+        var rows = await db.WorkerJobs
+            .Where(j => j.Id == id && j.ClaimedByWorkerId == workerId && j.Status == WorkerJobStatus.Running)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(j => j.Status, WorkerJobStatus.Queued)
+                .SetProperty(j => j.RetryCount, j => j.RetryCount + 1)
+                .SetProperty(j => j.ErrorCode, errorCode)
+                .SetProperty(j => j.ErrorMessage, errorMessage)
+                .SetProperty(j => j.NextRetryAt, nextRetryAt)
+                .SetProperty(j => j.ClaimedByWorkerId, (long?)null)
+                .SetProperty(j => j.ClaimedAt, (DateTime?)null)
+                .SetProperty(j => j.HeartbeatAt, (DateTime?)null)
+                .SetProperty(j => j.LeaseExpiresAt, (DateTime?)null)
+                .SetProperty(j => j.UpdatedAt, DateTime.UtcNow), ct);
+        return rows != 0;
+    }
+
+    public async Task<bool> FailClaimedByWorkerAsync(
+        long id, long workerId, string? errorCode, string? errorMessage, CancellationToken ct = default)
+    {
+        var rows = await db.WorkerJobs
+            .Where(j => j.Id == id && j.ClaimedByWorkerId == workerId && j.Status == WorkerJobStatus.Running)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(j => j.Status, WorkerJobStatus.Failed)
+                .SetProperty(j => j.ErrorCode, errorCode)
+                .SetProperty(j => j.ErrorMessage, errorMessage)
+                .SetProperty(j => j.FinishedAt, DateTime.UtcNow)
+                .SetProperty(j => j.UpdatedAt, DateTime.UtcNow), ct);
+        return rows != 0;
+    }
 
     public Task RequeueAsync(long id, CancellationToken ct = default) =>
         db.WorkerJobs

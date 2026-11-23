@@ -55,6 +55,14 @@ public static class BCookieSubsServiceCollectionExtensions
     {
         services.AddHttpClient();
 
+        // LLM responses can take minutes; the default 100s HttpClient timeout
+        // would otherwise cancel long model requests. The CTS in LlmChatService
+        // still bounds each call.
+        services.AddHttpClient("llm", client =>
+        {
+            client.Timeout = TimeSpan.FromMinutes(15);
+        });
+
         services.Configure<OrchestrationOptions>(configuration.GetSection(OrchestrationOptions.SectionName));
         services.Configure<WorkerJwtOptions>(configuration.GetSection(WorkerJwtOptions.SectionName));
         services.Configure<SecretEncryptionOptions>(options =>

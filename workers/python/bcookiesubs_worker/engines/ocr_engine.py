@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 
 from ..errors import EngineError, JobAborted
 
@@ -62,36 +63,47 @@ def run(payload: dict, progress, cancel_event) -> dict:
 
 
 
+_SEG_PDS = 0x14
+_SEG_ODS = 0x15
 _SEG_PCS = 0x16
 _SEG_END = 0x80
 _COMPOSITION_STATE_EPOCH_START = 0x80
+_OBJ_CROPPED = 0x80
+
+_UNSET_PIXEL = 255  # palette key treated as "no pixel drawn"
 
 
 def _ocr_pgs(sup_path: str, lang: str, progress, cancel_event) -> tuple[str, int, int, str]:
-    width, height, pairs = _parse_pgs_sup(sup_path)
-    fps = 10
-    duration_sec = -(-(pairs[-1][1] + 1000) // 1000)
-
+    events = _parse_pgs_sup(sup_path)
+    entries: list[tuple[int, int, str]] = []
+    empty_rows = 0
     tmp = tempfile.mkdtemp(prefix="bcookiesubs-pgs-ocr-")
     try:
-        burned = os.path.join(tmp, "burned.mkv")
-        _run_ffmpeg([
-            "-y", "-hide_banner", "-loglevel", "error",
-            "-copyts", "-fflags", "+genpts",
-            "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r={fps}",
-            "-i", sup_path,
-            "-filter_complex", "[0:v][1:s]overlay=0:0",
-            "-t", str(duration_sec),
-            "-an",
-            "-c:v", "ffv1",
-            burned,
-        ], 600, "ffmpeg burn PGS")
-
-        frames_dir = os.path.join(tmp, "frames")
-        os.makedirs(frames_dir, exist_ok=True)
-        return _ocr_events(pairs, fps, burned, frames_dir, lang, progress, cancel_event, "pgs")
+        frame_path = os.path.join(tmp, "f.ppm")
+        total = len(events)
+        for start_ms, end_ms, width, height, rgb in events:
+            if cancel_event.is_set():
+                _abort_partial(entries, empty_rows)
+            # One PPM per event straight into tesseract — no full-movie video
+            # burn, so progress (and the server lease) stays alive throughout.
+            with open(frame_path, "wb") as fh:
+                # Tesseract wants dark text on a light page: compose the
+                # bitmap on black, then invert.
+                fh.write(f"P6\n{width} {height}\n255\n".encode("ascii"))
+                fh.write(bytes(255 - v for v in rgb))
+            text = _ocr_frame(frame_path, lang)
+            if not text:
+                empty_rows += 1
+            else:
+                entries.append((start_ms, end_ms, text))
+            _report(progress, len(entries) + empty_rows, total)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    if not entries:
+        raise EngineError(
+            f"PGS OCR produced no text rows (0/{len(events)} events recognised). "
+            f"Check the Tesseract language pack ({lang}) and the subtitle image quality.")
+    return _serialize_srt(entries), len(entries), empty_rows, "pgs"
 
 
 def _parse_pgs_sup(sup_path: str):
@@ -102,52 +114,244 @@ def _parse_pgs_sup(sup_path: str):
     if len(raw) < 13:
         raise EngineError("PGS .sup is too short to contain any PES packets")
 
+    segs: list[tuple[int, int, bytes]] = []
     width = height = 0
-    pcs: list[tuple[int, int, int]] = []  # (ptsMs, state, objectCount)
     i = 0
     while i + 13 <= len(raw):
         if raw[i] != 0x50 or raw[i + 1] != 0x47:
             i += 1
             continue
-        pts_ticks = int.from_bytes(raw[i + 2:i + 6], "big")
+        pts_ms = int.from_bytes(raw[i + 2:i + 6], "big") // 90
         seg_type = raw[i + 10]
         seg_len = int.from_bytes(raw[i + 11:i + 13], "big")
         seg_start = i + 13
         if seg_start + seg_len > len(raw):
             break
-        seg = raw[seg_start:seg_start + seg_len]
-
-        if seg_type == _SEG_PCS and len(seg) >= 11:
-            w = int.from_bytes(seg[0:2], "big")
-            h = int.from_bytes(seg[2:4], "big")
+        body = raw[seg_start:seg_start + seg_len]
+        if seg_type == _SEG_PCS and len(body) >= 4 and width == 0:
+            w = int.from_bytes(body[0:2], "big")
+            h = int.from_bytes(body[2:4], "big")
             if w > 0 and h > 0:
                 width, height = w, h
-            state = seg[7]
-            object_count = seg[10]
-            pcs.append((pts_ticks // 90, state, object_count))
-
+        segs.append((pts_ms, seg_type, body))
         i = seg_start + seg_len
 
     if width == 0 or height == 0:
         raise EngineError("PGS .sup is missing the presentation composition header — file may be malformed or empty")
+    return _compose_pgs_events(segs, width, height)
 
-    events: list[tuple[int, int]] = []
-    for k, (pts_ms, state, objects) in enumerate(pcs):
-        if state != _COMPOSITION_STATE_EPOCH_START or objects == 0:
-            continue
-        start = pts_ms
-        end = start + 2000
-        for next_pts, _, _ in pcs[k + 1:]:
-            if next_pts > start:
-                end = next_pts
+
+def _compose_pgs_events(segs, video_w: int, video_h: int):
+    """Rasterize each epoch into (start, end, w, h, rgb) events."""
+    palettes: dict[int, bytearray] = {}
+    objects: dict[int, tuple[int, int, bytes]] = {}
+    epoch_pts: list[int] = []
+    pending: dict | None = None
+    skipped_epochs = 0
+    events: list[tuple[int, int, int, int, bytes]] = []
+
+    def flush() -> tuple[int, int, int, int, bytes] | None:
+        if pending is None:
+            return None
+        placement: list[tuple[int, int, int, int, bytes]] = []
+        for oid, x, y in pending["objects"]:
+            meta = objects.get(oid)
+            if meta is None:
+                return None  # referenced object never arrived — incomplete epoch
+            w, h, rle = meta
+            placement.append((x, y, w, h, rle))
+        if not placement:
+            return None
+        pal = palettes.get(pending["palette"]) if pending["palette"] is not None else None
+        if pal is None:
+            return None
+        x0 = min(x for x, _, _, _, _ in placement)
+        y0 = min(y for _, y, _, _, _ in placement)
+        x1 = max(x + w for x, _, w, _, _ in placement)
+        y1 = max(y + h for _, y, _, h, _ in placement)
+        cw, ch = x1 - x0, y1 - y0
+        if cw <= 0 or ch <= 0 or cw > video_w * 2 or ch > video_h * 2:
+            return None
+        rgb = bytearray(cw * ch * 3)
+        for x, y, w, h, rle in placement:
+            _rle_to_rgb(rle, w, h, x - x0, y - y0, cw, ch, pal, rgb)
+        return (pending["start"], pending["end"], cw, ch, bytes(rgb))
+
+    def _append_objects(pending, body):
+        off = 11
+        for _ in range(body[10]):
+            if off + 8 > len(body):
                 break
+            oid = int.from_bytes(body[off:off + 2], "big")
+            flag = body[off + 3]
+            x = int.from_bytes(body[off + 4:off + 6], "big")
+            y = int.from_bytes(body[off + 6:off + 8], "big")
+            off += 8
+            if flag & _OBJ_CROPPED:
+                off += 8  # crop rectangle
+            entry = (oid, x, y)
+            if entry not in pending["objects"]:
+                pending["objects"].append(entry)
+
+    for pts_ms, seg_type, body in segs:
+        if seg_type == _SEG_PCS and len(body) >= 11 and body[7] == _COMPOSITION_STATE_EPOCH_START:
+            if pending is not None:
+                if pending["end"] <= pending["start"]:
+                    pending["end"] = pts_ms
+                ev = flush()
+                if ev is None and pending["objects"]:
+                    skipped_epochs += 1
+                elif ev is not None:
+                    events.append(ev)
+            objects = {}
+            palettes = {}
+            epoch_pts.append(pts_ms)
+            pending = {"start": pts_ms, "end": -1, "objects": [], "palette": None}
+            _append_objects(pending, body)
+        elif seg_type == _SEG_PCS and len(body) >= 11 and pending is not None:
+            # Normal/acquisition PCS re-lists the same composition objects.
+            _append_objects(pending, body)
+        elif seg_type == _SEG_PDS and len(body) >= 7 and pending is not None:
+            palette_key = body[0]
+            if pending["palette"] is None:
+                pending["palette"] = palette_key
+            table = palettes.setdefault(palette_key, bytearray(768))
+            for off in range(2, len(body) - 4, 5):
+                key, yy, cb, cr, a = body[off], body[off + 1], body[off + 2], body[off + 3], body[off + 4]
+                if key < 256:
+                    if a == 0:
+                        continue  # fully transparent — leave the pixel black
+                    _palette_ycc_to_rgb(table, key, yy, cb, cr)
+        elif seg_type == _SEG_ODS and len(body) >= 8:
+            oid = int.from_bytes(body[0:2], "big")
+            seq = body[3]
+            meta = objects.get(oid)
+            if seq & 0x80 and pending is not None:
+                # First (or re-sent) fragment: start the object over.
+                # mkvextract prefixes a 3-byte object length and stores
+                # width/height at offsets 7/9; fall back to the classic
+                # w/h-at-4/6 layout when that does not check out.
+                declared = (body[4] << 16) | (body[5] << 8) | body[6]
+                w = int.from_bytes(body[7:9], "big")
+                h = int.from_bytes(body[9:11], "big")
+                if not (0 < w <= video_w and 0 < h <= video_h * 2 and declared == len(body) - 7):
+                    w = int.from_bytes(body[4:6], "big")
+                    h = int.from_bytes(body[6:8], "big")
+                    rle = body[8:]
+                else:
+                    rle = body[11:]
+                if w > 0 and h > 0:
+                    objects[oid] = (w, h, bytes(rle))
+            elif meta is not None:
+                objects[oid] = (meta[0], meta[1], meta[2] + body[4:])
+        elif seg_type == _SEG_END and pending is not None:
+            pending["end"] = pts_ms
+
+    if pending is not None:
+        ev = flush()
+        if ev is None and pending["objects"]:
+            skipped_epochs += 1
+        elif ev is not None:
+            events.append(ev)
+
+    fixed: list[tuple[int, int, int, int, bytes]] = []
+    for k, ev in enumerate(events):
+        start, end, w, h, rgb = ev
+        if end <= start:
+            end = start + 2000
         if end <= start:
             end = start + 1000
-        events.append((start, end))
-
-    if not events:
+        fixed.append((start, end, w, h, rgb))
+    if not fixed:
+        if skipped_epochs:
+            raise EngineError(
+                "PGS display sets could not be rasterized — referenced objects or palettes are missing")
         raise EngineError("PGS .sup contains no subtitle display events — file may be malformed or empty")
-    return width, height, events
+    return fixed
+
+
+def _palette_ycc_to_rgb(table: bytearray, key: int, yy: int, cb: int, cr: int) -> None:
+    cy = yy - 16
+    cbd = cb - 128
+    crd = cr - 128
+    r = (298 * cy + 409 * crd + 128) >> 8
+    g = (298 * cy - 100 * cbd - 208 * crd + 128) >> 8
+    b = (298 * cy + 516 * cbd + 128) >> 8
+    base = key * 3
+    table[base] = max(0, min(255, r))
+    table[base + 1] = max(0, min(255, g))
+    table[base + 2] = max(0, min(255, b))
+
+
+def _rle_to_rgb(rle: bytes, width: int, height: int, dst_x: int, dst_y: int,
+                canvas_w: int, canvas_h: int, palette: bytearray, rgb: bytearray) -> None:
+    """Decode PGS RLE runs into an RGB canvas row by row.
+
+    Run encoding (verified against real .sup files):
+      00 00   end of line · 01-3F run of zeros · 40-BF 6-bit run + color byte
+      C0-FF   14-bit run + color byte
+    """
+    pos = 0
+    x = 0
+    y = 0
+    n = len(rle)
+    # The run at the end of a line often reaches exactly `width`; such a line
+    # also ends with an explicit EOL marker. Avoid advancing rows twice.
+    x_just_wrapped = False
+    while pos < n and y < height:
+        b = rle[pos]
+        pos += 1
+        if b != 0:
+            count = 1
+            key = b
+        else:
+            if pos >= n:
+                break
+            b2 = rle[pos]
+            pos += 1
+            if b2 == 0:
+                if not x_just_wrapped:
+                    y += 1
+                x_just_wrapped = False
+                x = 0
+                continue
+            x_just_wrapped = False
+            if b2 <= 0x3F:
+                count = b2 & 0x3F
+                key = 0
+            elif b2 <= 0xBF:
+                if pos >= n:
+                    break
+                count = b2 & 0x3F
+                key = rle[pos]
+                pos += 1
+            else:
+                if pos + 1 >= n:
+                    break
+                count = ((b2 & 0x3F) << 8) | rle[pos]
+                key = rle[pos + 1]
+                pos += 2
+
+        if count <= 0 or key == _UNSET_PIXEL or key >= 256:
+            # nothing drawn, still advance (key 255 is the palette's
+            # background color here — the canvas is black already)
+            pass
+        else:
+            row = y + dst_y
+            if 0 <= row < canvas_h:
+                col = x + dst_x
+                if col < canvas_w:
+                    count = min(count, canvas_w - col)
+                    start = (row * canvas_w + col) * 3
+                    end = start + count * 3
+                    base = key * 3
+                    rgb[start:end] = bytes(palette[base:base + 3]) * count
+
+        x += count
+        if x >= width:
+            x = 0
+            y += 1
+            x_just_wrapped = True
 
 
 
@@ -166,15 +370,18 @@ def _ocr_vobsub(sub_path: str, lang: str, progress, cancel_event) -> tuple[str, 
     try:
         frames_dir = os.path.join(tmp, "frames")
         os.makedirs(frames_dir, exist_ok=True)
-        _run_ffmpeg([
-            "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r={fps}",
-            "-i", idx_path,
-            "-filter_complex", "[0:v][1:s]overlay=0:0",
-            "-t", str(duration_sec),
-            "-an",
-            os.path.join(frames_dir, "f_%06d.png"),
-        ], burn_timeout, "ffmpeg burn VobSub")
+        _run_ffmpeg_progress(
+            [
+                "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r={fps}",
+                "-i", idx_path,
+                "-filter_complex", "[0:v][1:s]overlay=0:0",
+                "-t", str(duration_sec),
+                "-an",
+                os.path.join(frames_dir, "f_%06d.png"),
+            ],
+            burn_timeout, "ffmpeg burn VobSub", fps, duration_sec * fps,
+            progress, cancel_event)
 
         frames = sorted(f for f in os.listdir(frames_dir) if f.endswith(".png"))
         if not frames:
@@ -238,36 +445,6 @@ def _build_start_end_pairs(starts: list[int]) -> list[tuple[int, int]]:
 
 
 
-def _ocr_events(pairs, fps, burned, frames_dir, lang, progress, cancel_event, kind):
-    entries: list[tuple[int, int, str]] = []
-    empty_rows = 0
-    for i, (start_ms, end_ms) in enumerate(pairs):
-        if cancel_event.is_set():
-            _abort_partial(entries, empty_rows)
-        mid_sec = (start_ms + end_ms) / 2 / 1000
-        frame_path = os.path.join(frames_dir, f"f_{i:06d}.png")
-        result = subprocess.run(
-            ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-             "-ss", f"{mid_sec:.3f}", "-i", burned,
-             "-frames:v", "1", "-q:v", "2", frame_path],
-            capture_output=True, text=True, timeout=30,
-        )
-        if result.returncode != 0 or not os.path.exists(frame_path):
-            empty_rows += 1
-            continue
-        text = _ocr_frame(frame_path, lang)
-        if not text:
-            empty_rows += 1
-        else:
-            entries.append((start_ms, end_ms, text))
-        _report(progress, len(entries) + empty_rows, len(pairs))
-    if not entries:
-        raise EngineError(
-            f"PGS OCR produced no text rows (0/{len(pairs)} events recognised). "
-            f"Check the Tesseract language pack ({lang}) and the subtitle image quality.")
-    return _serialize_srt(entries), len(entries), empty_rows, kind
-
-
 def _abort_partial(entries, empty_rows: int) -> None:
     raise JobAborted(
         checkpoint=None,
@@ -295,17 +472,54 @@ def _report(progress, done: int, total: int) -> None:
     progress(pct, "")
 
 
-def _run_ffmpeg(args: list[str], timeout_sec: int, label: str) -> None:
+def _run_ffmpeg_progress(args: list[str], timeout_sec: int, label: str, fps: int,
+                         total_frames: int, progress, cancel_event) -> None:
+    """Run a burn ffmpeg, streaming -progress output as job progress.
+
+    The streamed progress doubles as the server-side heartbeat, keeping the
+    job lease renewed while ffmpeg works.
+    """
+    args = args[:-1] + ["-progress", "pipe:1", args[-1]]
+    deadline = time.monotonic() + timeout_sec
+    err_file = tempfile.TemporaryFile()
+    proc = None
     try:
-        result = subprocess.run(["ffmpeg"] + args, capture_output=True, text=True,
-                                timeout=timeout_sec)
+        try:
+            proc = subprocess.Popen(["ffmpeg"] + args, stdout=subprocess.PIPE,
+                                    stderr=err_file, text=True)
+        except OSError as exc:
+            raise EngineError(f"{label}: ffmpeg not available: {exc}", code="ffmpeg_missing")
+
+        for line in proc.stdout:
+            if cancel_event.is_set():
+                proc.terminate()
+                _abort_partial([], 0)
+            if line.startswith(("out_time_us=", "out_time_ms=")):
+                try:
+                    micros = int(line.split("=", 1)[1])
+                except ValueError:
+                    continue
+                if total_frames > 0:
+                    done = min(total_frames, int(micros / 1_000_000 * fps))
+                    _report(progress, done, total_frames)
+            if time.monotonic() > deadline:
+                proc.kill()
+                raise EngineError(f"{label}: timed out after {timeout_sec}s")
+        proc.stdout.close()
+        code = proc.wait(timeout=max(1.0, deadline - time.monotonic()))
+        if code != 0:
+            err_file.seek(0)
+            text = err_file.read().decode("utf-8", "replace")
+            reason = text.strip().splitlines()[:1]
+            raise EngineError(f"{label}: {reason[0][:200] if reason else 'ffmpeg exited non-zero'}")
     except subprocess.SubprocessError as exc:
+        if proc is not None:
+            proc.kill()
         raise EngineError(f"{label}: {str(exc)[:160]}")
-    except OSError as exc:
-        raise EngineError(f"{label}: ffmpeg not available: {exc}", code="ffmpeg_missing")
-    if result.returncode != 0:
-        reason = (result.stderr or "").strip().splitlines()[:1]
-        raise EngineError(f"{label}: {reason[0][:200] if reason else 'ffmpeg exited non-zero'}")
+    finally:
+        err_file.close()
+        if proc is not None and proc.poll() is None:
+            proc.kill()
 
 
 def _resolve_lang(hint: str | None) -> str:

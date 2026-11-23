@@ -198,6 +198,7 @@ public class TranslationRunnerService(
             await LogAsync(db, LogLevelKind.Error, "chunkFailed", "chunk", chunk.Id,
                 $"Chunk {chunk.ChunkIndex} failed: source or target language missing in database",
                 new { subtitleId = chunk.SubtitleId, sourceLangId = subtitle.SourceLanguageId, targetLanguageId = chunk.TargetLanguageId }, ct);
+            await FinalizeAsync(db, pipeline, job, subtitle, ct);
             return;
         }
 
@@ -220,22 +221,27 @@ public class TranslationRunnerService(
         if (chunkRows.Count == 0)
         {
             await pipeline.MarkChunkFailedAsync(chunk.Id, "No subtitle lines found for this chunk range", ct);
+            await FinalizeAsync(db, pipeline, job, subtitle, ct);
             return;
         }
 
         var isAss = subtitle.SourceFormat is SubtitleFormat.Ass or SubtitleFormat.Ssa;
         var assRunsById = new Dictionary<string, List<string>>();
+        var sourceRowsById = new Dictionary<string, string>();
         var sourceRows = new List<ParsedChunkRow>();
         foreach (var row in chunkRows)
         {
             if (!isAss)
             {
                 if (string.IsNullOrWhiteSpace(row.Text)) continue;
+                // Malformed sources can repeat an index number; first occurrence wins.
+                if (!sourceRowsById.TryAdd(row.Id, row.Text)) continue;
                 sourceRows.Add(new ParsedChunkRow(row.Id, row.Text));
                 continue;
             }
             var extracted = AssTextExtractor.ExtractAssTranslatable(row.Text);
             if (!extracted.HasTranslatable) continue;
+            if (!sourceRowsById.TryAdd(row.Id, extracted.ModelText)) continue;
             assRunsById[row.Id] = extracted.Runs;
             sourceRows.Add(new ParsedChunkRow(row.Id, extracted.ModelText));
         }
@@ -253,15 +259,6 @@ public class TranslationRunnerService(
             return;
         }
 
-        var sourceRowsById = new Dictionary<string, string>();
-        foreach (var r in sourceRows)
-        {
-            if (!sourceRowsById.TryAdd(r.Id, r.Text))
-            {
-                await pipeline.MarkChunkFailedAsync(chunk.Id, $"Duplicate subtitle id {r.Id} in chunk range", ct);
-                return;
-            }
-        }
         var preamble = Trcnk.FormatAwareChunkPreamble(subtitle.SourceFormat);
         var formattedSource = Trcnk.SrtFormatterForModel(sourceRows);
         var chunkXml = preamble.Length > 0 ? $"{preamble}\n{formattedSource}" : formattedSource;
@@ -278,6 +275,7 @@ public class TranslationRunnerService(
             await LogAsync(db, LogLevelKind.Error, "chunkFailed", "chunk", chunk.Id,
                 "Chunk " + chunk.ChunkIndex + " failed: no active translation models configured — add one in the Models page",
                 new { subtitleId = chunk.SubtitleId, jobId = chunk.SubtitleJobId }, ct);
+            await FinalizeAsync(db, pipeline, job, subtitle, ct);
             return;
         }
         if (promptVersions.Count == 0)
@@ -286,6 +284,7 @@ public class TranslationRunnerService(
             await LogAsync(db, LogLevelKind.Error, "chunkFailed", "chunk", chunk.Id,
                 "Chunk " + chunk.ChunkIndex + " failed: no active translation prompt versions — activate at least one in the Prompts page",
                 new { subtitleId = chunk.SubtitleId, jobId = chunk.SubtitleJobId }, ct);
+            await FinalizeAsync(db, pipeline, job, subtitle, ct);
             return;
         }
 
@@ -325,7 +324,7 @@ public class TranslationRunnerService(
                             model.Id, targetLang.Id, requestUp: true, failedUp: false, successUp: false, selectedUp: false, ct);
 
                         var response = await llm.SendAsync(model, promptText, ct);
-                        var content = response.Content;
+                        var content = AssTextExtractor.CanonicalizePlaceholderTokens(response.Content);
                         var durationMs = (long)(DateTime.UtcNow - startMs).TotalMilliseconds;
 
                         var parsed = Trcnk.ParseLLMResponse(content);

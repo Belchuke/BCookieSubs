@@ -210,8 +210,7 @@ public class SubtitleRepository(BCookieSubsDbContext db)
             .Select(DashboardJobProjection)
             .ToListAsync(ct);
 
-        var jobIds = jobs.Select(j => j.Id).ToList();
-        var countsByJob = await GetDashboardChunkCountsAsync(jobIds, ct);
+        var countsByJob = await GetAllChunkCountsAsync(ct);
         return BuildDashboardRows(subtitles, jobs, countsByJob);
     }
 
@@ -265,6 +264,24 @@ public class SubtitleRepository(BCookieSubsDbContext db)
     private static readonly System.Linq.Expressions.Expression<Func<SubtitleJob, DashboardJobRow>> DashboardJobProjection = j => new(
         j.Id, j.SubtitleId, j.TargetLanguageId, j.Status, j.Season, j.Episode,
         j.TranslatedText != null && j.TranslatedText.Trim() != "");
+
+    // Dashboard aggregates counts for every job anyway; a Contains-built ANY(jobIds)
+    // array matches all chunk rows and defeats the planner's estimates.
+    private async Task<Dictionary<long, (int Total, int Done, int Failed)>> GetAllChunkCountsAsync(
+        CancellationToken ct)
+    {
+        var chunkCounts = await db.SubtitleChunks.AsNoTracking()
+            .GroupBy(c => c.SubtitleJobId)
+            .Select(g => new
+            {
+                SubtitleJobId = g.Key,
+                Total = g.Count(),
+                Done = g.Count(c => c.Status == SubtitleChunkStatus.Completed),
+                Failed = g.Count(c => c.Status == SubtitleChunkStatus.Failed),
+            })
+            .ToListAsync(ct);
+        return chunkCounts.ToDictionary(c => c.SubtitleJobId, c => (c.Total, c.Done, c.Failed));
+    }
 
     private async Task<Dictionary<long, (int Total, int Done, int Failed)>> GetDashboardChunkCountsAsync(
         List<long> jobIds, CancellationToken ct)
